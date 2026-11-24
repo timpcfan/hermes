@@ -1229,6 +1229,57 @@ Swift Testing runs tests in parallel, so shared fixtures show up as flaky tests 
 
 Want me to start with step 1 and report the warning count?"""
 
+
+# "tools N" (docs/development.md, Performance check): a turn of N tool calls before its reply, as long
+# as real agent turns get (a heavy user's turns average 16 calls, 41 at the 90th percentile and 134 at
+# most, with about 3 KB of output each). Terminal, file reads and searches in turn.
+TOOLS_RE = re.compile(r"\btools (\d+)\b")
+
+
+def tools_call(step):
+    """The `step`th call of a "tools N" turn: its tool, arguments, result and the step's context."""
+    kind = step % 3
+    if kind == 1:
+        command = f"ssh host{step} journalctl -u svc-{step % 7} -n 40 --no-pager"
+        lines = "\n".join(f"Nov 24 09:{i:02d}:{step % 60:02d} host{step} svc-{step % 7}[{1000 + i}]: request {i} served in {i % 9 + 1}ms "
+                          f"(cache {'hit' if i % 3 else 'miss'}, queue {i % 5})" for i in range(40))
+        return "terminal", {"command": command}, json.dumps({"output": lines, "exit_code": 0}), command
+    if kind == 2:
+        path = f"/srv/app/services/svc_{step}.py"
+        body = "\n".join(f"{i + 1:>4}  def handler_{step}_{i}(request):  # returns the cached answer or fetches it" for i in range(36))
+        return "read_file", {"path": path}, json.dumps({"content": body, "total_lines": 36}), path
+    pattern = f"TODO|FIXME svc_{step}"
+    matches = "\n".join(f"/srv/app/services/svc_{step}.py:{i * 7 + 3}: # TODO: retry the upstream call {i} times before failing"
+                         for i in range(30))
+    return "search_files", {"pattern": pattern}, json.dumps({"matches": matches, "count": 30}), pattern
+
+
+TOOLS_ANSWER = """All **{count} checks** are done. Here's what they found.
+
+## Services
+
+| Host group | Healthy | Slow | Down |
+|---|---|---|---|
+| Edge | 12 | 1 | 0 |
+| API | 9 | 2 | 0 |
+| Workers | 14 | 0 | 1 |
+
+- The worker that's down ran out of disk at 03:12; its queue drained to the others.
+- The two slow API hosts share a noisy neighbour; moving one of them fixes both.
+- Every service answered its health check within **40 ms** once warm.
+
+## In the code
+
+The handlers retry an upstream call **three times** before failing, and the `TODO`s mark the places that
+still retry forever. None of them is on a hot path.
+
+```python
+def handler(request):
+    return cache.get(request.key) or fetch(request, retries=3)
+```
+
+Want me to clear the worker's disk and move the slow API host now?"""
+
 # "clarify pair": two questions, the first answered at length, so its one-line summary sits over
 # the second in the card (docs/quick-actions.md §1).
 CLARIFY_PAIR = [
@@ -1452,6 +1503,21 @@ def run_turn(sid, text):
         time.sleep(2)
         emit(sid, "review.summary", {"text": "💾 Self-improvement review: Skill 'logging-supplements' patched"})
         return
+
+    tools_run = TOOLS_RE.search(visible.lower())
+    if tools_run:
+        count = max(1, min(int(tools_run.group(1)), 200))
+        for step in range(1, count + 1):
+            if runtime["interrupt"]:
+                return finish(sid, stored, "", status="interrupted")
+            if step % 10 == 1:
+                emit(sid, "message.interim", {"text": f"Batch {step // 10 + 1}: the next ten checks.", "already_streamed": False})
+            name, args, result, context = tools_call(step)
+            tool(sid, stored, name, args, result, 0.15, context)
+        answer = TOOLS_ANSWER.format(count=count)
+        if stream(sid, answer):
+            return finish(sid, stored, answer)
+        return finish(sid, stored, "", status="interrupted")
 
     if "busy" in visible.lower():
         # A long agentic turn like real ones: dozens of tool rounds with narration in between.
@@ -3207,6 +3273,10 @@ def main():
     parser.add_argument("--long-chat", action="store_true", help="seed 'Homelab rebuild', a chat as big as a long real one, 'Launch diagrams', as long and "
                              "full of drawn diagrams and formulas, and the chats "
                              "for where VoiceOver lands reading back (server.py seed_landing_chats)")
+    parser.add_argument("--long-chat-turns", type=int, default=60, metavar="N",
+                        help="with --long-chat: that many turns in 'Homelab rebuild' (a scroll back of a few hundred)")
+    parser.add_argument("--long-chat-rich", action="store_true",
+                        help="with --long-chat: its replies carry headings, code blocks, lists and tables")
     parser.add_argument("--many-chats", type=int, default=0, metavar="N",
                         help="seed N more ordinary chats on the gateway, to measure a long chat list")
     parser.add_argument("--sparse-chats", action="store_true",
@@ -3326,7 +3396,7 @@ def main():
         gateway.TOKEN_FLUSH["seconds"] = args.token_flush
         gateway.RUN_STREAM["ttl"] = args.run_stream_ttl
         if args.long_chat:
-            gateway.seed_long_chat()
+            gateway.seed_long_chat(args.long_chat_turns, rich=args.long_chat_rich)
         if args.many_chats:
             gateway.seed_many_chats(args.many_chats, sparse=args.sparse_chats)
         if args.routine_runs:

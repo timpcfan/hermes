@@ -178,6 +178,111 @@ with the `-HERMES_BOOTSTRAP_*` flags and its own `CFFIXED_USER_HOME`. Two second
 both are empty, the turn still runs, and the mock prints the question behind a block quote of "Blog
 published". `-HERMES_FOLLOWUP_MODE background` does the same for Run in Background.
 
+### Performance check
+
+Whether the chat stays smooth is a number a run can fail on. `Tools/mock-hermes/matrix/perf_run.py`
+launches Hermes Dev on the iPhone simulator or the Mac against a fresh mock for each run, plays
+fixed scenarios through launch flags (no taps, no accessibility queries), reads the frame log and
+writes `report.json`. It exits 0 for PASS, 1 for FAIL and 2 when a run couldn't measure: a mark
+that never came, a covered Mac window, a sheet over the chat, or a machine too busy with other
+work.
+
+```sh
+# one build: its numbers, and the invariants
+python3 -I Tools/mock-hermes/matrix/perf_run.py --udid <simulator> --app <Hermes Dev.app> --out <folder>
+# a change against the build before it, both built at -O in worktrees of their own
+python3 -I Tools/mock-hermes/matrix/perf_run.py --udid <simulator> --ref main --ref-b HEAD --out <folder>
+python3 -I Tools/mock-hermes/matrix/perf_run.py --mac --app <A.app> --app-b <B.app> --out <folder>
+```
+
+`--only stream,tools40` picks scenarios, `--rounds` sets the runs of each build (3), `--shots`
+takes a screenshot two seconds into each scenario's first run (`<folder>/shots`, to see what it
+measured; it costs that run a little, so take numbers from a run without it), and
+`HERMES_PERF_PORTS=<backend>,<gateway>` moves the mock off 21219/21742. Each run is a fresh install
+(on the Mac, a copy of the app under its own bundle id with an empty `CFFIXED_USER_HOME`, started
+from its binary and stopped by its PID, so it never meets the Hermes Dev in use), and the mock is
+`backend.py --long-chat --long-chat-turns 300 --long-chat-rich --quiet-world --app-plugins current`:
+with the app's plugins in place nothing asks for them, so no sheet comes up over the chat. A full
+comparison takes about 21 minutes on the simulator and 20 on the Mac; building the two refs comes
+on top.
+
+| Scenario | What it plays | What it reads |
+|---|---|---|
+| `stream` | "essay please" sent into the 300-turn chat 5 s after launch (`-HERMES_SEND_HERE`) | `stream`: from the glide to "reply ended" |
+| `stream_follow` | the same with Keep chat at bottom when sending | `turn`: from the send to "reply ended" |
+| `tools40`, `tools130` | "tools 40 please", "tools 130 please" in that chat | `stream`, as above |
+| `scroll` | `-HERMES_SCROLL_RUN 1 -HERMES_SCROLL_SPEED 3000`, to the first message of a 120-turn chat and back | `scroll`: both legs (`up`, `down`) |
+| `open` | `-HERMES_OPEN_CYCLE` between a short chat and the long one, 2 rounds | `open`: each open to 4 s later |
+
+The stream scenarios also read `turn` (from the send, the page turning included) and `settled`, the
+two seconds after "reply ended" up to "reply settled", where they check that the end of a turn moves
+nothing. `report.json` holds every run's numbers, each build's medians and, comparing, each graded
+metric's medians, change and spread; the runs' logs and the mock's sit beside it.
+
+What it reads comes from two lines the app prints at every mark of the frame log. `FRAMESPAN`
+(`-HERMES_FRAME_LOG`) sums the span since the mark before: wall and main-thread CPU time and its
+share (`cpu_pct`), the instructions the whole process ran in millions (`instr_m`), frames whose
+main-thread work took longer than one refresh (`over_budget_pct`), refreshes that passed with no
+frame (`dropped_pct`) and the longest frame. `SCROLLSPAN` (`-HERMES_SCROLL_PROBE YES`) follows the
+row at the top of the screen frame by frame, from the rows' tops in the content and the scroll
+offset: its moves, the largest one (`largest_step_pt`), one-frame moves over 400 pt that nothing
+asked for while the chat is held (`teleports`: the content jumping, with the scroll run's own step
+taken off), frames in which the scroll run's own step was over 400 pt (`long_steps`: usually a frame
+so late that 3000 pt a second carried the chat that far, 133 ms or more), the largest drift from
+where the chat should be (`largest_drift_pt`: by the scroll run's step, else nowhere) and how far
+the end is below the screen at the mark (`from_end_pt`). A sent message's glide and the follow after
+a send move the chat on purpose and aren't held. `FRAMESPAN` ends in `sheet=shown` when a sheet, an
+alert or a modal window was up at some point in the span (looked at every ten frames and at the
+mark). A window adds up its spans: a chat open, a leg or a reply reads as one set of numbers. The
+summing is `FrameSpan` and `ScrollMotion` in HermesKit, tested there; the reading and grading are in
+the script, tested in `Tools/mock-hermes/tests/test_perf_run.py`.
+
+How it decides (`Tools/mock-hermes/matrix/perf_budgets.json`, one set per platform):
+
+- Invariants are absolute, and every run must keep them: one jump in one run is a jump. No
+  `teleports` (400 pt: a fast fling is about 8000 pt a second, 133 pt a frame at 60 Hz). A late
+  frame under the scroll run isn't a jump: the content went where the run sent it, only in one
+  step, so it counts as a `long_step` and is compared with the build before. The chat
+  held within 2 pt (`largest_drift_pt`) while a reply streams, after it ends and while the scroll
+  run reads back, as Measuring a scroll back (below) asks across every earlier page. With Keep chat
+  at bottom when sending, the end within 24 pt once the reply settles (the chat follows within 72
+  pt, [chat.md](chat.md) §4).
+- Regressions compare two builds run on the same machine, interleaved (A B B A A B), after an
+  unmeasured launch of each, by the median of each build's runs. A metric fails when B is worse by
+  more than 10% and by more than its floor: a point of `cpu_pct`, `over_budget_pct` or
+  `dropped_pct`, 50 million instructions (20 million per open), one 60 Hz frame (17 ms) of the
+  longest frame, 20 ms of CPU per open; `long_steps`
+  fail only past twice as many and 10 more, since one build's runs range several-fold on the Mac
+  (none on the simulator). On a Mac Studio's iPhone simulator, one build against itself moved
+  the medians of `cpu_pct` and CPU per open by under 3% and of `instr_m` by under 1% (each build's
+  instructions within 2.5%: the report's `a_spread` and `b_spread`), so 10% is well clear of
+  noise. On the Mac itself the CPU time moves more from run to run, up to 12% between the medians
+  with nothing else busy, while the instructions stay within 2%. The frame-tail numbers move more,
+  the longest frame by up to 5 ms and the share of late frames by a few tenths of a point, which
+  is what the floors are for. Main-thread CPU time, not wall time, since a busy machine stretches
+  wall time; frames come from the display link of the screen the app is on.
+- One build alone is graded on the invariants only.
+
+What it can't tell you: a simulator draws at 60 Hz, renders on the Mac's GPU and shares the Mac's
+cores, so its numbers are for comparing two builds on one machine, not for what a phone does. The
+scroll run moves the chat a step each frame from a timer, as a finger would, but it isn't a finger:
+no touches are injected, so it doesn't load the simulator's own UI thread, nor time what touch
+handling costs. A covered Mac window draws no frames, so a span read while the window was covered
+(`window=covered`) can't measure, and the script refuses a locked screen. A span read under a sheet
+(`sheet=shown`) measured the sheet, so that run can't measure either: the script says which and
+exits 2. Builds from before these lines were printed can't tell either; a metric only B reports
+(`long_steps` against such a build) isn't compared. The probe reads one
+geometry value per row as rows move, only in runs that ask for it, so both builds pay it alike.
+Other work on the machine lowers the main thread's CPU time for the same frames, since the cores
+clock up: on a Mac Studio one busy loop beside the long reply took it from 27% to 10%, while the
+process ran as many instructions. So each run reads how many cores everything else kept busy
+(`ps`, leaving out the app, the mock, the simulator and the window server): over
+`outside_cores_max` (1.0; the machine idles at about 0.5) the run goes again after 30 s, twice,
+and then can't measure. The report keeps each run's `outside_cores`, the busiest other processes
+and the load average. `instr_m` doesn't move with the clock, which is why it's graded beside the
+CPU time; a build that ran more instructions did more work. Close what else runs, and keep the Mac
+on power.
+
 ## Checks on main
 
 Every commit to `main` runs the checks in the studio's Buildkite pipeline `hermes-checks`, on its
@@ -515,7 +620,7 @@ the chats kept current without waiting for iOS ([notifications.md](notifications
 simulator turns `simctl push` into a plain background fetch that never reaches
 `didReceiveRemoteNotification`, so the push handler itself only runs on a device.
 
-Measuring how chats open (iOS Debug, built with `SWIFT_OPTIMIZATION_LEVEL=-O` so the numbers mean
+Measuring how chats open (Debug, built with `SWIFT_OPTIMIZATION_LEVEL=-O` so the numbers mean
 something): `-HERMES_FRAME_LOG YES` logs every frame that kept the main thread busy, with its CPU
 time, `-HERMES_LOAD_LOG YES` times each step of loading a chat, and `-HERMES_OPEN_CYCLE
 bot:ops,chat:<id>` opens those chats in turn (3 rounds, `-HERMES_OPEN_CYCLE_ROUNDS`), marking the
@@ -577,7 +682,7 @@ its end to its top and back, `-HERMES_SCROLL_SPEED` points a second (2000 by def
 `-HERMES_SCROLL_AFTER` seconds after launch (10), only up with `-HERMES_SCROLL_LEGS up` (to send,
 jump to the end or let a turn end from far back): a step a frame, taken by the chat as a drag, so
 pages come in at the top and go below as they would under a finger. Each leg is marked
-(`SCROLLRUN`, and in the frame log on iOS). It works on the Mac too, where each leg's mark says
+(`SCROLLRUN`, and in the frame log). It works on the Mac too, where each leg's mark says
 whether the window is on screen or covered, and a change mid-leg is marked (`window covered`): a
 covered window gets no frames, so a run with one measures nothing. With `-HERMES_SCROLL_LOG YES`
 the window's changes show between the per-frame offsets (`SCROLLLOG drop below`, `later in`,
@@ -603,10 +708,13 @@ with "holdsend" in it gets no answer for 60 s, so it stays on its way and is kep
 quit then, and the next launch opens the room with it (`-HERMES_GROUP_SEND "holdsend …"`).
 
 Measuring a streaming reply: "essay" streams a long Markdown reply for about ten seconds, and
-`-HERMES_SEND_HERE "essay please" -HERMES_SEND_HERE_AFTER 10` sends it into the chat that opened.
-The frame log works on the Mac too, and marks the send (`send-here: sending`) and the reply's end
-(`reply ended`): the main thread's CPU between the two marks, and the busy frames logged between
-them, are what one streamed reply costs. A streamed word should redraw only its reply's row
+"tools 40" (any number up to 200) makes that many tool calls of about 3 KB each before a short
+reply, in a Hermes chat or a Bot Chat. `-HERMES_SEND_HERE "essay please" -HERMES_SEND_HERE_AFTER 10`
+sends it into the chat that opened. The frame log works on the Mac too, and marks the send
+(`send-here: sending`), the page turning (`send: landing begins`, `send: glide starts`), the
+reply's end (`reply ended`) and two seconds later (`reply settled`): the `FRAMESPAN` lines between
+two marks are what one streamed reply costs ([Performance check](#performance-check)). A streamed
+word should redraw only its reply's row
 ([chat.md](chat.md) §4): to see what else does, and why, put `let _ = Self._printChanges()` at the
 top of the views' bodies in a scratch copy and count the lines while it streams (Instruments'
 SwiftUI template doesn't record on a simulator). The environment tells values apart by their
@@ -614,8 +722,8 @@ contents, not by `==`: hand rows the same value when nothing changed (`stableRef
 
 Measuring a scroll back: use a chat long enough that reading back loads page after page.
 `backend.py --long-chat` seeds "Homelab rebuild" with `seed_long_chat()`, 60 turns; for a few
-hundred turns with headings, lists, code blocks, tables and tool steps, raise its `turns` and add
-those blocks to its replies in a scratch copy of the mock. Open the chat with
+hundred turns add `--long-chat-turns 300`, and `--long-chat-rich` gives its replies a heading and a
+code block, table or list in turn. Open the chat with
 `-HERMES_RESTORE session:<key>` and scroll it with `-HERMES_SCROLL_RUN 1 -HERMES_SCROLL_SPEED 3000`
 `-HERMES_SCROLL_AFTER 14 -HERMES_SCROLL_LOG 1` (the log marks each page it loads). On the Mac,
 build Debug (the launch flags need it) with `SWIFT_OPTIMIZATION_LEVEL=-O`

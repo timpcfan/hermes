@@ -1,0 +1,397 @@
+{
+  "outside_cores_max": 1.0,
+  "regression": {
+    "cpu_pct": {
+      "share": 0.1,
+      "floor": 1.0
+    },
+    "over_budget_pct": {
+      "share": 0.1,
+      "floor": 1.0
+    },
+    "dropped_pct": {
+      "share": 0.1,
+      "floor": 1.0
+    },
+    "longest_ms": {
+      "share": 0.1,
+      "floor": 17.0
+    },
+    "cpu_ms_each": {
+      "share": 0.1,
+      "floor": 20.0
+    },
+    "long_steps": {
+      "share": 1.0,
+      "floor": 10
+    },
+    "instr_m": {
+      "share": 0.1,
+      "floor": 50
+    },
+    "instr_m_each": {
+      "share": 0.1,
+      "floor": 20
+    }
+  },
+  "platforms": {
+    "ios-simulator": {
+      "stream": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "stream_follow": {
+        "invariants": {
+          "turn.teleports": {
+            "equals": 0
+          },
+          "settled.from_end_pt": {
+            "max": 24
+          }
+        },
+        "regression": [
+          "turn.cpu_pct",
+          "turn.instr_m",
+          "turn.over_budget_pct"
+        ],
+        "report": [
+          "turn.cpu_pct",
+          "turn.instr_m",
+          "turn.over_budget_pct",
+          "turn.dropped_pct",
+          "turn.longest_ms",
+          "turn.wall_ms",
+          "settled.from_end_pt"
+        ]
+      },
+      "tools40": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "tools130": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "scroll": {
+        "invariants": {
+          "scroll.teleports": {
+            "equals": 0
+          },
+          "scroll.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "scroll.cpu_pct",
+          "scroll.instr_m",
+          "scroll.over_budget_pct",
+          "scroll.longest_ms",
+          "scroll.long_steps"
+        ],
+        "report": [
+          "scroll.cpu_pct",
+          "scroll.instr_m",
+          "scroll.over_budget_pct",
+          "scroll.dropped_pct",
+          "scroll.longest_ms",
+          "scroll.wall_ms",
+          "up.cpu_pct",
+          "down.cpu_pct",
+          "scroll.largest_step_pt",
+          "scroll.long_steps",
+          "scroll.largest_drift_pt"
+        ]
+      },
+      "open": {
+        "invariants": {},
+        "regression": [
+          "open.cpu_ms_each",
+          "open.instr_m_each",
+          "open.longest_ms"
+        ],
+        "report": [
+          "open.cpu_ms_each",
+          "open.instr_m_each",
+          "open.over_budget",
+          "open.missed",
+          "open.longest_ms"
+        ]
+      }
+    },
+    "mac": {
+      "stream": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "stream_follow": {
+        "invariants": {
+          "turn.teleports": {
+            "equals": 0
+          },
+          "settled.from_end_pt": {
+            "max": 24
+          }
+        },
+        "regression": [
+          "turn.cpu_pct",
+          "turn.instr_m",
+          "turn.over_budget_pct"
+        ],
+        "report": [
+          "turn.cpu_pct",
+          "turn.instr_m",
+          "turn.over_budget_pct",
+          "turn.dropped_pct",
+          "turn.longest_ms",
+          "turn.wall_ms",
+          "settled.from_end_pt"
+        ]
+      },
+      "tools40": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "tools130": {
+        "invariants": {
+          "stream.teleports": {
+            "equals": 0
+          },
+          "stream.largest_drift_pt": {
+            "max": 2
+          },
+          "settled.teleports": {
+            "equals": 0
+          },
+          "settled.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.longest_ms"
+        ],
+        "report": [
+          "stream.cpu_pct",
+          "stream.instr_m",
+          "stream.over_budget_pct",
+          "stream.dropped_pct",
+          "stream.longest_ms",
+          "stream.cpu_ms",
+          "stream.wall_ms",
+          "turn.cpu_pct",
+          "turn.longest_ms",
+          "stream.largest_drift_pt",
+          "settled.largest_drift_pt",
+          "settled.from_end_pt"
+        ]
+      },
+      "scroll": {
+        "invariants": {
+          "scroll.teleports": {
+            "equals": 0
+          },
+          "scroll.largest_drift_pt": {
+            "max": 2
+          }
+        },
+        "regression": [
+          "scroll.cpu_pct",
+          "scroll.instr_m",
+          "scroll.over_budget_pct",
+          "scroll.longest_ms",
+          "scroll.long_steps"
+        ],
+        "report": [
+          "scroll.cpu_pct",
+          "scroll.instr_m",
+          "scroll.over_budget_pct",
+          "scroll.dropped_pct",
+          "scroll.longest_ms",
+          "scroll.wall_ms",
+          "up.cpu_pct",
+          "down.cpu_pct",
+          "scroll.largest_step_pt",
+          "scroll.long_steps",
+          "scroll.largest_drift_pt"
+        ]
+      },
+      "open": {
+        "invariants": {},
+        "regression": [
+          "open.cpu_ms_each",
+          "open.instr_m_each",
+          "open.longest_ms"
+        ],
+        "report": [
+          "open.cpu_ms_each",
+          "open.instr_m_each",
+          "open.over_budget",
+          "open.missed",
+          "open.longest_ms"
+        ]
+      }
+    }
+  }
+}

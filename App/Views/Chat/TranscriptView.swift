@@ -246,6 +246,15 @@ struct TranscriptView: View {
                                         print(String(format: "SCROLLLOG row %@ %.1f", shown.key, Double(top)))
                                     }
                             }
+                            // With the scroll probe: the same tops, kept rather than printed, so
+                            // the frame log can read how what's shown moved (`ScrollProbe`).
+                            if ScrollProbe.isOn {
+                                Color.clear
+                                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: { top in
+                                        ScrollProbe.shared.rowMoved(shown.key, top: top)
+                                    }
+                                    .onDisappear { ScrollProbe.shared.rowGone(shown.key) }
+                            }
                             #endif
                             if shown.key == anchorKey {
                                 Color.clear
@@ -540,7 +549,7 @@ struct TranscriptView: View {
             }
             if !settled {
                 LoadTrace.mark(conversation.stableKey, "transcript settled, showing")
-                #if DEBUG && os(iOS)
+                #if DEBUG
                 FrameMonitor.shared.mark("chat showing")
                 #endif
                 withAnimation(.easeOut(duration: 0.15)) { settled = true }
@@ -1441,8 +1450,10 @@ struct TranscriptView: View {
         guard scroll == .turnPage, let entry else {
             return followSentMessage()
         }
-        #if DEBUG && os(iOS)
+        #if DEBUG
         FrameMonitor.shared.mark("send: landing begins")
+        // The end's page and the glide move the chat on purpose, a frame or two from now.
+        ScrollProbe.shared.movesByDesign(for: Self.landingDuration + 0.4)
         #endif
         // Sent from far back in the chat: the end's page first, and the glide starts from its end.
         let fromFarBack = lastShownKey != nil
@@ -1476,6 +1487,10 @@ struct TranscriptView: View {
     /// chat goes to its end and follows what comes. A turn held at the top before the setting was
     /// turned on lets go, and its blank room goes with it.
     private func followSentMessage() {
+        #if DEBUG
+        // Going to the end and easing after the reply move the chat on purpose.
+        ScrollProbe.shared.movesByDesign(for: 0.8)
+        #endif
         if keepsAtBottom {
             abandonGlide()
             edge.pinned = false
@@ -1535,8 +1550,9 @@ struct TranscriptView: View {
         NextFrame.run {
             guard edge.glide == glide else { return }
             guard anchorKey != nil, !isScrolledByHand else { return endGlide() }
-            #if DEBUG && os(iOS)
+            #if DEBUG
             FrameMonitor.shared.mark("send: glide starts")
+            ScrollProbe.shared.movesByDesign(for: Self.landingDuration + 0.1)
             #endif
             withAnimation(Self.landingMotion) { scrollToAnchor() }
             Task { @MainActor in
