@@ -283,6 +283,30 @@ and the load average. `instr_m` doesn't move with the clock, which is why it's g
 CPU time; a build that ran more instructions did more work. Close what else runs, and keep the Mac
 on power.
 
+The Mac streaming check adds an ablation driver, `Tools/mock-hermes/matrix/mac_ablate.py`, for the
+heavy user's shape the gate scenarios don't carry: a long rich chat (300 turns) with hundreds of
+chats beside it, a running background process chip, expanded steps and a large window, playing
+"tools 130 please". It reuses the same Mac/Mock/measure machinery and the same `FRAMESPAN`/
+`SCROLLSPAN` reading; it isn't a gate, it writes numbers per variant (`ablate.json`). One build
+runs every variant, interleaved so machine drift weighs alike:
+
+```sh
+# attribute cost by "does it still stutter without it": one suspect off at a time
+python3 -I Tools/mock-hermes/matrix/mac_ablate.py --app <Hermes Dev.app> --out <folder> \
+    --variants none,motion,timers,transitions,titles,chat,sidebar,composer --rounds 2
+# two suspects at once (a+b), or two real builds A/B on the same shape (no ablation flags)
+python3 -I Tools/mock-hermes/matrix/mac_ablate.py --app <A.app> --app-b <B.app> --out <folder> --rounds 2
+```
+
+`-HERMES_PERF_ABLATE` (Debug only, `PerfAblate` in `App/Design/Motion.swift`) turns off one suspect
+at a time: `motion` holds every decorative loop still, `timers` stops the periodic time ticks,
+`transitions` drops the step rows' fade-in, `titles` drops the header title's cross-fade, and
+`chat`/`sidebar`/`composer` blank that area. Release folds every switch to `false`. `noprobe` is a
+driver-side ablation (the scroll probe's per-row readers come off) that measures the instrument
+itself. On the Mac the step fade-in and the title cross-fade are already off in the build
+(`docs/chat.md` §4a): an always-active transition keeps the whole window re-measuring every frame,
+and dropping both took the heavy turn's instructions down 43%.
+
 ## Checks on main
 
 Every commit to `main` runs the checks in the studio's Buildkite pipeline `hermes-checks`, on its
