@@ -23,7 +23,7 @@ public enum SpokenWidgets {
     /// payload, or a stack child's newer revision. `typedAsText`: a delivery, where a payload the
     /// routine typed reads as its words (`ReplySplitter.typedWidget`).
     public static func words(of text: String, inlineWidgets: Bool, typedAsText: Bool = false, stored: (String) -> WidgetPayload?, locale: Locale = .current) -> Words {
-        guard text.contains("::widget{") || text.contains("```widget") || typedAsText else { return Words(text: text) }
+        guard text.contains("::widget{") || text.contains("```widget") || text.contains("::preview{") || typedAsText else { return Words(text: text) }
         var isPrivate = false
         let parts = ReplySplitter.split(text, inlineWidgets: inlineWidgets, typedAsText: typedAsText).compactMap { segment -> String? in
             let words: Words?
@@ -44,6 +44,12 @@ public enum SpokenWidgets {
                 words = ReplySplitter.typedWords(json).map { Words(text: $0, isPrivate: json["sensitivity"]?.stringValue != "normal") }
             case .unreadable:
                 words = nil
+            case .attachments(let files):
+                // Not split with attachments here; read as their notes if ever they are.
+                words = Words(text: files.map(\.note).joined(separator: "\n"))
+            case .preview(let preview):
+                // A page is read as its file's name, never its contents.
+                words = Words(text: preview.fileName)
             }
             if words?.isPrivate == true { isPrivate = true }
             return words?.text

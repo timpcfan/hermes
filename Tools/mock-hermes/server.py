@@ -74,6 +74,17 @@ def load_starve():
 STARVE = load_starve()
 
 
+def load_inspector():
+    """inspector.py, for the reply that sends files, one copy per process."""
+    module = sys.modules.get("mock_inspector_files")
+    if module is None:
+        spec = importlib.util.spec_from_file_location("mock_inspector_files", pathlib.Path(__file__).resolve().parent / "inspector.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules["mock_inspector_files"] = module
+    return module
+
+
 def load_image_turns():
     """image_turns.py, the user row Hermes stores for a turn with photos, one copy per process."""
     module = sys.modules.get("mock_image_turns")
@@ -213,6 +224,26 @@ def seed_long_chat(turns=60):
         add_message(sid, "assistant", f"Node {turn % 7} is healthy again. I restarted **svc-{turn % 5}**, cleared a stale lock and confirmed the health checks pass.\n\n- Disk: 41% used\n- Load: 0.{turn % 9}\n- Next: watch the backups tonight.", timestamp=t + 200)
         t += 3 * 3600
     SESSIONS[sid]["_last_read_at"] = NOW - 2 * 86400  # read two days ago: many replies since
+    seed_drawings_chat()
+
+
+def seed_drawings_chat(turns=60):
+    """With --long-chat, "Launch diagrams": a chat over a thousand lines long whose every reply draws
+    a Mermaid diagram and a formula (docs/chat.md §3b), for scrolling back through drawn blocks."""
+    sid = "long_drawings"
+    t = NOW - 30 * 86400
+    session_row(sid, "Launch diagrams", "cli", t, t + turns * 3600, "")
+    for turn in range(turns):
+        add_message(sid, "user", f"Step {turn + 1}: draw how stage {turn + 1} of the launch flows.", timestamp=t)
+        reply = (f"Stage {turn + 1} moves sign-ups through {3 + turn % 4} checks before the invite.\n\n"
+                 f"```mermaid\nflowchart LR\n  A[Visitor {turn + 1}] --> B{{Check {turn % 4 + 1}}}\n"
+                 f"  B -- pass --> C[Invite]\n  B -- retry --> D[Reminder]\n  D --> B\n  C --> E((Pro))\n```\n\n"
+                 f"The share that reaches Pro after $n$ reminders:\n\n"
+                 f"$$\nP_{{{turn + 1}}}(n) = 1 - \\prod_{{k=1}}^{{n}} \\left(1 - \\frac{{p}}{{k + {turn % 5}}}\\right)\n$$\n\n"
+                 f"- Visitors: {1200 + turn * 37}\n- Invites: {300 + turn * 11}\n- Pro: {40 + turn % 13}\n\n"
+                 f"Next I'll watch stage {turn + 2}.")
+        add_message(sid, "assistant", reply, timestamp=t + 30, finish_reason="stop")
+        t += 3600
 
 
 def seed_landing_chats(widgets):
@@ -393,7 +424,14 @@ def seed_routine_runs():
         }
 
 
+# The display kind a chat's next user row is stored with: `prompt.submit`'s `display_kind`, which
+# Hermes takes only as "hidden" (a live page's message, docs/chat.md §3c).
+TURN_KINDS = {}
+
+
 def add_message(sid, role, content, **extra):
+    if role == "user" and "display_kind" not in extra and (kind := TURN_KINDS.pop(sid, None)):
+        extra["display_kind"] = kind
     with LOCK:
         rows = MESSAGES.setdefault(sid, [])
         row = {
@@ -804,6 +842,17 @@ def agent_turn(run):
             heartbeat_turn(run)
         elif "aside" in lowered:
             aside_turn(run)
+        elif "attachments" in lowered:
+            # Files sent with `MEDIA:` lines (inspector.py `ATTACHMENTS`, docs/chat.md §3a). Over the
+            # gateway alone there's no Bot Mode to read them: each says so.
+            out, ok = stream_text(run, load_inspector().ATTACHMENTS)
+            add_message(sid, "assistant", out, finish_reason="stop")
+            run.output = out
+        elif (formats := load_inspector().formats_reply(lowered)) is not None:
+            # Round 3's formats (inspector.py `formats_reply`): drawings, and the rest.
+            out, ok = stream_text(run, formats)
+            add_message(sid, "assistant", out, finish_reason="stop")
+            run.output = out
         elif "approve" in lowered:
             narration = "I'll clean the build folder first. "
             stream_text(run, narration)
@@ -1656,7 +1705,8 @@ def install_widgets(gateway, enabled=True, version=None):
     widgets = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(widgets)
     widgets.ENABLED["on"] = enabled
-    widgets.PLUGIN["version"] = version or widgets.VERSION
+    widgets.PLUGIN["version"] = widgets.VERSION if version in (None, "repo") else version
+    widgets.PLUGIN["tolerant"] = version == "repo"
     widgets.install_gateway(gateway)
     return widgets
 
@@ -1667,8 +1717,9 @@ def main():
     parser.add_argument("--port", type=int, default=18642)
     parser.add_argument("--key", default="dev-key-0123456789abcdef")
     parser.add_argument("--no-widgets", action="store_true", help="a gateway without the hermes-app-widgets plugin")
-    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0"], default="1.6.0",
-                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client` (widgets.py)")
+    parser.add_argument("--widgets-version", choices=["1.6.0", "1.5.0", "repo"], default="1.6.0",
+                        help="the widgets plugin's version: 1.5.0 has no `/app-widgets client`; repo is this "
+                             "repository's, which knows `gateway-files` (widgets.py)")
     parser.add_argument("--starve", metavar="MIN-MAX",
                         help="a Mac too loaded to run Hermes, from launch: answers come in bursts every MIN-MAX seconds (starve.py)")
     parser.add_argument("--run-stream-ttl", type=float, default=300, metavar="SECONDS",

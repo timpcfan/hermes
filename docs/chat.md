@@ -459,7 +459,7 @@ that opens to them, and consecutive subagents share one row.
 | Source | Shown as | Component |
 |---|---|---|
 | Images in the reply's Markdown (`data:` URLs from image tools, or web URLs) | The image, up to 480 pt. A picture from anywhere but the gateway itself (its own host or its backend's) waits for a tap ("Show Image from …"), this device's network included: loading it would tell that server the chat was read, and let a reply send requests into the network. A picture that redirects to another server doesn't load (`RemotePicture`): a tap allows the host it names, not wherever that host sends it | `MarkdownImage` |
-| A `MEDIA:/path` line in the reply | "*Attachment on server: name*"; audio plays as a listen strip before the words ([voice.md](voice.md) §2) | |
+| A `MEDIA:/path` line in the reply | The file in the line's place: a picture or a video drawn in the reply, any other file as a card that opens or saves it (§3a). Audio plays as a listen strip before the words ([voice.md](voice.md) §2). Plain text (Copy, Listen, notifications, previews) reads "*Attachment on server: name*" | `imageResult`, `fileResult` (`ReplyAttachmentsView`, `ReplyFileCard`) |
 | `message.reaction` (`row_id`, `reactions`) | A pill under that message with the emoji Hermes sent | `reactionRow` |
 | Usage on `message.complete` or `run.completed` | Tokens, cost and context percent, under the reply when "Show usage under replies" is on, or after tapping the header or choosing Show Usage | `usageFooter` |
 | Context at 80% or more on the latest reply | "This chat is 84% full" with Compact (runs `/compress`) | `contextNotice` |
@@ -637,6 +637,7 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   next space, without the sentence's closing punctuation or a bracket it didn't open; `www.`
   opens over https). Not inside inline code or a link's own words. Another Bot's message in a
   Bot Chat (`BotMessageCard`) links its addresses the same way (`Text(linking:)`).
+- **A link alone in its paragraph** to a video, some music or a GitHub page shows as a card (§3d).
 - **Files on the gateway** a reply names open in the chat's Inspector, read-only: a link to a
   file (`[notes](/Users/me/notes.md)`, `~/notes.md`, a local `file:` URL) and inline code that is
   one whole path to a file (`/Users/me/.hermes/cache/scratch/prompt.md`, a `:42` line number
@@ -646,9 +647,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   the gateway's network wait for a tap. An image that names a picture file on the gateway (an
   absolute or `~/` path, or a local `file:` URL, ending in a picture's extension such as `.png`
   or `.jpg`) is read through the gateway with the chat's Bot profile, as the Inspector reads it,
-  downsampled to the 480 pt it can show at and kept in memory only. Without Bot Mode, or when the
-  gateway refuses it or the file is missing, it reads "Image unavailable". A relative path stays
-  "Image": a reply has no folder to read it from.
+  downsampled to the 480 pt it can show at and kept in memory only. A tap opens it full screen in
+  the media viewer ([widgets.md](widgets.md) §9.1), as a picture Hermes sends does (§3a). Without
+  Bot Mode, or when the gateway refuses it or the file is missing, it reads "Image unavailable". A
+  relative path stays "Image": a reply has no folder to read it from.
 - **Horizontal rule**: a hairline with 6 pt above and below.
 - **Wide tables and long code lines** scroll sideways inside their block; the page never scrolls
   sideways. Table cells are 60 to 320 pt wide. Only a table or code block wider than the reply
@@ -659,8 +661,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   ([widgets.md](widgets.md) §9). One part laid out at its own width once widened the whole reply,
   so its words ran off the screen. "widget wide" in the mock has one of everything
   ([development.md](development.md)).
-- **Raw HTML blocks** show as text in the code font. LaTeX and Mermaid are not rendered; in a
-  fenced block they show as code.
+- **Raw HTML blocks** show as text in the code font, except a lone `<svg>` (§3b).
+- **Diagrams, display math and SVG** are drawn as pictures (§3b): a ` ```mermaid ` fence, a
+  `$$…$$` or `\[ … \]` block and a ` ```svg ` fence or a lone `<svg>` paragraph. Inline `$…$` is
+  never math.
 - **Bots and gateway files** named in a reply draw as pills (`mentionInline`,
   [commands-and-references.md](commands-and-references.md) §3).
 - **Streaming**: finished paragraphs are parsed once and kept (`MarkdownDocument.Stream`), and the
@@ -726,6 +730,220 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   long press opens the message menu (§4).
 - **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
   webhook's or an automation's delivery is Markdown like a reply.
+
+## 3a. Files Hermes sends
+
+Hermes delivers a file by writing a line `MEDIA:<path>` in its reply (the `send_message` and
+`text_to_speech` tools, and agents that send what they made). The app draws each such file where
+its line is (`ReplyAttachment`, `ReplySplitter.split(attachments:)`).
+
+**Which lines are files.** The rules `AgentAudio.split` follows for audio ([voice.md](voice.md)
+§2): a line of its own, outside a code block, quotes, backticks and `*`/`_` around it stripped,
+in an assistant's message. The path must be absolute or in the home folder (`~/`) and end in a file
+name with an extension. A relative path, a folder, a bare or hidden name (`.env`), a `MEDIA:` in
+the middle of a sentence, inside a code block, in a person's message or in a tool's output stays as
+it was: words, never a file. Audio stays a listen strip before the words.
+
+**Plain text doesn't change.** The reply's text keeps the note it always had in the line's place
+("*Attachment on server: chart.png*"), and that's what Copy, Copy All, Share, Listen, voice replies
+in kind, notifications, the Live Activity, the chat list's and the Inbox's previews, search and
+quoting read (`TranscriptBuilder.cleanAssistantText`). Only the reply's body draws the file: the
+turn carries its files (`AssistantTurn.attachments`) and the body puts each where its note is,
+once, in order. A note with no file behind it (someone typed it) stays words.
+
+| File | In the reply | A tap |
+|---|---|---|
+| Picture (JPEG, PNG, GIF, HEIC, WebP, TIFF: `MediaFileType`) | Drawn up to 480 pt; pictures and videos on lines next to each other share a two-column grid (one column at the accessibility sizes) | Opens the media viewer on it ([widgets.md](widgets.md) §9.1), which pages through the reply's pictures and videos in order |
+| Video (MP4, MOV) | Its first frame, a play button and its length | Plays in the viewer, streamed |
+| Document: text, Markdown, CSV, JSON, YAML, code | A card: kind glyph, name, "Markdown · 1 KB", Open | The chat's Inspector, File tab ([inspector.md](inspector.md) §2) |
+| PDF, HTML page | The same card | The chat's Inspector, a Preview tab (`hermes-fs`, [inspector.md](inspector.md) §2.4): a page's relative pictures and styles load with it |
+| Word, Excel and PowerPoint, rich text, Pages, Numbers and Keynote; OpenDocument text on the Mac | The same card | Quick Look, below |
+| Anything else (zip, OpenDocument where Quick Look doesn't draw it…) | The same card with Save | Reads the file (up to 100 MB, held in memory) and asks where to save it: the save panel on the Mac, Files on iPhone and iPad |
+
+**Quick Look.** An Office file opens in the system's Quick Look, which needs it on disk. On the
+person's tap the file is read as for Save (below) and written to
+`<caches>/Quick Look/<key>/<file name>`, where `<caches>` is the app's own caches folder and
+`<key>` is the first 32 hex digits of a SHA-256 of the Bot profile and the gateway path
+(`QuickLookCopy`), on iPhone and iPad with complete file protection. There's one copy at a time:
+closing Quick Look deletes its folder, so does leaving the chat, and opening the next file first
+clears whatever a run that ended early left. A file Quick Look says it can't draw is offered to
+save instead. OpenDocument spreadsheets and presentations keep Save everywhere, OpenDocument text
+on iPhone and iPad: Quick Look doesn't draw them there.
+
+**Keeping a copy.** Every file the gateway shares can be kept on the device, whatever its tap
+does: a card's and a tile's context menu (long press, or right-click on the Mac) has **Save to
+Device…** and **Share…** on iPhone and iPad, **Save As…** on the Mac, and VoiceOver offers the
+same as actions. Save to Device… opens Files, Save As… the save panel, Share… the share sheet
+(Files, AirDrop, other apps). The tap stays as it was: Open, the viewer, or Save for a card that
+saves. The viewer's own Save and Share for a picture are unchanged ([widgets.md](widgets.md) §9.1).
+All of these, and the Preview tab's Share or Save As… ([inspector.md](inspector.md) §2.4), take the
+one path (`GatewayFileCopy`): on the person's tap only, the file is read whole through `GET
+/api/fs/download` with the chat's Bot profile (`downloadCopy`, a `HEAD` first) and held in memory,
+up to 100 MB (`ReplyAttachment.maxSaveBytes`); over that it says "It's 120 MB, too big to save
+here". The app writes nothing itself but Quick Look's copy: the share sheet gets the bytes with the file's name, and the
+file lands only where the person picks. A card says what went wrong on itself, in the words
+below; a tile says it in an alert, with Try Again when it couldn't load. A card or tile that
+can't be read (gone, private, Bot Mode off) has no menu.
+
+**Reads.** Nothing is read until the file is on screen, and all of it goes through the backend with
+the chat's Bot profile, like the Inspector: a picture whole through `GET /api/fs/download`
+(`downloadPicture`, a `HEAD` first; over `MediaViewing.maxBytes`, 50 MB, it's a card with Save and
+"too big to show here"), downsampled to 480 pt; a video's first frame and length through Range
+reads of `GET /api/files/stream` (`MediaStreamLoader`), never the whole file; a card's size from a
+`HEAD` of `/api/fs/download`, nothing else. Decoded pictures and posters are kept in memory for the
+chats on screen (`ReplyMediaCache`), never on disk. The app grants itself no access: what the
+gateway refuses stays refused.
+
+**States.** A picture or video that can't be shown becomes the file's card saying why, in the
+viewer's words ([widgets.md](widgets.md) §9.2), never a blank well: "Not on the gateway anymore"
+(404), "Hermes doesn't share this file" (403: `.env` files, credential stores, `pairing/`…),
+"Couldn't load this file" or "Couldn't play this video" with Try Again, and without Bot Mode
+"Turn on Bot Mode to open it" with Link Bot Mode… ([setup.md](setup.md) §4.1). In a grid the card
+keeps the tile's place. A document's card says the same when its `HEAD` is refused.
+
+**Streaming.** A last line still arriving that could become a `MEDIA:` line is held back until it
+ends or the turn does (`ReplyAttachment.holdingBackArrival`), so a half-written path never shows
+and a file is never asked for by half its name.
+
+**Cost.** The files are read from the message once, when the transcript is built or the live turn
+takes a word, never while drawing. A finished reply with files is split once and kept with its
+parsed Markdown (`MarkdownCache.segments`), and the Markdown between its files is parsed ahead of
+time like any reply's (`MarkdownCache.prewarm`). A reply without files takes the same path as
+before: one scan of its bytes.
+
+**The agent knows.** The app tells the widgets plugin it draws `gateway-files` and `office-files`
+([widgets.md](widgets.md) §11), so the model hears that a `MEDIA:` line shows here; diagrams,
+formulas, SVG, live pages and link cards (§3b–§3d) are told the same way.
+
+Check with the mock: "attachments" (two pictures, a video, a PDF, Markdown, an HTML page with a
+picture beside it, a zip, a 60 MB picture, one gone, one private, a code-block example) and
+"broken attachments" (only the ones that don't show), in a chat or a Bot Chat; over `server.py`
+alone, every file says Bot Mode isn't on. "office files" sends a docx, xlsx, pptx, rtf, odt,
+ods and odp. `-HERMES_OPEN_SENT_FILE <name>` opens that file 5 s after
+it shows, as a tap would ([development.md](development.md)).
+
+## 3b. Diagrams, formulas and SVG pictures
+
+A reply's Mermaid diagrams, display math and SVG pictures are drawn on the device, offline
+(`DrawnBlock`, `DrawnBlockView`, `DrawnBlockRenderer`).
+
+1. **What is drawn.** A fenced block whose language is `mermaid`, `math` or `svg`, in any case (a
+   `latex` fence is code someone wants to read). Display math is a block that starts with `$$` or
+   `\[` at the start of a line and ends with `$$` or `\]` before a blank line; it becomes a `math`
+   fence before parsing (`DisplayMath`), so it never reaches Markdown's escapes. Inline `$…$` is
+   never math (money is written that way: "$5 and $10"), a `$$` that doesn't close stays words,
+   and `\[` inside a sentence stays words. An SVG is drawn only when the fence or paragraph is one
+   whole `<svg>` element (an XML declaration or comments before it are fine); anything else stays
+   code or text. A source past Mermaid's own 50,000 characters, 8,000 for a formula or 512 KB for
+   an SVG stays code.
+2. **How.** One hidden web view, made the first time a reply needs it, runs Mermaid 11 and MathJax 3
+   from the app's resources (`App/Resources/RenderKit`, licences in `THIRD_PARTY_NOTICES.md`).
+   Its page loads nothing: a policy that allows only `data:` images, every navigation cancelled and
+   a data store that keeps nothing. Mermaid runs at its strict security level with HTML labels
+   off. Every drawing ends as SVG markup that is decoded as an image before it is painted, so no
+   script in it runs and nothing it points to (an `<image href>`, a font, a link) loads. The
+   picture comes back as a PNG at the screen's scale, at most 4096 pixels a side. Nothing leaves
+   the device.
+3. **Look.** Drawn at the reply's type size (Dynamic Type on iPhone and iPad, up to 34 pt) in the
+   chat's colours for light, dark and Increase Contrast, never wider than the reply: a diagram sits
+   on the code block's surface, a formula is centred, an SVG keeps its own colours on a white
+   card, as an image file would. It is never shown larger than drawn, so it never blurs.
+4. **Kept.** A drawing is kept in memory by its source, colours, type size and scale, up to about
+   64 MB, never per frame or per width: scrolling back past a reply draws nothing again, and
+   changing the appearance draws once more. A failure is kept too. The web view goes after 30 s
+   with nothing to draw and on a memory warning, and is made again for the next drawing.
+5. **Streaming.** While a reply writes, a diagram or SVG at its end shows as its source until the
+   fence closes and the reply moves past it, then it is drawn; a formula is drawn once its block
+   closes (`markdownOpenTail`).
+6. **Tap.** A tap opens it larger in a sheet, re-drawn at three times the scale: pinch, double tap
+   or ⌘+ to zoom, a Source tab with the code, and Copy Source. The context menu has Open and Copy
+   Source.
+7. **Can't be drawn.** A diagram Mermaid can't read, a formula MathJax rejects or markup that isn't
+   an SVG shows its code with "This diagram couldn't be drawn" (formula, picture) under it.
+8. **Accessibility.** VoiceOver reads its kind ("Flowchart", "Sequence diagram", "Formula",
+   "Picture") and, for a diagram or formula, its source; the hint says a tap opens it larger, and a
+   Copy Source action is there. Listen says "I put a diagram in the chat." (formula, picture).
+   Copying a reply copies the source as written.
+
+"drawings" in the mock sends one of each, with prices in dollars, an SVG with a script and a
+remote image that must do nothing, and a diagram Mermaid can't read
+([development.md](development.md)).
+
+## 3c. Pages a reply shows live
+
+A line of its own `::preview{file="exports/board.html" height="360"}` in a reply is a page Hermes
+made for the chat, as Hermes Desktop shows it (`PreviewDirective`, `PageIntent`, `PageFrame` in
+HermesKit; `PagePreviewCard` in the app). Inside code it stays code.
+
+1. **The card.** The page's title (read once from its `<title>`, kept for the run), its file name
+   and Open. A file that isn't a page (`.html`, `.htm`, `.xhtml`) shows its name and folder and
+   opens in the Inspector. While the reply writes, the card waits ("Opens when the reply is done")
+   and nothing is read. A relative path is read against the chat's folder; a path with a `..` step
+   is never read ("This page's file can't be found"). Without Bot Mode the card says "Turn on Bot
+   Mode to open it". The context menu has Open or Close, Open in Preview Tab and Copy Path.
+2. **Live in the newest reply.** Open shows the page in the reply, at `height` (120 to 1200 pt,
+   280 when not given) until it measures itself, then as tall as it is, at most 960 pt wide. Only
+   the replies since the person's last message open live: one sent by a page itself doesn't count,
+   so the page stays open while Hermes answers it. An older reply's Open shows the page in the
+   Inspector's Preview tab. One page is live at a time in the app; opening another closes it, and
+   a message from the person closes it.
+3. **Sandbox.** The file is read through the gateway and loaded from memory at an origin of its own
+   that never resolves (`https://page-<random>.hermes.invalid/`), with a data store that keeps
+   nothing (no cookies, storage or cache shared with anything), Lockdown Mode (no WebRTC calls), no
+   camera or microphone, and a policy sent as the response's header: `default-src 'none'`, inline
+   scripts and styles, `data:` and `blob:` images, media and fonts, no frames and no forms. Every
+   navigation but its own load is cancelled; a link the person taps opens in the browser through
+   `WebLink`. Nothing reaches the network. The page gets the app's colours as Hermes Desktop's
+   variables (`--foreground`, `--muted-foreground`, `--accent`, `--border`, `--card`), its colour
+   scheme, no margin and a clear background, before its own styles.
+4. **Sending.** `hermes.send("text")` and a click on any `[data-hermes-send="text"]` send a sentence
+   as the person's message, `display_kind: "hidden"` on `prompt.submit`, so it doesn't show in the
+   chat; the reply does. The first time, the app asks "Let this page send messages?" with the exact
+   sentence (`VisibleText`); the answer lasts while the page is open. The promise answers as on the
+   desktop: `{ok: true}`, or `invalid`, `too_long` (over 500 characters, with `maxLength`),
+   `throttled` (one a second, with `retryAfterMs`), `undelivered` (Hermes is busy, the chat can't
+   send or the page closed) and `declined` (with a `reason`) when the person said no.
+5. **Off screen.** A page scrolled out of sight lets its web view go and loads again when it's back,
+   so a long chat holds at most one web page and only while it's seen; what the page held in its
+   own variables starts over.
+6. **Accessibility.** The card reads "Page, its title, its file" with a hint for what Open does; the
+   page is a web area VoiceOver reads inside. Listen reads the file's name.
+
+"live page" in the mock answers with a page and a Markdown file: the page's Free and Pro buttons
+send with `data-hermes-send`, Team with `hermes.send` and shows the answer, and it says whether a
+request, a call or a frame got out ([development.md](development.md)).
+
+## 3d. Link cards
+
+A paragraph that is only a link to a page the app knows by its address shows as a card
+(`LinkEmbed`, `LinkEmbedCard`): a glyph, a title, where it goes, and Open, which opens it in the
+browser through the reply's link gate (`WebLink`).
+
+| Service | Addresses |
+|---|---|
+| YouTube | Videos (`watch`, `youtu.be`, `embed`), Shorts, live videos, playlists |
+| Vimeo | Videos, with a private video's key or not |
+| Spotify | Tracks, albums, playlists, artists, episodes, shows |
+| SoundCloud | Tracks and sets |
+| GitHub | Repositories, issues, pull requests, discussions |
+| Bilibili | Videos (`BV…`, `av…`) |
+
+- **Nothing is fetched.** The card is the address and the reply's words, so a reply that is only
+  read tells no service anything: no page, picture, title or player is loaded. The title is the
+  link's words, else what the address names (`owner/repository`, `artist/track`), else "YouTube
+  video". The second line always comes from the address, so a link's words can't pass one page
+  off as another. A short link that hides where it goes (`b23.tv`) stays a link.
+- **Only the service's own address**: https, its own host matched whole, no user name or port, and
+  parts in the plain characters ids are written with. Anything else stays the link it was.
+- **Only alone.** A link in a sentence, a heading, a list or a quote stays words. While a reply
+  streams, the paragraph still arriving stays words and becomes a card when the next one starts or
+  the reply ends.
+- **Copying, Listen, search and previews** read the link as before: on the Mac a card is selected
+  whole and copies as the link's words.
+- **VoiceOver** reads the card as one link: its title, then where it goes. At the accessibility
+  sizes Open goes under the words.
+
+Check with the mock: "video links".
 
 ## 4. Interaction
 
@@ -1181,9 +1399,9 @@ once when the chat's stored rows show the other turn ending.
 
 Not built yet:
 
-- Image and file result cards (`imageResult` with Save and Share, `fileResult` with Quick Look),
-  and screenshot thumbnails inside tool steps (`screenshotResult`). Images reach the chat only
-  through the reply's Markdown; files on the gateway show as an "Attachment on server" line.
+- Screenshot thumbnails inside tool steps (`screenshotResult`). A `MEDIA:` line in a step's narration (the steps
+  opened) or in a group chat's messages shows as it did before: only a chat's and a Bot Chat's
+  replies draw files.
 - Toasts and sticky banners for `notification.show` and `notification.clear`.
 - "Preparing {tool}…" from `tool.generating`, and live usage from `session.usage`.
 - Goal, loop and heartbeat status updates: the goal bar shows only the goal set from this app

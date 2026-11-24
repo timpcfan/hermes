@@ -38,6 +38,7 @@ struct MarkdownView: View, Equatable {
             .foregroundStyle(tone == .primary ? Theme.primaryText : Theme.secondaryText)
             .modifier(SelectableText(isOn: selectsText))
             .environment(\.markdownCaches, caches)
+            .environment(\.markdownOpenTail, !caches)
             // A second lock behind the renderer's: whatever a reply links to, only the web and
             // mail open from it, and the gateway files the renderer found open in the Inspector.
             .environment(\.openURL, OpenURLAction { [references] url in
@@ -141,6 +142,7 @@ struct MarkdownBlocksView: View {
     /// The sentence being read aloud, by its top-level block.
     var highlight: SpokenSentence?
     @Environment(\.voiceOverLandingEnds) private var ends
+    @Environment(\.markdownOpenTail) private var openTail
 
     var body: some View {
         VStack(alignment: .leading, spacing: MarkdownSpacing.block) {
@@ -151,6 +153,8 @@ struct MarkdownBlocksView: View {
                     .modifier(SpokenTone(isDimmed: highlight.map { $0.block != index } ?? false))
                     // Only the last block can hold the row's last element (`docs/chat.md` §1).
                     .environment(\.voiceOverLandingEnds, ends && index == blocks.count - 1)
+                    // Only the last block of a reply still arriving can hold an open fence.
+                    .environment(\.markdownOpenTail, openTail && index == blocks.count - 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -215,20 +219,16 @@ struct MarkdownBlockView: View, Equatable {
     var body: some View {
         switch block {
         case .paragraph(let inlines):
-            if let source = Self.standaloneImage(inlines) {
+            if let drawn = DrawnBlock(block) {
+                // An `<svg>` written on one line of its own (`docs/chat.md` §3b).
+                DrawnBlockView(block: drawn, language: "svg")
+                    .modifier(StreamingAppear())
+            } else if let source = Self.standaloneImage(inlines) {
                 MarkdownImage(source: source)
-            } else if InlineRenderer.mayName(inlines) {
-                // Only a paragraph that can name a Bot or a file reads what the chat can name:
-                // the others don't redraw when that changes, as the roster and the commands
-                // arrive while a chat opens (every reply's every block did).
-                NamingParagraph(inlines: inlines, sentence: sentence)
-                    // One element either way: its text, or its pills read as one line.
-                    .modifier(VoiceOverLandingTarget())
+            } else if let embed = LinkEmbed(block) {
+                LinkEmbedParagraph(embed: embed) { words(inlines) }
             } else {
-                Self.paragraph(InlineRenderer.attributed(inlines), font: bodyFont, sentence: sentence)
-                    // Where VoiceOver lands when reading back brings in a reply that ends here
-                    // (`docs/chat.md` §1).
-                    .modifier(VoiceOverLandingTarget())
+                words(inlines)
             }
 
         case .heading(let level, let inlines):
@@ -242,8 +242,14 @@ struct MarkdownBlockView: View, Equatable {
                 .modifier(VoiceOverLandingTarget())
 
         case .codeBlock(let language, let code):
-            FencedCode(language: language, code: code)
-                .modifier(StreamingAppear())
+            if let drawn = DrawnBlock(block) {
+                // Mermaid, math and SVG fences are drawn (`docs/chat.md` §3b).
+                DrawnBlockView(block: drawn, language: language)
+                    .modifier(StreamingAppear())
+            } else {
+                FencedCode(language: language, code: code)
+                    .modifier(StreamingAppear())
+            }
 
         case .blockQuote(let blocks):
             HStack(alignment: .top, spacing: MarkdownSpacing.quoteGap) {
@@ -253,6 +259,7 @@ struct MarkdownBlockView: View, Equatable {
                     .modifier(StreamingAppear())
                 AnyView(MarkdownBlocksView(blocks: blocks))
                     .foregroundStyle(Theme.secondaryText)
+                    .environment(\.markdownLinkCards, false)
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -271,9 +278,32 @@ struct MarkdownBlockView: View, Equatable {
                 .modifier(StreamingAppear())
 
         case .html(let raw):
-            Text(raw)
-                .font(Theme.Typography.code)
-                .foregroundStyle(Theme.secondaryText)
+            if let drawn = DrawnBlock(block) {
+                DrawnBlockView(block: drawn, language: "svg")
+                    .modifier(StreamingAppear())
+            } else {
+                Text(raw)
+                    .font(Theme.Typography.code)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+    }
+
+    /// A paragraph's words.
+    @ViewBuilder
+    private func words(_ inlines: [MarkdownInline]) -> some View {
+        if InlineRenderer.mayName(inlines) {
+            // Only a paragraph that can name a Bot or a file reads what the chat can name:
+            // the others don't redraw when that changes, as the roster and the commands
+            // arrive while a chat opens (every reply's every block did).
+            NamingParagraph(inlines: inlines, sentence: sentence)
+                // One element either way: its text, or its pills read as one line.
+                .modifier(VoiceOverLandingTarget())
+        } else {
+            Self.paragraph(InlineRenderer.attributed(inlines), font: bodyFont, sentence: sentence)
+                // Where VoiceOver lands when reading back brings in a reply that ends here
+                // (`docs/chat.md` §1).
+                .modifier(VoiceOverLandingTarget())
         }
     }
 
@@ -431,6 +461,7 @@ private struct MarkdownListView: View {
             }
         }
         .padding(.leading, MarkdownSpacing.listLeading)
+        .environment(\.markdownLinkCards, false)
     }
 
     @ViewBuilder
@@ -641,6 +672,9 @@ private struct MarkdownImage: View {
     let source: String
 
     @Environment(\.gatewayHosts) private var gatewayHosts
+    @Environment(\.references) private var references
+    @Environment(\.mediaViewer) private var viewer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var decoded: PlatformImage?
     @State private var failed = false
     /// The person asked for a picture from somewhere other than the gateway (`WebLink.isOnGateway`).
@@ -678,12 +712,28 @@ private struct MarkdownImage: View {
                     }
                 }
             } else if let path = gatewayPicture {
-                GatewayFileImage(source: .path(path), fits: CGSize(width: 480, height: 480), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
+                let picture = GatewayFileImage(source: .path(path), fits: CGSize(width: 480, height: 480), transaction: Transaction(animation: .smooth(duration: 0.3))) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFit().transition(.opacity)
                     case .failure: Label("Image unavailable", systemImage: "photo").foregroundStyle(Theme.tertiaryText)
                     case .empty: Theme.surface.frame(height: 160)
                     }
+                }
+                // A tap opens it full screen, as a picture Hermes sent does (`docs/chat.md` §3).
+                if let viewer, let file = ReplyAttachment(path: path), file.kind == .picture {
+                    Button {
+                        let request = MediaViewerRequest(files: [file], start: 0, references: references, gatewayHosts: gatewayHosts,
+                                                         transitionID: "markdown-\(path)")
+                        viewer.open(request, reducesMotion: reduceMotion)
+                    } label: {
+                        picture
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(file.fileName)
+                    .accessibilityAddTraits(.isImage)
+                    .accessibilityHint(String(localized: "Opens full screen"))
+                } else {
+                    picture
                 }
             } else {
                 Label("Image", systemImage: "photo").foregroundStyle(Theme.tertiaryText)

@@ -671,6 +671,8 @@ struct MainView: View {
             .modifier(BotSheets(workspace: workspace))
             // A media card's pictures and videos open full screen over the whole window.
             .mediaViewerHost()
+            // A reply's diagrams and formulas open larger from here, one sheet for every chat.
+            .drawnBlockHost()
             #if os(macOS)
             // ⌘K: the search palette over the window; a click outside closes it.
             .overlay(alignment: .top) {

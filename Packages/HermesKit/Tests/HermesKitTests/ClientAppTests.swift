@@ -119,4 +119,82 @@ struct ClientAppTests {
         announcements.record(.announced, profile: "ops")
         #expect(announcements.shouldAnnounce(profile: "ops"))
     }
+
+    // MARK: What the app draws (`gateway-files`) and an older plugin
+
+    private static let drawsFiles = ClientApp(version: "1.1", build: "2611230900", device: .mac, osVersion: "27.2",
+                                          renders: ClientApp.alwaysRenders + [.widgets])
+
+    /// A plugin as 1.6.0 checks `client.renders` (`core.py` `_client_args`): any value it doesn't
+    /// know refuses the whole client.
+    private final class Sent: Sendable {
+        let renders = Mutex<[[String]]>([])
+    }
+
+    private static func plugin160(_ sent: Sent) -> AppWidgetsClient {
+        AppWidgetsClient { _, params in
+            let arg = params["arg"]?.stringValue ?? ""
+            let arguments = JSONValue.parse(Data(arg.dropFirst("client ".count).utf8))
+            let renders = arguments?["client"]?["renders"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            sent.renders.withLock { $0.append(renders) }
+            let known: Set = ["widgets", "gateway-file-images", "markdown", "code", "tables"]
+            if !renders.allSatisfy(known.contains) {
+                return ["type": "plugin", "output": #"{"ok":false,"error":"client.renders must list distinct values from widgets, gateway-file-images, markdown, code, tables"}"#]
+            }
+            return ["type": "plugin", "output": #"{"ok":true,"pending":1}"#]
+        }
+    }
+
+    @Test func theAppSaysItDrawsGatewayFiles() {
+        #expect(Self.drawsFiles.json["renders"]?.arrayValue?.compactMap(\.stringValue)
+                == ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+                    "diagrams", "math", "svg", "live-pages", "office-files", "link-cards"])
+        #expect(Self.drawsFiles.withRendersKnownSince160.renders == [.widgets, .gatewayFileImages, .markdown, .code, .tables])
+    }
+
+    /// Every value fits what a tolerant plugin keeps (`RENDER_VALUE`, at most 16 in its `core.py`), so
+    /// a newer plugin never refuses the client for one of them, and the app names everything it draws.
+    @Test func everyRenderValueFitsThePluginsCheck() throws {
+        let pattern = try Regex("^[a-z][a-z0-9-]{0,31}$")
+        #expect(ClientApp.Render.allCases.count <= 16)
+        for render in ClientApp.Render.allCases {
+            #expect(render.rawValue.wholeMatch(of: pattern) != nil, "\(render.rawValue)")
+        }
+        #expect(Set(ClientApp.alwaysRenders + [.widgets]) == Set(ClientApp.Render.allCases))
+    }
+
+    @Test func aPluginThatRefusesTheNewValueStillGetsTheClient() async throws {
+        let sent = Sent()
+        let older = try await Self.plugin160(sent).announceClientKnownRenders(
+            runtimeID: "rt", storedID: "st", client: Self.drawsFiles, textHash: ClientApp.textHash("hi"))
+        #expect(older)
+        #expect(sent.renders.withLock { $0 } == [
+            ["widgets", "gateway-file-images", "gateway-files", "markdown", "code", "tables",
+             "diagrams", "math", "svg", "live-pages", "office-files", "link-cards"],
+            ["widgets", "gateway-file-images", "markdown", "code", "tables"],
+        ])
+        // Remembered for that profile, until the plugin may have changed.
+        var announcements = ClientAnnouncements()
+        announcements.recordOlderRenders(profile: "ops")
+        #expect(announcements.client(Self.drawsFiles, profile: "ops").renders == Self.drawsFiles.withRendersKnownSince160.renders)
+        #expect(announcements.client(Self.drawsFiles, profile: nil).renders == Self.drawsFiles.renders)
+        announcements.forgetUnsupported()
+        #expect(announcements.client(Self.drawsFiles, profile: "ops").renders == Self.drawsFiles.renders)
+    }
+
+    @Test func aPluginThatKnowsTheValueIsToldOnce() async throws {
+        let sent = Sent()
+        let widgets = AppWidgetsClient { _, params in
+            sent.renders.withLock { $0.append([params["arg"]?.stringValue ?? ""]) }
+            return ["type": "plugin", "output": #"{"ok":true,"pending":1}"#]
+        }
+        let older = try await widgets.announceClientKnownRenders(runtimeID: "rt", storedID: "st", client: Self.drawsFiles, textHash: ClientApp.textHash("hi"))
+        #expect(!older)
+        #expect(sent.renders.withLock { $0.count } == 1)
+        // Other refusals aren't retried.
+        let refusing = AppWidgetsClient { _, _ in ["type": "plugin", "output": #"{"ok":false,"error":"turn must be {\"text_sha256\": ...}"}"#] }
+        await #expect(throws: AppWidgetsClient.Failure.self) {
+            try await refusing.announceClientKnownRenders(runtimeID: "rt", storedID: "st", client: Self.drawsFiles, textHash: "x")
+        }
+    }
 }

@@ -115,9 +115,9 @@ follows its behaviour where this doc is silent.
 
 | Tab | Opens from | Data |
 |---|---|---|
-| **Preview** (web page, localhost, gateway file: HTML, PDF, image) | `preview.open {url, label}` from Hermes; a page card in the reply (Hermes's `desktop_preview` open); Open Address… (⌘L) and the URL bar | The app's own `WKWebView` (`PreviewController`). Gateway files load through the `hermes-fs` scheme from `GET /api/fs/download` (§2.4). Links in replies open in the browser, not here |
+| **Preview** (web page, localhost, gateway file: HTML, PDF, image) | `preview.open {url, label}` from Hermes; a page card in the reply (Hermes's `desktop_preview` open); Open Address… (⌘L) and the URL bar; a PDF from anywhere a File tab opens, and a PDF or HTML page a reply names or sends (§2.4) | The app's own `WKWebView` (`PreviewController`). Gateway files load through the `hermes-fs` scheme from `GET /api/fs/download` (§2.4), and the URL bar's Share (Save As… on the Mac) keeps a copy of one (§2.4). Links in replies open in the browser, not here |
 | **Artifact** (HTML, SVG, code) | `artifactCard` in the reply | Found in the reply by the app (§4). Rendered offline in a sandboxed web view; Allow Network is a toggle per artifact |
-| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine. A picture or video file, and Open on a media card ([widgets.md](widgets.md) §9), open as media instead: `GET /api/fs/download` for a picture, Range reads of `GET /api/files/stream` for a video (§2.8) |
+| **File** | File pills (`fileRefChip`), Open on a diff card, the Files tree, Open File on a change, a file a reply names (a link to it, or a whole path in inline code: `GatewayFileLink`) or sends (a `MEDIA:` line's card, [chat.md](chat.md) §3a) | `GET /api/fs/read-text?path&profile` (`text`, `language`, `binary`, `truncated` over 512 KB). Save is `POST /api/fs/write-text {path, content}`, after reading the file again: if it changed on the gateway since it was opened, "Hermes changed this file" offers Reload or Keep Mine. The header's Share (Save As… on the Mac), beside Save, keeps a copy on this device instead: the share sheet, which has Save to Files, or the save panel, read with `GET /api/fs/download` as a reply's file card does ([chat.md](chat.md) §3a); it never writes to the gateway. A picture or video file, and Open on a media card ([widgets.md](widgets.md) §9), open as media instead: `GET /api/fs/download` for a picture, Range reads of `GET /api/files/stream` for a video (§2.8) |
 | **Files** | + menu | `GET /api/fs/list?path&profile`, folders loaded as they open; the app also hides `node_modules`, `.git` and `.DS_Store`. Git letters from `GET /api/fs/git-root` and `GET /api/git/status` |
 | **Changes** | Review on the latest file-changing turn's `turnCheckpoint` (iPad and Mac; elsewhere Review is its own sheet, [checkpoints.md](checkpoints.md)), Show in Changes on a diff card, + menu, `pane.reveal review` | `GET /api/git/review/list?path&scope&base` with scope `lastTurn` (This Turn), `branch` or `uncommitted`; `GET /api/git/review/diff?path&file&scope&base&staged`; `POST /api/git/review/stage` / `unstage {path, file}`; `commit {path, message, push}`; `create-pr {path}`. `GET /api/git/review/ship-info` finds the branch's open pull request; `GET /api/git/gh-auth` says whether Create Pull Request can work (§2.5) |
 | **Changed Files** | A turn's Changes row in the chat, on the Mac and iPad landscape (iPhone and iPad portrait open the Changes sheet instead, [chat.md](chat.md) §2), + menu (the latest turn's) | None: the turn's own edits (`TurnChanges`), so it works without Bot Mode (§2.7) |
@@ -132,7 +132,11 @@ the chat's working folder: the live session's `cwd`, else its project's folder, 
 default folder. A Bot's files are read through its profile (`?profile=`).
 
 A file a reply names opens only here, in that chat's File tab, read through the gateway: never
-through the system or another app, since the reply may quote a page or email Hermes read. The
+through the system or another app, since the reply may quote a page or email Hermes read. A PDF
+or an HTML page a reply names or sends opens in a Preview tab instead (`InspectorModel.openSentFile`,
+`GatewayFileOpening`), where a page's relative files load too (§2.4); a PDF opened from anywhere
+else (the Files tree, a pill) does as well, since the File tab could only say it isn't text. An
+HTML file from the tree, a pill or a widget's link still opens as its source. The
 gateway refuses `.env` files, credential stores (`auth.json`, `config.yaml`, `credentials`…) and
 anything under `mcp-tokens/` or `pairing/` (`hermes_cli/web_routers/files.py`), and the tab says
 so.
@@ -201,7 +205,8 @@ and Changes.
 
 ### 2.4 Gateway files in the Preview
 
-A path (`/…`, `~/…` or `file://…`) opens as `hermes-fs://gateway/<path>` (`GatewayFileScheme`). The
+A path (`/…`, `~/…` or `file://…`) opens as `hermes-fs://gateway/<path>` (`GatewayFileScheme`):
+typed in the URL bar, from `preview.open`, or a PDF or page a reply names or sends (§2). The
 app's scheme handler loads each request through the gateway (below), so an HTML file's relative
 images, scripts and styles resolve too; PDFs and images show as they would in a browser.
 
@@ -215,6 +220,20 @@ A link in the folder (`keys -> ../../.ssh`) therefore fails like any other path 
 file up to 512 KB is served from that answer; anything bigger or binary is then downloaded from
 the resolved path. A file at the top of the disk (`/index.html`) doesn't open: its folder would be
 the whole disk.
+
+**Keeping a copy.** While the tab shows a gateway file, the URL bar's last button is Share
+(`square.and.arrow.up`) on iPhone and iPad and Save As… (`square.and.arrow.down`) on the Mac, in
+the place of Open in Browser, which can't open a `hermes-fs` page. A web page or a dev server keeps
+Open in Browser and has no Share. The file is the page that last finished loading
+(`PreviewTarget.savableFile(shown:)`): a page the opened file linked on to is saved as itself, a
+page that linked out to the web has Open in Browser instead, and a navigation that failed (a file
+the tab may not read) never becomes what's saved. The button waits until the page has loaded.
+Share opens the share sheet (Save to Files, AirDrop, other apps); Save As… opens the save panel.
+The file is read the way a reply's file cards read one ([chat.md](chat.md) §3a, `GatewayFileCopy`):
+on the tap, whole through `GET /api/fs/download` with the chat's Bot profile, up to 100 MB, held in
+memory and written only where the person picks. What went wrong is an alert in the cards' words:
+"Not on the gateway anymore", "Hermes doesn't share this file", "Couldn't load this file" (with
+Try Again), "It's 120 MB, too big to save here", or without Bot Mode "Turn on Bot Mode to open it".
 
 ### 2.5 Shipping from Changes
 
@@ -293,7 +312,8 @@ A picture (JPEG, PNG, GIF, HEIC, WebP, TIFF) or a video (MP4, MOV) opens in its 
 (`inspectorPicture`, `inspectorVideo`), never as "This file isn't text". It opens from anywhere a
 File tab does, and from a media card's Open action (`references.openWidgetFile`).
 
-- The path on top, as for any file; the picture fitted in the middle with rounded corners, or
+- The path on top, as for any file, with the same Share (Save As… on the Mac) for a copy on this
+  device; the picture fitted in the middle with rounded corners, or
   the video's first frame with a play button and its length in a corner; a footer that says
   what it is once it has answered: "JPEG · 4,032 × 3,024 · 3.1 MB", "MPEG-4 video · 1,280 × 720
   · 0:12 · 2.4 MB".
@@ -402,7 +422,8 @@ rebinding) isn't caught.
 - The driving bar updates frequently and announces each new step.
 - Code and terminal text support text selection; code follows Dynamic Type on iPhone and iPad.
 - The Screen view reads "Hermes's screen, live", and Take Control / Hand Back is its own button.
-- The URL bar reads as one "Address" button until it's being edited.
+- The URL bar reads as one "Address" button until it's being edited. Its Share reads "Share,
+  report.pdf" (on the Mac "Save As…, report.pdf"), hint "Saves or sends a copy of the file".
 - A picture in the File tab reads as its file name, an image; a video's player reads as its file
   name with the system player's own controls. The footer reads as text.
 - The pill reads "Inspector, localhost:5173, Hermes is using this, 2 more tabs", hint "Opens the
@@ -421,6 +442,8 @@ rebinding) isn't caught.
 - A page on this device's network asks before loading; a typed address doesn't.
 - A gateway HTML file loads its relative assets, and its script can't read a hidden folder or a
   sibling project.
+- A PDF or page a reply sends ("attachments") shows Share in the URL bar on iPhone (the share sheet
+  names the file) and Save As… on the Mac (the save panel); a web page shows Open in Browser instead.
 - An HTML artifact in a reply shows a card; opening it renders it with no network; a later version
   adds to the stepper.
 - Editing and saving a file writes it, and a change made on the gateway meanwhile is caught.

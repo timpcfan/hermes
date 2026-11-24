@@ -30,6 +30,24 @@ Scripted chat turns (on top of chats.py) by message content:
                           file, which open in the Inspector's File tab (`GatewayFileLink`)
   "rewrite"            -> writes a brief, reads it back and writes it again with three lines
                           changed: one card folded, the second write's change opened
+  "attachments"        -> sends files the way Hermes does, a `MEDIA:<path>` line each
+                          (`ATTACHMENTS`, docs/chat.md §3a): two pictures, a video, a PDF, Markdown
+                          notes, an HTML page with a relative picture, a zip, a 60 MB picture, one
+                          that's gone (404) and one Hermes keeps private (403); a line in a code
+                          block stays code. server.py answers the same words without Bot Mode.
+  "broken attachments" -> only the ones that don't show: the 60 MB picture, a picture and a PDF
+                          that are gone, the private one and a ".mp4" that isn't a video. Both
+                          in a Bot Chat too.
+  "drawings"           -> a Mermaid flowchart, `$$` and `\[` display math, an SVG fence (with a
+                          script and a remote picture that never run or load) and an SVG in the
+                          prose, then a diagram Mermaid can't read (`DRAWINGS`, docs/chat.md §3b).
+                          server.py and a Bot Chat answer the same.
+  "live page"          -> a `::preview` page whose buttons send hidden messages, and a Markdown file
+                          (docs/chat.md §3c); "Plan picked on the page: …" is answered
+  "office files"       -> a docx, xlsx, pptx and rtf made here, which open in Quick Look, and an odt, ods
+                          and odp, which save where it can't draw them (docs/chat.md §3a)
+  "video links"        -> links to YouTube, Vimeo, Spotify, SoundCloud, GitHub and Bilibili that show
+                          as cards, and links that stay words (docs/chat.md §3d)
 
 Mock-only:
   POST /api/mock/inspector/screen {action: evict|stop|start}   4000 control taken, 4001 desktop gone
@@ -211,9 +229,31 @@ def install(backend_globals, gateway_module, chats_module, projects_module, dev_
             return run_file_paths_turn(sid, text)
         if "rewrite" in lower:
             return run_rewrite_turn(sid, text)
+        if "attachments" in lower:
+            return run_attachments_turn(sid, text, ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS)
+        if (reply := formats_reply(lower)) is not None:
+            return run_attachments_turn(sid, text, reply)
         return original(sid, text)
 
     C.run_chat_turn = run_chat_turn
+    # A Bot Chat sends files the same way.
+    original_bot = B["run_turn"]
+
+    def run_bot_turn(sid, text):
+        lower = text.lower()
+        answer = formats_reply(lower)
+        if "attachments" in lower:
+            answer = ATTACHMENTS_BROKEN if "broken" in lower else ATTACHMENTS
+        if answer is None:
+            return original_bot(sid, text)
+        stored = B["ensure_row"](sid)
+        B["add_message"](stored, "user", text)
+        B["emit"](sid, "session.info", {"running": True})
+        B["emit"](sid, "message.start", {})
+        B["stream"](sid, answer)
+        return B["finish"](sid, stored, answer)
+
+    B["run_turn"] = run_bot_turn
 
 
 # ---------------------------------------------------------------- the seeded chat
@@ -281,7 +321,8 @@ def mime_of(path):
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     return {"html": "text/html", "css": "text/css", "js": "text/javascript", "json": "application/json",
             "md": "text/markdown", "ts": "text/typescript", "tsx": "text/typescript", "svg": "image/svg+xml",
-            "png": "image/png", "mp4": "video/mp4", "mov": "video/quicktime"}.get(ext, "text/plain")
+            "png": "image/png", "mp4": "video/mp4", "mov": "video/quicktime", "pdf": "application/pdf",
+            "zip": "application/zip"}.get(ext, "text/plain")
 
 
 def q(query, name, default=""):
@@ -327,6 +368,14 @@ def fs_read_text(query, body):
     key = rel(path)
     with LOCK:
         text = STATE["work"].get(key) if key is not None else None
+    if text is None and (key in MEDIA or key in PICTURES):
+        # Hermes reads any file: one that isn't UTF-8 text comes back `binary`.
+        data = media_bytes(key) if key in MEDIA else PICTURES[key]
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return 200, {"path": path, "text": "", "language": "text", "mimeType": mime_of(path),
+                         "byteSize": len(data), "truncated": False, "binary": True}
     if text is None:
         return 404, {"detail": "File not found"}
     return 200, {"path": path, "text": text, "language": language_of(path), "mimeType": mime_of(path),
@@ -411,12 +460,443 @@ def _clip():
     return (pathlib.Path(__file__).parent / "media" / "sample-clip.mp4").read_bytes()
 
 
+def _pdf(lines):
+    """A one-page PDF with `lines` of text, built here so the Preview has a real one to show."""
+    text = "BT /F1 18 Tf 72 720 Td 26 TL " + " ".join(
+        "(" + line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") '" for line in lines) + " ET"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n" % len(text) + text.encode() + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+def _zip(files):
+    import io
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+# Office files the mock sends with "office files" (docs/chat.md §3a), made with the standard library:
+# just enough of each format for Quick Look to draw the launch plan.
+
+OFFICE_ROWS = [("Week", "Sign-ups", "Pro"), ("1", "312", "14"), ("2", "468", "29"), ("3", "504", "36")]
+OFFICE_POINTS = ["Beta opens to the waiting list on Monday", "Pro launches at $8 a month",
+                 "Team adds shared Boards in week three"]
+
+
+def _x(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _docx():
+    body = "".join(f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr><w:r><w:t xml:space="preserve">{_x(t)}</w:t></w:r></w:p>'
+                   for style, t in [("Title", "Launch plan")] + [("Normal", p) for p in OFFICE_POINTS])
+    cells = "".join("<w:tr>" + "".join(f"<w:tc><w:p><w:r><w:t>{_x(c)}</w:t></w:r></w:p></w:tc>" for c in row) + "</w:tr>"
+                    for row in OFFICE_ROWS)
+    table = ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/><w:tblBorders>'
+             + "".join(f'<w:{b} w:val="single" w:sz="4" w:space="0" w:color="999999"/>' for b in ("top", "left", "bottom", "right", "insideH", "insideV"))
+             + "</w:tblBorders></w:tblPr>" + cells + "</w:tbl>")
+    W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    styles = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {W}>'
+              '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>'
+              '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style></w:styles>')
+    return _zip({
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>',
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+        "word/_rels/document.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+        "word/styles.xml": styles,
+        "word/document.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}><w:body>{body}{table}<w:sectPr/></w:body></w:document>',
+    })
+
+
+def _xlsx():
+    def cell(ref, value):
+        return f'<c r="{ref}"><v>{value}</v></c>' if value.isdigit() else f'<c r="{ref}" t="inlineStr"><is><t>{_x(value)}</t></is></c>'
+    rows = "".join(f'<row r="{i + 1}">' + "".join(cell(f"{'ABC'[j]}{i + 1}", v) for j, v in enumerate(row)) + "</row>"
+                   for i, row in enumerate(OFFICE_ROWS))
+    return _zip({
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Beta" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        "xl/worksheets/sheet1.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>',
+    })
+
+
+def _pptx():
+    P = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+         'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
+    R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    rels = lambda items: ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                          + "".join(f'<Relationship Id="{i}" Type="{R}/{t}" Target="{g}"/>' for i, t, g in items) + "</Relationships>")
+    tree = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
+
+    def box(n, y, h, size, text, bold=False):
+        weight = ' b="1"' if bold else ""
+        runs = "".join(f'<a:p><a:r><a:rPr lang="en-US" sz="{size}"{weight}/><a:t>{_x(t)}</a:t></a:r></a:p>' for t in text)
+        return (f'<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="Text {n}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
+                f'<p:spPr><a:xfrm><a:off x="457200" y="{y}"/><a:ext cx="8229600" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>'
+                f'<p:txBody><a:bodyPr wrap="square"/><a:lstStyle/>{runs}</p:txBody></p:sp>')
+    slide = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {P}><p:cSld><p:spTree>{tree}'
+             + box(2, 457200, 1143000, 4000, ["Launch plan"], True) + box(3, 1828800, 3200400, 2400, OFFICE_POINTS)
+             + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>')
+    clr = '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+    master = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster {P}><p:cSld><p:spTree>{tree}</p:spTree></p:cSld>{clr}'
+              '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>')
+    layout = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout {P} type="blank"><p:cSld name="Blank"><p:spTree>{tree}</p:spTree></p:cSld>'
+              '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>')
+    colors = "".join(f'<a:{n}><a:srgbClr val="{v}"/></a:{n}>' for n, v in [("dk1", "000000"), ("lt1", "FFFFFF"), ("dk2", "1F2937"), ("lt2", "F3F4F6"), ("accent1", "2563EB"), ("accent2", "16A34A"), ("accent3", "D97706"), ("accent4", "DC2626"), ("accent5", "7C3AED"), ("accent6", "0891B2"), ("hlink", "2563EB"), ("folHlink", "7C3AED")])
+    font = '<a:latin typeface="Helvetica"/><a:ea typeface=""/><a:cs typeface=""/>'
+    fill = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
+    line = '<a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>'
+    theme = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Plain"><a:themeElements>'
+             f'<a:clrScheme name="Plain">{colors}</a:clrScheme><a:fontScheme name="Plain"><a:majorFont>{font}</a:majorFont><a:minorFont>{font}</a:minorFont></a:fontScheme>'
+             f'<a:fmtScheme name="Plain"><a:fillStyleLst>{fill * 3}</a:fillStyleLst><a:lnStyleLst>{line * 3}</a:lnStyleLst>'
+             '<a:effectStyleLst>' + '<a:effectStyle><a:effectLst/></a:effectStyle>' * 3 + f'</a:effectStyleLst><a:bgFillStyleLst>{fill * 3}</a:bgFillStyleLst></a:fmtScheme>'
+             '</a:themeElements></a:theme>')
+    ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+          '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+          '<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+          '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
+          '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
+          '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>')
+    presentation = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation {P}>'
+                    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
+                    '<p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst><p:sldSz cx="9144000" cy="5143500"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>')
+    return _zip({
+        "[Content_Types].xml": ct,
+        "_rels/.rels": rels([("rId1", "officeDocument", "ppt/presentation.xml")]),
+        "ppt/presentation.xml": presentation,
+        "ppt/_rels/presentation.xml.rels": rels([("rId1", "slideMaster", "slideMasters/slideMaster1.xml"), ("rId2", "slide", "slides/slide1.xml"), ("rId3", "theme", "theme/theme1.xml")]),
+        "ppt/slides/slide1.xml": slide,
+        "ppt/slides/_rels/slide1.xml.rels": rels([("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")]),
+        "ppt/slideLayouts/slideLayout1.xml": layout,
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels": rels([("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+        "ppt/slideMasters/slideMaster1.xml": master,
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels": rels([("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"), ("rId2", "theme", "../theme/theme1.xml")]),
+        "ppt/theme/theme1.xml": theme,
+    })
+
+
+def _odf(kind):
+    """An OpenDocument text, spreadsheet or presentation: its mimetype first and unpacked, as the format asks."""
+    import io
+    import zipfile
+    mime = f"application/vnd.oasis.opendocument.{kind}"
+    NS = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+          'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+          'xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" '
+          'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3"')
+    paragraphs = "".join(f"<text:p>{_x(p)}</text:p>" for p in OFFICE_POINTS)
+    if kind == "text":
+        body = f'<office:text><text:h text:outline-level="1">Launch plan</text:h>{paragraphs}</office:text>'
+    elif kind == "spreadsheet":
+        def cell(v):
+            if v.isdigit():
+                return f'<table:table-cell office:value-type="float" office:value="{v}"><text:p>{v}</text:p></table:table-cell>'
+            return f'<table:table-cell office:value-type="string"><text:p>{_x(v)}</text:p></table:table-cell>'
+        rows = "".join("<table:table-row>" + "".join(cell(v) for v in row) + "</table:table-row>" for row in OFFICE_ROWS)
+        body = f'<office:spreadsheet><table:table table:name="Beta">{rows}</table:table></office:spreadsheet>'
+    else:
+        body = ('<office:presentation><draw:page draw:name="Launch plan" draw:master-page-name="Default">'
+                '<draw:frame svg:x="2cm" svg:y="1.5cm" svg:width="24cm" svg:height="3cm"><draw:text-box><text:p>Launch plan</text:p></draw:text-box></draw:frame>'
+                f'<draw:frame svg:x="2cm" svg:y="5cm" svg:width="24cm" svg:height="10cm"><draw:text-box>{paragraphs}</draw:text-box></draw:frame>'
+                '</draw:page></office:presentation>')
+    styles = ""
+    if kind == "presentation":
+        styles = ('<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>')
+    content = f'<?xml version="1.0" encoding="UTF-8"?><office:document-content {NS}><office:body>{body}</office:body></office:document-content>'
+    styles_xml = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-styles {NS}><office:automatic-styles>'
+                  '<style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm"/></style:page-layout>'
+                  f'</office:automatic-styles>{styles}</office:document-styles>')
+    manifest = ('<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">'
+                f'<manifest:file-entry manifest:full-path="/" manifest:media-type="{mime}"/>'
+                '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+                '<manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/></manifest:manifest>')
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(zipfile.ZipInfo("mimetype"), mime, compress_type=zipfile.ZIP_STORED)
+        for name, data in [("content.xml", content), ("styles.xml", styles_xml), ("META-INF/manifest.xml", manifest)]:
+            archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+    return buffer.getvalue()
+
+
+def _rtf():
+    points = "".join(f"\\bullet  {p}\\par\n" for p in OFFICE_POINTS)
+    return ("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs24\n{\\b\\fs40 Launch brief}\\par\n"
+            + points + "}\n").encode()
+
+LAUNCH_NOTES = """# Launch notes
+
+- The beta form goes live on Monday at 09:00.
+- Pricing stays at $8 for Pro; Free keeps three projects.
+- The walkthrough video replaces the hero animation on mobile.
+
+## Still open
+
+1. Who answers the beta inbox over the weekend
+2. Whether the changelog gets its own RSS feed
+"""
+
+LAUNCH_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Launch summary</title>
+<style>body{font:16px -apple-system,system-ui,sans-serif;margin:32px;color:#111;max-width:640px}
+h1{font-size:26px}img{width:100%;border-radius:12px}.note{color:#666}</style></head>
+<body><h1>Launch summary</h1>
+<p>The beta opens Monday. The flow below is the one the form follows.</p>
+<img src="launch-flow.png" alt="The launch flow">
+<p class="note">This picture is a file next to the page, read through the gateway.</p>
+</body></html>
+"""
+
+# A page "live page" shows in its reply (docs/chat.md §3c): the app's colours through Hermes
+# Desktop's variables, buttons that send with `data-hermes-send` and with `hermes.send`, and a
+# request out that the page's policy stops.
+PLAN_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Plan picker</title>
+<style>
+body{font:15px -apple-system,system-ui,sans-serif;padding:16px}
+h2{margin:0 0 4px;font-size:17px}
+p{margin:0 0 12px;color:var(--muted-foreground)}
+.plans{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;padding:8px 14px;border-radius:10px;border:1px solid var(--border);
+  background:var(--card);color:var(--foreground);cursor:pointer}
+button.main{background:var(--accent);color:#fff;border-color:transparent}
+#status{margin-top:12px;font-size:13px;color:var(--muted-foreground)}
+</style></head>
+<body>
+<h2>Pick a plan</h2>
+<p>Free keeps three projects; Pro is $8 a month; Team adds shared Boards.</p>
+<div class="plans">
+  <button data-hermes-send="Plan picked on the page: Free">Free</button>
+  <button class="main" data-hermes-send="Plan picked on the page: Pro">Pro</button>
+  <button id="team">Team</button>
+</div>
+<div id="status">Network: checking…</div>
+<script>
+var note = document.getElementById("status");
+document.getElementById("team").addEventListener("click", function () {
+  hermes.send("Plan picked on the page: Team").then(function (ack) {
+    note.textContent = ack.ok ? "Sent to Hermes." : "Not sent: " + ack.error + (ack.reason ? " (" + ack.reason + ")" : "");
+  });
+});
+// What a page can't do: reach the network, by a request, a call or a frame, or use the microphone
+// or camera (both missing, or refused without the person being asked).
+var open = [];
+function tell() { note.textContent = (open.length ? "Open: " + open.join(", ") : "Network: blocked, as it should be.") + capture; }
+var capture = "";
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(
+    function () { open.push("capture"); tell(); },
+    function (e) { capture = " Capture: " + e.name + "."; tell(); });
+} else { capture = " Capture: missing."; }
+if (window.RTCPeerConnection || window.webkitRTCPeerConnection) open.push("calls");
+var frame = document.createElement("iframe");
+frame.style.display = "none";
+frame.src = "data:text/html,<script>parent.postMessage('frame','*')<\/script>";
+addEventListener("message", function (e) { if (e.data === "frame") { open.push("frames"); tell(); } });
+document.body.appendChild(frame);
+var bare = document.createElement("iframe");
+bare.style.display = "none";
+document.body.appendChild(bare);
+try { if (bare.contentWindow.RTCPeerConnection) open.push("calls in a frame"); } catch (e) {}
+fetch("https://example.com/track").then(function () { open.push("requests"); tell(); }, tell);
+</script>
+</body></html>
+"""
+
 MEDIA = {
     "media/walkthrough.mp4": _clip,
     "media/broken.mp4": lambda: b"This is not a video. " * 200,
     "pairing/screen.mp4": _clip,   # refused as sensitive, once found
     "photos/print-scan.png": lambda: PICTURES["diagrams/orbit-card.png"] + bytes(60_000_000),
+    # The files "attachments" sends (docs/chat.md §3a), outside Git like the pictures.
+    "exports/launch-report.pdf": lambda: _pdf(["Launch report", "", "Beta sign-ups: 1,284", "Pro conversions: 6.1%",
+                                               "Open questions: 2"]),
+    "exports/launch-notes.md": lambda: LAUNCH_NOTES.encode(),
+    "exports/launch-summary.html": lambda: LAUNCH_PAGE.encode(),
+    "exports/plan-picker.html": lambda: PLAN_PAGE.encode(),
+    "exports/launch-flow.png": lambda: PICTURES["diagrams/launch-flow.png"],   # the page's own picture
+    "exports/launch-assets.zip": lambda: _zip({"hero.png": PICTURES["photos/home-hero.png"], "notes.md": LAUNCH_NOTES}),
+    "pairing/device-qr.png": lambda: PICTURES["diagrams/orbit-card.png"],   # refused as sensitive
+    # The office files "office files" sends, which open in Quick Look (docs/chat.md §3a).
+    "exports/launch-plan.docx": _docx,
+    "exports/beta-numbers.xlsx": _xlsx,
+    "exports/launch-deck.pptx": _pptx,
+    "exports/launch-brief.rtf": _rtf,
+    "exports/launch-plan.odt": lambda: _odf("text"),
+    "exports/beta-numbers.ods": lambda: _odf("spreadsheet"),
+    "exports/launch-deck.odp": lambda: _odf("presentation"),
 }
+
+# A Hermes reply that sends files (docs/chat.md §3a): each `MEDIA:` line on its own, as the agent
+# writes them, a picture missing since and one under `pairing/`, which Hermes keeps private.
+ATTACHMENTS = f"""Here's the launch pack.
+
+MEDIA:{ROOT}/diagrams/launch-flow.png
+MEDIA:{ROOT}/photos/pricing.png
+MEDIA:{ROOT}/media/walkthrough.mp4
+
+The report, my notes, the summary page and the assets:
+
+MEDIA:{ROOT}/exports/launch-report.pdf
+MEDIA:`{ROOT}/exports/launch-notes.md`
+MEDIA:{ROOT}/exports/launch-summary.html
+MEDIA:{ROOT}/exports/launch-assets.zip
+
+The print scan is too big to show here, and two files didn't make it:
+
+MEDIA:{ROOT}/photos/print-scan.png
+MEDIA:{ROOT}/exports/old-chart.png
+MEDIA:{ROOT}/pairing/device-qr.png
+
+A line in a code block is only an example:
+
+```
+MEDIA:/tmp/example.png
+```"""
+
+# "broken attachments": only the files that don't show, so their states fit on one screen.
+ATTACHMENTS_BROKEN = f"""Here's what I could find from the old launch.
+
+MEDIA:{ROOT}/photos/print-scan.png
+MEDIA:{ROOT}/exports/old-chart.png
+MEDIA:{ROOT}/pairing/device-qr.png
+MEDIA:{ROOT}/exports/old-report.pdf
+MEDIA:{ROOT}/media/broken.mp4
+
+The scan is too big to show, the chart and the report are gone, and Hermes keeps the pairing code private."""
+
+
+# "drawings" (docs/chat.md §3b): a Mermaid flowchart, display math both ways, an SVG fence and an
+# SVG written in the prose, which the app draws; inline dollars stay words, and a diagram Mermaid
+# can't read shows its code.
+DRAWINGS = r"""Here's how a sign-up moves through the launch, with the numbers behind it.
+
+```mermaid
+flowchart LR
+  A[Visitor] --> B{Signed up?}
+  B -- yes --> C[Beta invite]
+  B -- no --> D[Reminder in 3 days]
+  C --> E((Pro))
+  D --> B
+```
+
+The conversion rate after $n$ reminders, at $5 a seat and $10 for teams:
+
+$$
+P(n) = 1 - \prod_{k=1}^{n} \left(1 - \frac{p}{k}\right)
+$$
+
+and the time to the first reply follows
+
+\[
+\int_0^{\infty} e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
+\]
+
+The badge for the page:
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" width="240" height="80">
+  <rect x="2" y="2" width="236" height="76" rx="18" fill="#7c3aed"/>
+  <circle cx="40" cy="40" r="18" fill="#fde68a"/>
+  <text x="70" y="48" font-family="-apple-system, sans-serif" font-size="22" fill="#ffffff">Beta 2026</text>
+  <image href="https://example.com/tracker.png" width="1" height="1"/>
+  <script>alert('never runs')</script>
+</svg>
+```
+
+<svg width="120" height="24" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="24" rx="12" fill="#10b981"/><text x="60" y="17" text-anchor="middle" font-size="13" fill="#fff" font-family="-apple-system">6.1% Pro</text></svg>
+
+This one has a mistake in it:
+
+```mermaid
+flowchart LR
+  A --> 
+  ((( 
+```"""
+
+
+LIVE_PAGE = f"""Here's a page to pick a plan with.
+
+::preview{{file="{ROOT}/exports/plan-picker.html" height="240"}}
+
+And the notes it's based on:
+
+::preview{{file="{ROOT}/exports/launch-notes.md"}}"""
+
+
+OFFICE_FILES = f"""The plan as a document, the numbers and the deck:
+
+MEDIA:{ROOT}/exports/launch-plan.docx
+MEDIA:{ROOT}/exports/beta-numbers.xlsx
+MEDIA:{ROOT}/exports/launch-deck.pptx
+
+And the same in OpenDocument, with the brief in rich text:
+
+MEDIA:{ROOT}/exports/launch-plan.odt
+MEDIA:{ROOT}/exports/beta-numbers.ods
+MEDIA:{ROOT}/exports/launch-deck.odp
+MEDIA:{ROOT}/exports/launch-brief.rtf"""
+
+
+LINK_CARDS = """The launch talk, then the same one by its address:
+
+[The launch talk](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+
+https://youtu.be/dQw4w9WgXcQ
+
+https://vimeo.com/76979871
+
+https://open.spotify.com/album/4cOdK2wGLETKBW3PvgPWqT
+
+https://soundcloud.com/forss/flickermood
+
+https://github.com/NousResearch/hermes-agent
+
+[Fix the launch checklist](https://github.com/NousResearch/hermes-agent/pull/12)
+
+https://www.bilibili.com/video/BV1xx411c7mD
+
+These stay words: https://youtu.be/dQw4w9WgXcQ in a sentence, and
+
+- https://github.com/NousResearch/hermes-agent
+
+https://example.com/launch"""
+
+
+def formats_reply(lower):
+    """The reply for a Round 3 format word, or None (docs/development.md, mock words)."""
+    if "drawings" in lower:
+        return DRAWINGS
+    if "live page" in lower:
+        return LIVE_PAGE
+    if "office files" in lower:
+        return OFFICE_FILES
+    if "video links" in lower:
+        return LINK_CARDS
+    if lower.startswith("plan picked on the page:"):
+        # What a page's button sent, as a hidden message: Hermes answers it as any other.
+        plan = lower.split(":", 1)[1].strip().title() or "That"
+        return f"Noted: **{plan}**. I'll draft the upgrade note for that plan next."
+    return None
 
 
 def media_bytes(key):
@@ -914,6 +1394,17 @@ def run_file_paths_turn(sid, text):
     C.emit(sid, "message.start", {})
     answer = (f"I've written the form to `{ROOT}/src/components/BetaForm.tsx`, and the setup notes are in "
               f"[the README]({ROOT}/README.md). Run `npm run dev` and open `/beta` to try it.")
+    C.stream(sid, answer)
+    C.finish(sid, stored, answer)
+
+
+def run_attachments_turn(sid, text, answer):
+    """Hermes sends files: a `MEDIA:` line each, streamed a few characters at a time so a line
+    arrives in pieces (docs/chat.md §3a)."""
+    stored = B["RUNTIME"][sid]["stored"]
+    G.add_message(stored, "user", text)
+    C.emit(sid, "session.info", {"running": True})
+    C.emit(sid, "message.start", {})
     C.stream(sid, answer)
     C.finish(sid, stored, answer)
 
