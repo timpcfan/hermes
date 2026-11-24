@@ -133,10 +133,14 @@ extension BotWorkspace {
         rowTime(session, live: activity.inbox.live)
     }
 
+    /// A row's time when the row already knows whether its chat runs (its own line): it doesn't
+    /// then follow every chat's start and stop.
+    func rowTime(_ session: HermesSession, isLive: Bool) -> Date? {
+        RowTime.of(line: unread.lastLines[session.stableID], live: isLive, activity: session.lastActive, created: session.startedAt)
+    }
+
     private func rowTime(_ session: HermesSession, live: Set<String>) -> Date? {
-        let key = session.stableID
-        return RowTime.of(line: unread.lastLines[key], live: live.contains(key),
-                          activity: session.lastActive, created: session.startedAt)
+        rowTime(session, isLive: live.contains(session.stableID))
     }
 
     // MARK: Returns (`docs/inbox.md` §2a)

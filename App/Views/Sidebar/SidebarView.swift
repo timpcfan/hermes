@@ -26,8 +26,6 @@ struct SidebarView: View {
     /// Until the window is on screen the chats list one screenful, so the window shows without
     /// laying out every kept chat first (`docs/inbox.md` §1).
     @State private var isFirstFrame = true
-    /// Working is open until folded, on this device (`docs/inbox.md` §2a).
-    @AppStorage("inbox.workingExpanded") private var workingExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -312,8 +310,8 @@ struct SidebarView: View {
             .modifier(SidebarRowInsets())
         }
         if isWhole, !sections.working.isEmpty {
-            InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workingExpanded)
-            if workingExpanded {
+            InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workspace.workingExpanded)
+            if workspace.workingExpanded {
                 ForEach(sections.working, id: \.stableID) { session in
                     sessionRow(session)
                 }
@@ -340,7 +338,8 @@ struct SidebarView: View {
     private var settledRegion: some View {
         @Bindable var settled = workspace.settled
         let revealed = settled.revealed
-        if settled.isAvailable || revealed != nil {
+        // Nothing settled yet: no region, as Working with nothing running.
+        if (settled.isAvailable && settled.list.total != 0) || revealed != nil {
             InboxRegionHeader(title: String(localized: "Settled"), count: settled.list.total, isExpanded: $settled.isExpanded,
                               showsActivity: settled.hasActivity)
             let rows = settled.isExpanded ? settled.list.rows : []

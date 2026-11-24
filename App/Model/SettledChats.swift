@@ -64,7 +64,7 @@ final class SettledChats {
     /// Calls close together share one read.
     func refresh() {
         guard client != nil else {
-            isAvailable = false
+            if isAvailable { isAvailable = false }
             return
         }
         guard countTask == nil else { return }
@@ -85,8 +85,10 @@ final class SettledChats {
         guard let client, let workspace else { return }
         do {
             let page = try await client.archivedSessions(limit: 1, offset: 0, profile: workspace.bot.profileName)
-            isAvailable = true
-            list.noteTotal(page.total)
+            // Only what changed is set: an observed property set to the same value still redraws
+            // the sidebar, and this runs after every list refresh, a turn's included.
+            if !isAvailable { isAvailable = true }
+            if list.total != page.total { list.noteTotal(page.total) }
             noteNewest(page.sessions.first?.lastActive)
         } catch {
             noteFailure(error)
@@ -118,7 +120,7 @@ final class SettledChats {
         defer { if list.generation == generation { isLoading = false } }
         do {
             let page = try await client.archivedSessions(limit: limit, offset: offset, profile: workspace.bot.profileName)
-            isAvailable = true
+            if !isAvailable { isAvailable = true }
             list.apply(page, offset: offset, limit: limit, generation: generation)
             if offset == 0 {
                 noteNewest(page.sessions.first?.lastActive)
@@ -132,7 +134,7 @@ final class SettledChats {
     private func noteFailure(_ error: any Error) {
         // Refused, or a backend without the route: the region isn't there until it answers.
         switch error as? BackendClient.Failure {
-        case .signInRequired?, .http(404, _)?: isAvailable = false
+        case .signInRequired?, .http(404, _)?: if isAvailable { isAvailable = false }
         default: break
         }
         let nsError = error as NSError
@@ -150,7 +152,7 @@ final class SettledChats {
             if seenActivity == nil { noteSeen(date) }
             return
         }
-        if date > seenActivity { hasActivity = true }
+        if date > seenActivity, !hasActivity { hasActivity = true }
     }
 
     private func noteSeen(_ date: Date?) {

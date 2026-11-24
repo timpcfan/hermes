@@ -107,6 +107,12 @@ final class BotWorkspace: Identifiable {
     /// closes, as its deliveries showed (`DeliveryProtection`, Settings → Setup): nil until a
     /// delivery has been seen on the current version. Kept per gateway on the device.
     private(set) var deliveryProtection: DeliveryProtection?
+    /// Working is open until folded, on this device (`docs/inbox.md` §2a). Not `@AppStorage` in
+    /// the sidebar: that redrew the whole list at every defaults write, several a second while a
+    /// reply streams.
+    var workingExpanded = UserDefaults.standard.object(forKey: "inbox.workingExpanded") as? Bool ?? true {
+        didSet { if workingExpanded != oldValue { UserDefaults.standard.set(workingExpanded, forKey: "inbox.workingExpanded") } }
+    }
     /// The inbox's filter (`docs/inbox.md` §5): which sources it holds, empty chats, and the
     /// states that narrow Main. Kept per gateway on the device.
     var inboxScope: InboxScope {
@@ -525,7 +531,7 @@ final class BotWorkspace: Identifiable {
     /// sliding in after it as one animated insert.
     private func restoreCachedSessions() {
         guard let cached = SessionsCache.load(id) else { return }
-        allSessions = ScheduledRuns.kept(cached)
+        allSessions = ScheduledRuns.kept(cached).filter { !$0.archived }
         nextSessionOffset = cached.count
         LaunchTrace.mark("cached chats shown (\(cached.count))", id: "cached chats")
     }
@@ -1130,7 +1136,9 @@ final class BotWorkspace: Identifiable {
             }
             // Most refreshes bring nothing new: an unchanged list redraws nothing and recounts
             // nothing (the sidebar, the open chat's title and the unread counts all read it).
-            let fresh = localOnly + ScheduledRuns.kept(page.sessions.filter { !$0.isInternalChild })
+            // Hermes back-fills pinned chats whatever their `archived`: a settled one lists in
+            // Settled, never here (`docs/inbox.md` §2a).
+            let fresh = localOnly + ScheduledRuns.kept(page.sessions.filter { !$0.isInternalChild && !$0.archived })
             // A waiting chat Hermes lists now got its message (Hermes stores a chat with its first).
             let stillWaiting = WaitingChat.remaining(waitingChats, gatewayListed: Set(page.sessions.map(\.stableID)))
             if stillWaiting != waitingChats {
@@ -1288,7 +1296,7 @@ final class BotWorkspace: Identifiable {
         defer { isLoadingSessions = false }
         if let page = try? await client.sessions(limit: 50, offset: nextSessionOffset) {
             let known = Set(allSessions.map(\.stableID))
-            allSessions += ScheduledRuns.kept(page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild })
+            allSessions += ScheduledRuns.kept(page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild && !$0.archived })
             hasMoreSessions = page.hasMore
             nextSessionOffset += 50
         }

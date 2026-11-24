@@ -209,7 +209,8 @@ come back to the top of Main only when they need the person. One List, top to bo
    by default, kept on the device (`inbox.workingExpanded`).
 4. **Settled**: chats the person marked finished, which Hermes keeps as `archived`. Folded by
    default, the header shows how many there are ("Settled 73 ›"); open, ten slim rows, then "Show
-   25 more" at a time. Kept per gateway (`inbox.settledExpanded.<gateway>`).
+   25 more" at a time. Kept per gateway (`inbox.settledExpanded.<gateway>`). Absent while
+   nothing is settled.
 
 The rules are one function (`InboxSections.region`), in this order: settled (`archived`) wins;
 then waiting on the person goes to Main (never Working); then running goes to Working; then pinned
