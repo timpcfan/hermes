@@ -747,7 +747,9 @@ Discord, the terminal and an editor each; an empty chat; and three that look liv
 cycle: "Deploy hk3 nginx" works for 15 s, waits for an approval for 45 s, then finishes and rests;
 the pinned "Review my recent work" and "Migrate the board to Swift 6" keep working. The
 dashboard's list answers `archived=only|include|exclude` with `total` and back-fills pinned chats
-across the archived filter, as Hermes does.
+across the archived filter, as Hermes does. `--idle` leaves out the mock's standing test run ("Fix the reconnect
+after sleep"), so nothing runs on its own: the inbox without Working, or Working with just the
+`--inbox-gtd` pair.
 `VoiceOverFocusUITests` turns VoiceOver on inside the simulator, puts it on a row or a message, and only then
 starts a "slow marathon" turn: in the open chat, or in a chat listed below the row, which moves above it. Each
 test checks the reply landed while it listened and that VoiceOver stayed put (about 3 minutes each).

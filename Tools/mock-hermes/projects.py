@@ -72,7 +72,7 @@ class RPCError(Exception):
         self.message = message
 
 
-def install(backend_globals, gateway_module, chats_module):
+def install(backend_globals, gateway_module, chats_module, running_demo=True):
     global B, G, C
     B, G, C = backend_globals, gateway_module, chats_module
     seed()
@@ -105,7 +105,8 @@ def install(backend_globals, gateway_module, chats_module):
         ("POST", "/api/git/worktree/add"): git_worktree_add,
     })
     threading.Thread(target=watch, daemon=True).start()
-    threading.Timer(1.0, start_running_turn).start()
+    if running_demo:
+        threading.Timer(1.0, start_running_turn).start()
 
 
 def guard(fn):
