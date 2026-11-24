@@ -3242,6 +3242,9 @@ def main():
                         help="the gateway has no model provider yet: setup asks for one (onboarding.py)")
     parser.add_argument("--inbox-demo", action="store_true",
                         help="two seeded chats look live (one writing, one waiting for an approval): inbox.py")
+    parser.add_argument("--inbox-gtd", action="store_true",
+                        help="the inbox's regions: settled chats, every source, and a deploy that works, then waits "
+                             "for an approval, then finishes, on a 2-minute cycle: inbox.py")
     parser.add_argument("--plain-edits", action="store_true",
                         help="session edits without revision fences, like Hermes from 2026-10-16 (no mutation-snapshot)")
     parser.add_argument("--push-relay", default="simctl",
@@ -3326,7 +3329,7 @@ def main():
         spec = importlib.util.spec_from_file_location("mock_inbox", here / "inbox.py")
         inbox = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(inbox)
-        inbox.install(globals(), gateway, demo=args.inbox_demo)
+        inbox.install(globals(), gateway, demo=args.inbox_demo, gtd=args.inbox_gtd)
         spec = importlib.util.spec_from_file_location("mock_helpers", here / "helpers.py")
         helpers = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helpers)

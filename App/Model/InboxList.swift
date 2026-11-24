@@ -38,28 +38,113 @@ extension InboxShow {
 }
 
 extension BotWorkspace {
-    /// The chats in the list: pinned first, then by activity, newest first; no date sections
-    /// (`docs/inbox.md` §2). Show picks where they come from, this app's by default
-    /// (`docs/inbox.md` §5); every chat it holds is listed, as this build has no projects to keep
-    /// some apart (`docs/projects.md`). Scheduled runs are in it only under Scheduled Tasks
-    /// (`ScheduledRuns`).
-    var inboxSessions: [HermesSession] {
-        let shown = allSessions.filter { shows($0) && matches(inboxFilter, key: $0.stableID) }
-        let ordered = RowTime.ordered(shown, pinned: \.pinned) { self.rowTime($0) }
-        // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
-        // They are this app's, so they show wherever this app's chats do.
-        guard inboxFilter == .all, inboxShow.includes(.thisApp), !waitingChats.isEmpty else { return ordered }
-        let waiting = WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
-        let pinned = ordered.prefix { $0.pinned }.count
-        return Array(ordered[..<pinned]) + waiting + ordered[pinned...]
+    /// The chats in the list, region by region: Pinned, Main, Working (`docs/inbox.md` §2a).
+    /// Settled is listed apart (`settledSessions`).
+    var inboxSessions: [HermesSession] { inboxSections.ordered }
+
+    /// The Chats inbox's regions (`docs/inbox.md` §2a). Show picks where the chats come from,
+    /// this app's by default (`docs/inbox.md` §5); every chat it holds is listed, as this build has
+    /// no projects to keep some apart (`docs/projects.md`). Scheduled runs are in it only under
+    /// Scheduled Tasks (`ScheduledRuns`).
+    ///
+    /// Built once per change to what it reads, never per row drawn: the list, which chats run or
+    /// wait (sets that move only when one starts, stops or starts waiting, not with each streamed
+    /// word), the return times, the last lines and the filter. The selection isn't among them.
+    var inboxSections: InboxSections<HermesSession> {
+        let key = InboxSectionsCache.Key(
+            sessions: sessionsRevision, activity: activity.inbox, returns: inboxReturns,
+            lines: unread.linesRevision, show: inboxShow, filter: inboxFilter,
+            filterInputs: inboxFilter == .unread ? unread.badgesRevision : 0, waiting: waitingChats.map(\.key)
+        )
+        if let sectionsCache, sectionsCache.key == key { return sectionsCache.sections }
+        let sections = buildSections(activity: key.activity)
+        sectionsCache = InboxSectionsCache(key: key, sections: sections)
+        return sections
+    }
+
+    private func buildSections(activity: InboxActivity) -> InboxSections<HermesSession> {
+        var rows = allSessions.filter { shows($0) && matches(inboxFilter, key: $0.stableID, activity: activity) }
+        // New chats whose first message waits for the gateway (`docs/chat.md` §4). They are this
+        // app's, so they show wherever this app's chats do; sending, they sit in Working.
+        if inboxFilter == .all, inboxShow.includes(.thisApp), !waitingChats.isEmpty {
+            rows += WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
+        }
+        let returns = inboxReturns
+        return InboxSections.partition(
+            rows, key: \.stableID, pinned: \.pinned, archived: \.archived, activity: activity, returns: returns,
+            rowTime: { self.rowTime($0, live: activity.live) },
+            workingTime: { session in
+                [self.lastSentAt[session.stableID], session.lastActive].compactMap(\.self).max()
+            }
+        )
     }
 
     /// A chat's time on its row and in the order (`RowTime`, `docs/inbox.md` §2): its last line's
     /// message, standing at its activity only while a turn runs in it.
     func rowTime(_ session: HermesSession) -> Date? {
+        rowTime(session, live: activity.inbox.live)
+    }
+
+    private func rowTime(_ session: HermesSession, live: Set<String>) -> Date? {
         let key = session.stableID
-        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
+        return RowTime.of(line: unread.lastLines[key], live: live.contains(key),
                           activity: session.lastActive, created: session.startedAt)
+    }
+
+    // MARK: Returns (`docs/inbox.md` §2a)
+
+    private static func returnsKey(_ id: UUID) -> String { "inboxReturns.\(id.uuidString)" }
+
+    /// The return times kept on this device, so a cold launch keeps Main's order.
+    func restoreReturns() {
+        returnTracker = InboxReturns.decoded(UserDefaults.standard.data(forKey: Self.returnsKey(id)))
+        inboxReturns = returnTracker.times
+    }
+
+    /// What the chats are doing changed (`LiveActivity`): chats that started waiting on the
+    /// person or stopped return now; finished ones after a short grace.
+    func noteActivity(_ phases: [String: InboxReturns.Phase]) {
+        returnTracker.observe(phases, now: .now)
+        publishReturns()
+        scheduleReturnGrace()
+    }
+
+    /// Un-settled, or sent in from Settled: back at the top of Main.
+    func noteReturned(_ key: String) {
+        returnTracker.returned(key, at: .now)
+        publishReturns()
+    }
+
+    /// The person sent in a chat here: Working's order.
+    func noteSent(_ key: String) {
+        lastSentAt[key] = .now
+    }
+
+    private func scheduleReturnGrace() {
+        returnGrace?.cancel()
+        guard let deadline = returnTracker.nextDeadline else { return }
+        returnGrace = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow) + 0.05))
+            guard let self, !Task.isCancelled else { return }
+            self.returnTracker.settle(now: .now)
+            self.publishReturns()
+            self.scheduleReturnGrace()
+        }
+    }
+
+    /// Only chats still listed keep a time; the rest go when the list is next saved.
+    private func publishReturns() {
+        let listed = Set(allSessions.map(\.stableID))
+        if hasFetchedSessions { returnTracker.prune(keeping: listed) }
+        let times = returnTracker.times
+        guard times != inboxReturns else { return }
+        inboxReturns = times
+        returnsSave?.cancel()
+        returnsSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            UserDefaults.standard.set(self.returnTracker.encoded(), forKey: Self.returnsKey(self.id))
+        }
     }
 
     /// Whether Show holds a chat (`docs/inbox.md` §5).
@@ -75,11 +160,15 @@ extension BotWorkspace {
     }
 
     func matches(_ filter: InboxFilter, key: String) -> Bool {
+        matches(filter, key: key, activity: activity.inbox)
+    }
+
+    private func matches(_ filter: InboxFilter, key: String, activity: InboxActivity) -> Bool {
         switch filter {
         case .all: true
         case .unread: unread.badge(for: key).isUnread
-        case .needsYou: activity.line(for: key)?.needsYou == true
-        case .running: activity.line(for: key).map { $0.isLive && !$0.needsYou } ?? false
+        case .needsYou: activity.needsYou.contains(key)
+        case .running: activity.isWorking(key)
         }
     }
 
@@ -122,6 +211,24 @@ extension BotWorkspace {
             // Marked unread: it reads as new next time; the chat stays open meanwhile.
         }
     }
+}
+
+/// The inbox's regions as last built, and what they were built from (`BotWorkspace.inboxSections`).
+struct InboxSectionsCache {
+    struct Key: Equatable {
+        var sessions: Int
+        var activity: InboxActivity
+        var returns: [String: Date]
+        var lines: Int
+        var show: InboxShow
+        var filter: InboxFilter
+        /// What the filter reads besides the list (the unread badges under Unread).
+        var filterInputs: Int
+        var waiting: [String]
+    }
+
+    let key: Key
+    let sections: InboxSections<HermesSession>
 }
 
 extension SidebarItem {

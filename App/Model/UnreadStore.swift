@@ -13,12 +13,22 @@ import os
 @Observable
 final class UnreadStore {
     /// What each row shows. Only rows with something to show have an entry.
-    private(set) var badges: [String: UnreadBadge] = [:]
+    private(set) var badges: [String: UnreadBadge] = [:] {
+        didSet { badgesRevision &+= 1 }
+    }
+    /// Bumped with each change to `badges`, for what is cached against them (the inbox's Unread
+    /// filter).
+    private(set) var badgesRevision = 0
     private(set) var mutes: MuteList
     /// Each row's last message, as the rows read it: only a line that changed redraws them.
     /// Hermes' list rows carry the first message, never the last, so the app reads it itself
     /// (`book`).
-    private(set) var lastLines: [String: LastLine] = [:]
+    private(set) var lastLines: [String: LastLine] = [:] {
+        didSet { linesRevision &+= 1 }
+    }
+    /// Bumped with each change to `lastLines`: the inbox's regions are cached against it rather
+    /// than comparing every line (`docs/inbox.md` §2a).
+    private(set) var linesRevision = 0
     /// The lines with the chat activity each was read at, kept on the device (`docs/inbox.md` §2).
     @ObservationIgnored private var book = LastLineBook()
     @ObservationIgnored private var bookSave: Task<Void, Never>?

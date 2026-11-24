@@ -67,6 +67,7 @@ final class BotWorkspace: Identifiable {
             let chats = ScheduledRuns.chats(allSessions)
             if chats != sessions { sessions = chats }
             sessionsByKey = Dictionary(allSessions.map { ($0.stableID, $0) }, uniquingKeysWith: { first, _ in first })
+            sessionsRevision &+= 1
             unread.update()
             keepSessions()
         }
@@ -74,6 +75,8 @@ final class BotWorkspace: Identifiable {
     /// The chats: everything that lists or counts chats reads these (the list's counts, unread
     /// badges, Quick Open, search by title, the push plugin's lists), never a scheduled run.
     private(set) var sessions: [HermesSession] = []
+    /// Bumped with each change to `allSessions`: what the inbox's regions are cached against.
+    private(set) var sessionsRevision = 0
     @ObservationIgnored private var sessionsSave: Task<Void, Never>?
 
     /// The list as it stands goes on the device a moment after it changes (a deleted, archived or
@@ -108,6 +111,16 @@ final class BotWorkspace: Identifiable {
     /// those (Only).
     var inboxShow = InboxShow.atLaunch
     var inboxFilter = InboxFilter.all
+    /// When each chat came back to the top of Main (`InboxReturns`, `docs/inbox.md` §2a). Changes
+    /// only when a chat starts waiting on the person, stops or finishes.
+    var inboxReturns: [String: Date] = [:]
+    @ObservationIgnored var returnTracker = InboxReturns()
+    @ObservationIgnored var returnGrace: Task<Void, Never>?
+    @ObservationIgnored var returnsSave: Task<Void, Never>?
+    /// When the person last sent in each chat on this device: Working's order.
+    @ObservationIgnored var lastSentAt: [String: Date] = [:]
+    /// The regions as last built, with what they were built from (`inboxSections`).
+    @ObservationIgnored var sectionsCache: InboxSectionsCache?
     /// A chat just archived, for Undo.
     var recentlyArchived: HermesSession?
     /// Archive calls on their way, by chat: Undo goes after its archive, never alongside it.
@@ -485,6 +498,7 @@ final class BotWorkspace: Identifiable {
         restoreCachedSessions()
         restoreCachedModels()
         restoreWaitingChats()
+        restoreReturns()
     }
 
     /// The model list this device saw last: the model picker opens on it instead of "Loading

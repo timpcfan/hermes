@@ -26,6 +26,8 @@ struct SidebarView: View {
     /// Until the window is on screen the chats list one screenful, so the window shows without
     /// laying out every kept chat first (`docs/inbox.md` §1).
     @State private var isFirstFrame = true
+    /// Working is open until folded, on this device (`docs/inbox.md` §2a).
+    @AppStorage("inbox.workingExpanded") private var workingExpanded = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -280,16 +282,20 @@ struct SidebarView: View {
 
     // MARK: Sessions
 
+    /// The Chats inbox (`docs/inbox.md` §2a): Pinned and Main, then Working while something runs,
+    /// then Settled. One pass builds the regions (`inboxSections`); a folded region keeps no rows,
+    /// and Working, with nothing running, not even its header.
     @ViewBuilder
     private var sessionSections: some View {
-        let shown = workspace.inboxSessions
-        let listed = ChatListSnapshot.listed(shown, firstFrame: isFirstFrame)
+        let sections = workspace.inboxSections
+        let top = sections.pinned + sections.main
+        let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
         ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
         }
         // Nothing goes below a list cut for the first frame: it is whole a moment later.
-        let isWhole = listed.count == shown.count
-        if isWhole, workspace.inboxFilter == .unread, !shown.isEmpty {
+        let isWhole = listed.count == top.count
+        if isWhole, workspace.inboxFilter == .unread, !top.isEmpty {
             // Mark All as Read, at the end of the Unread list as in the filter menu
             // (`docs/inbox.md` §5).
             Button("Mark All as Read") {
@@ -302,6 +308,16 @@ struct SidebarView: View {
             .padding(.vertical, 16)
             .modifier(SidebarRowInsets())
         }
+        if isWhole, !sections.working.isEmpty {
+            InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workingExpanded)
+            if workingExpanded {
+                ForEach(sections.working, id: \.stableID) { session in
+                    sessionRow(session)
+                }
+            }
+        }
+        // The next page loads at the very end, so Working and Settled follow the chats listed so
+        // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
         if isWhole, workspace.hasMoreSessions && workspace.inboxFilter == .all {
             SkeletonRows(count: 2)
                 .padding(.vertical, 8)

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		839A4658CE5B92A2A70E8502 /* InboxSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD85002297F5C5AEE363F0E3 /* InboxSidebar.swift */; };
 		001DBDA178379735F849569C /* CommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA130514841F895F341DD77 /* CommandViews.swift */; };
 		02479417E466AEA3D884A0ED /* CodeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8037ADEB48C6AD7870A4F59 /* CodeTextView.swift */; };
 		0255BA676231B67BE5885A2B /* HermesMacSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 0CCEEDE69065A76C92D5F1E8 /* HermesMacSupport */; };
@@ -384,6 +385,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CD85002297F5C5AEE363F0E3 /* InboxSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxSidebar.swift; sourceTree = "<group>"; };
 		001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAttachment.swift; sourceTree = "<group>"; };
 		01ECFDF06FC24F6C00F32865 /* AskingWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskingWidgets.swift; sourceTree = "<group>"; };
 		0363790D1D1BBE404C2C5C0F /* ChatScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScreen.swift; sourceTree = "<group>"; };
@@ -1366,6 +1368,7 @@
 		CFF165CB2ECBD8AA730FDFF1 /* Inbox */ = {
 			isa = PBXGroup;
 			children = (
+				CD85002297F5C5AEE363F0E3 /* InboxSidebar.swift */,
 				CB8C73EAB2B52E4FB5647230 /* InboxChatParts.swift */,
 				A561B3A740221D8E69A1230F /* InboxListParts.swift */,
 				6CE21584C8656984496A9021 /* InboxParts.swift */,
@@ -1830,6 +1833,7 @@
 				3CCCBA16B93E485914FD45B3 /* HeyHermes.swift in Sources */,
 				8F1D15B20B90A1A195A6F2B7 /* ImageAttachment.swift in Sources */,
 				2EF1C70E5D0E3B06DA39D1A0 /* InAppBrowser.swift in Sources */,
+				839A4658CE5B92A2A70E8502 /* InboxSidebar.swift in Sources */,
 				59250380D3BF0BBECF15199C /* InboxChatParts.swift in Sources */,
 				5743F33541DD4554CD41C53F /* InboxList.swift in Sources */,
 				7383F11349A66925A2F028F7 /* InboxListParts.swift in Sources */,

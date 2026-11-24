@@ -3677,6 +3677,8 @@ final class ConversationModel: Identifiable {
         isRemoteTurn = false
         if !isBotChat {
             workspace?.rememberModelChoice(model, effort: reasoningEffort)
+            // Working lists the chats the person sent in last first (`docs/inbox.md` §2a).
+            if let stableKey { workspace?.noteSent(stableKey) }
         }
         turnUsesGateway = usesGateway
         if turnUsesGateway {
