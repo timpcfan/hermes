@@ -40,15 +40,11 @@ extension InboxShow {
 extension BotWorkspace {
     /// The chats in the list: pinned first, then by activity, newest first; no date sections
     /// (`docs/inbox.md` §2). Show picks where they come from, this app's by default
-    /// (`docs/inbox.md` §5). In the whole list (This App or All Chats, no Only), chats in a project
-    /// stay in the project (pinned ones show here too); a narrower list covers every chat it holds.
-    /// Scheduled runs are in it only under Scheduled Tasks (`ScheduledRuns`).
+    /// (`docs/inbox.md` §5); every chat it holds is listed, as this build has no projects to keep
+    /// some apart (`docs/projects.md`). Scheduled runs are in it only under Scheduled Tasks
+    /// (`ScheduledRuns`).
     var inboxSessions: [HermesSession] {
-        let projects = projects!
-        let held = allSessions.filter(shows)
-        let shown = showsProjects
-            ? held.filter { $0.pinned || !projects.isScoped($0) }
-            : held.filter { matches(inboxFilter, key: $0.stableID) }
+        let shown = allSessions.filter { shows($0) && matches(inboxFilter, key: $0.stableID) }
         let ordered = RowTime.ordered(shown, pinned: \.pinned) { self.rowTime($0) }
         // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
         // They are this app's, so they show wherever this app's chats do.
@@ -60,13 +56,6 @@ extension BotWorkspace {
 
     /// A chat's time on its row and in the order (`RowTime`, `docs/inbox.md` §2): its last line's
     /// message, standing at its activity only while a turn runs in it.
-    /// A project chat's time, by the same rule.
-    func rowTime(_ row: ProjectSessionRow) -> Date? {
-        let key = row.stableID
-        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
-                          activity: row.lastActive, created: row.startedAt)
-    }
-
     func rowTime(_ session: HermesSession) -> Date? {
         let key = session.stableID
         return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
@@ -78,13 +67,7 @@ extension BotWorkspace {
         inboxShow.shows(session)
     }
 
-    /// The list is whole: this app's chats or all of them, nothing narrowed to a state. Only then
-    /// do projects keep their chats in the Projects section.
-    var showsProjects: Bool {
-        inboxFilter == .all && (inboxShow == .thisApp || inboxShow == .all)
-    }
-
-    /// Show holds no chat at all, projects' and new ones' included, while the gateway has some: the
+    /// Show holds no chat at all, new ones included, while the gateway has some: the
     /// Show empty state (`caughtUpThisApp`…). With no chats at all, "No chats yet" says so instead.
     var showHoldsNothing: Bool {
         !allSessions.isEmpty && !hasMoreSessions && !allSessions.contains(where: shows)
@@ -137,6 +120,17 @@ extension BotWorkspace {
         } else {
             unread.markUnread(key)
             // Marked unread: it reads as new next time; the chat stays open meanwhile.
+        }
+    }
+}
+
+extension SidebarItem {
+    /// A project's home, its Board or All Projects: screens this build doesn't have
+    /// (`docs/projects.md`). A window restored onto one, or a launch flag naming one, opens nothing.
+    var isProjectScreen: Bool {
+        switch self {
+        case .project, .board, .allProjects: true
+        default: false
         }
     }
 }

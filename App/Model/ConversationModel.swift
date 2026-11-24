@@ -345,9 +345,8 @@ final class ConversationModel: Identifiable {
         var id: String { selection.model + "|" + selection.provider }
     }
 
-    /// Where this chat starts (Run In, `docs/projects.md` §3); `nil` follows the active project.
-    var placement: ChatPlacement?
-    /// Where the gateway says the chat runs (`session.info`): folder, branch and project.
+    /// Where the gateway says the chat runs (`session.info`): folder, branch and project. A new
+    /// chat starts in the gateway's default folder (`docs/projects.md`).
     private(set) var liveWorkspace: LiveWorkspace?
     /// A transient error shown above the composer.
     var banner: HermesError?
@@ -714,7 +713,6 @@ final class ConversationModel: Identifiable {
         self.botName = nil
         self.model = waiting.model ?? workspace.preferredModel
         self.reasoningEffort = waiting.effort ?? workspace.preferredEffort
-        self.placement = waiting.projectID.map { workspace.projects.placement(in: $0) }
         self.waitingChat = waiting
         self.queue = queue
         self.keptFromRelaunch = true
@@ -4578,7 +4576,7 @@ final class ConversationModel: Identifiable {
         outgoing = OutboxItem(message: message, sentAt: .now, knownNewestID: rawMessages.last?.id)
         if sessionID == nil, !isBotChat, waitingChat == nil {
             waitingChat = WaitingChat(title: message.line, model: model, effort: reasoningEffort,
-                                      projectID: placement?.projectID, requestedID: newSessionID)
+                                      projectID: nil, requestedID: newSessionID)
         }
         deliveryWatch = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -5676,11 +5674,7 @@ extension ConversationModel {
             params["provider"] = .string(model.provider)
         }
         if let reasoningEffort { params["reasoning_effort"] = .string(reasoningEffort.rawValue) }
-        // A project's folder; without one the gateway uses its default (No Project).
-        let placement = placement ?? workspace?.projects.defaultPlacement
-        if let placement, let cwd = try await workspace?.projects.resolveFolder(for: placement) {
-            params["cwd"] = .string(cwd)
-        }
+        // No folder: the gateway starts the chat in its default one (`docs/projects.md`).
         let created = try await roster.request("session.create", params)
         guard let runtime = created["session_id"]?.stringValue, let stored = created["stored_session_id"]?.stringValue else {
             throw HermesError.invalidResponse("session.create")
@@ -5696,7 +5690,6 @@ extension ConversationModel {
         if let workspace { inspectorStore?.restore(chatKey: stored, workspaceID: workspace.id) }
         if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
         sessionReported(created["info"])
-        workspace?.projects.placed(storedID: stored, in: placement?.projectID)
         apply(.sessionChanged(stored))
         workspace?.adopt(self, session: HermesSession(id: stored))
         return runtime

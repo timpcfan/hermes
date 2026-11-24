@@ -168,9 +168,6 @@ struct SidebarView: View {
         }
         if !isSearching {
             navigationRows
-            if botRoster == nil, workspace.showsProjects {
-                ProjectSidebarSection(workspace: workspace)
-            }
         }
         if let botRoster {
             BotRosterSections(roster: botRoster, workspace: workspace)
@@ -273,17 +270,12 @@ struct SidebarView: View {
         DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2")
     }
 
-    /// The rows above the list's own (the mode switcher, navigation rows and the Projects
-    /// section), so states centre in the space below them.
+    /// The rows above the list's own (the mode switcher and navigation rows), so states centre in
+    /// the space below them.
     private var navigationHeight: CGFloat {
         let switcher: CGFloat = isCompact && workspace.roster != nil ? 46 : 0
         guard botRoster == nil else { return switcher + CGFloat(isCompact ? 3 : 4) * SidebarMetrics.rowHeight }
-        guard workspace.showsProjects else { return switcher + 2 * SidebarMetrics.rowHeight }
-        let projects = workspace.projects!
-        guard projects.isAvailable else { return switcher + 2 * SidebarMetrics.rowHeight }
-        let expanded = UserDefaults.standard.object(forKey: "sidebar.projectsExpanded") as? Bool ?? false
-        let rows = expanded ? projects.sidebarProjects.count + 1 : 0
-        return switcher + CGFloat(2 + rows) * SidebarMetrics.rowHeight + 38
+        return switcher + 2 * SidebarMetrics.rowHeight
     }
 
     // MARK: Sessions
@@ -407,11 +399,6 @@ struct SidebarView: View {
         Button("Rename…", systemImage: "pencil") {
             renameText = session.title ?? ""
             renaming = session
-        }
-        if workspace.projects.isAvailable {
-            Button("Move to Project…", systemImage: "folder") {
-                workspace.projects.movingSession = session
-            }
         }
         if workspace.capabilities?.features.sessionFork != false {
             Button("Branch", systemImage: "arrow.triangle.branch") {

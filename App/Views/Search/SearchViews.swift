@@ -4,7 +4,7 @@ import SwiftUI
 // Search results (`docs/search.md`, `screens/iphone/drawer.elyx` → `drawerSearch`): the chat list on
 // iPhone and the sidebar on iPad and Mac show these in place of the history while searching.
 
-/// The filter chips, the count line, matching projects, then one row per chat.
+/// The filter chips, the count line, then one row per chat.
 struct SearchResultsSection: View {
     let workspace: BotWorkspace
 
@@ -28,25 +28,6 @@ struct SearchResultsSection: View {
             .accessibilityAddTraits(.updatesFrequently)
         }
         Group {
-            ForEach(search.projects) { project in
-                SidebarRow(isSelected: workspace.selection == .project(project.id), height: 44) {
-                    workspace.pick(.project(project.id))
-                } label: {
-                    HStack(spacing: 10) {
-                        ProjectTile(appearance: ProjectAppearance(color: project.color, icon: project.icon), size: 22)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(project.name).font(.subheadline.weight(.semibold))
-                            if let path = project.primaryPath {
-                                Text(CheckpointsModel.shortened(path))
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.secondaryText)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                }
-                .accessibilityLabel(Text("Project \(project.name)"))
-            }
             ForEach(search.hits) { hit in
                 SearchResultRow(hit: hit, time: search.time(of: hit), place: search.place(of: hit), isSelected: isSelected(hit)) {
                     workspace.open(hit)
@@ -80,7 +61,7 @@ struct SearchResultsSection: View {
     }
 }
 
-/// All / Chats / Projects / Bots / Tasks.
+/// All / Chats / Bots / Tasks.
 struct SearchChips: View {
     @Bindable var search: ChatSearch
     let workspace: BotWorkspace
@@ -88,7 +69,6 @@ struct SearchChips: View {
     private var filters: [ChatSearch.Filter] {
         ChatSearch.Filter.allCases.filter { filter in
             switch filter {
-            case .projects: workspace.projects.isAvailable
             case .bots: workspace.roster != nil
             default: true
             }
@@ -215,15 +195,13 @@ struct SearchSnippet: View {
     }
 }
 
-/// Where a chat lives: the project tile and lane, the Bot's face, or the task glyph.
+/// Where a chat lives: the Bot's face, or the task glyph.
 struct SearchPlaceLine: View {
     let place: ChatSearch.Place
 
     var body: some View {
         HStack(spacing: 6) {
             switch place {
-            case .project(let project, _):
-                ProjectTile(appearance: ProjectAppearance(color: project.color, icon: project.icon), size: 14)
             case .bot(_, let appearance):
                 BotFace(appearance: appearance, size: 16)
             case .task:
@@ -241,7 +219,6 @@ struct SearchPlaceLine: View {
 
     static func text(for place: ChatSearch.Place) -> String {
         switch place {
-        case .project(let project, let lane): [project.name, lane].compactMap { $0 }.joined(separator: " · ")
         case .bot(let bot, _): bot.displayName.isEmpty ? bot.name : bot.displayName
         case .task(let name): String(localized: "Task run · \(name)")
         }

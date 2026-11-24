@@ -1,7 +1,7 @@
 import Foundation
 import HermesKit
 
-/// Words the transcriber should spell right (`docs/voice.md` §2): Bot names, projects and
+/// Words the transcriber should spell right (`docs/voice.md` §2): Bot names and
 /// skills, as `AnalysisContext.contextualStrings` (up to 100).
 @MainActor
 enum SpeechVocabulary {
@@ -9,9 +9,6 @@ enum SpeechVocabulary {
         var words: Set<String> = ["Hermes"]
         if let roster = workspace.roster {
             words.formUnion(roster.visibleBots.prefix(30).map(\.displayName))
-        }
-        if let projects = workspace.projects {
-            words.formUnion(projects.projects.values.prefix(30).map(\.name))
         }
         if let skills = conversation?.slashCatalog?.skillNames {
             // "pdf-tools" is said "PDF tools".

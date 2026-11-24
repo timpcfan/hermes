@@ -212,8 +212,7 @@ struct HermesCommands: Commands {
         return workspace.unread.readMark(for: key) == .markedUnread
     }
 
-    /// The View menu's own items (macMenuView): Chats, Bots; Tasks, Skills, Board, the card moves
-    /// and Filter.
+    /// The View menu's own items (macMenuView): Chats, Bots; Tasks, Skills and Filter.
     @ViewBuilder private var viewItems: some View {
         Button("Chats") { workspace?.sidebarMode = .chats }
             .keyboardShortcut("1", modifiers: .command)
@@ -232,28 +231,6 @@ struct HermesCommands: Commands {
         }
         .keyboardShortcut("2", modifiers: [.command, .shift])
         .disabled(workspace == nil)
-        // The project's Board: from its home, one of its chats, or the Board itself (back home).
-        Button("Board") {
-            guard let workspace, let projectID = workspace.currentProjectID else { return }
-            workspace.sidebarMode = .chats
-            if case .board = workspace.selection {
-                workspace.selection = .project(projectID)
-            } else {
-                workspace.selection = .board(projectID)
-            }
-        }
-        .keyboardShortcut("b", modifiers: [.command, .shift])
-        .disabled(workspace?.currentProjectID == nil || workspace?.roster == nil)
-        // Drag and drop's keyboard path (`docs/board.md` §6): the selected card to the next
-        // column it may go to. Off while typing in the card, where ⌘→ moves the cursor.
-        let board = workspace?.shownBoard
-        let canMove = board.map { $0.openCardID != nil && !$0.isTyping } ?? false
-        Button("Move Card Right") { Task { await board?.moveOpenCard(forward: true) } }
-            .keyboardShortcut(.rightArrow, modifiers: .command)
-            .disabled(!canMove)
-        Button("Move Card Left") { Task { await board?.moveOpenCard(forward: false) } }
-            .keyboardShortcut(.leftArrow, modifiers: .command)
-            .disabled(!canMove)
         // The chat list's filter, as the sidebar's filter button has it (`docs/inbox.md` §5).
         if let workspace {
             Menu("Filter") { InboxFilterMenuContent(workspace: workspace) }
@@ -274,14 +251,7 @@ struct HermesCommands: Commands {
         }
         #endif
         CommandGroup(replacing: .newItem) {
-            // On a Board, ⌘N adds a card (`docs/board.md` §2).
-            if let board = workspace?.shownBoard {
-                Button("New Card") {
-                    board.newCard = BoardModel.NewCardTarget()
-                }
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(!board.isOnline || board.workflow == nil)
-            } else if let workspace, workspace.detailRoute(compact: false) == .tasks {
+            if let workspace, workspace.detailRoute(compact: false) == .tasks {
                 // In Tasks, ⌘N opens New Task, as + does (`docs/tasks.md` §4).
                 Button("New Task") {
                     workspace.pendingNewTask = .empty
@@ -291,13 +261,7 @@ struct HermesCommands: Commands {
                 Button("New Chat") {
                     guard let workspace else { return }
                     workspace.sidebarMode = .chats
-                    // On a project home ⌘N starts the chat in that project, as its New Chat button
-                    // does (`docs/projects.md` §3).
-                    if case .project(let projectID) = workspace.selection {
-                        workspace.startNewChat(inProject: projectID, fromHome: true)
-                    } else {
-                        workspace.startNewChat()
-                    }
+                    workspace.startNewChat()
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(workspace == nil)
@@ -329,7 +293,7 @@ struct HermesCommands: Commands {
             }
             .disabled(workspace == nil || router == nil)
         }
-        // View (macMenuView): Chats, Bots; Tasks, Skills, Board, Filter; then the sidebar items.
+        // View (macMenuView): Chats, Bots; Tasks, Skills, Filter; then the sidebar items.
         #if os(macOS)
         // The system's Show Sidebar would dock the sidebar in a narrow window and squeeze the chat;
         // this one brings it over the chat there (`docs/chat.md` §4). Replacing the sidebar group

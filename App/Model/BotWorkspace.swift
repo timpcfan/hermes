@@ -110,9 +110,6 @@ final class BotWorkspace: Identifiable {
     var inboxFilter = InboxFilter.all
     /// A chat just archived, for Undo.
     var recentlyArchived: HermesSession?
-    /// Where it was archived from: Undo shows there, once per window.
-    private(set) var recentlyArchivedPlace = ArchivePlace.chatList
-    enum ArchivePlace { case chatList, project }
     /// Archive calls on their way, by chat: Undo goes after its archive, never alongside it.
     @ObservationIgnored private var archiving: [String: Task<Void, any Error>] = [:]
     private(set) var isLoadingSessions = false
@@ -168,7 +165,7 @@ final class BotWorkspace: Identifiable {
         didSet {
             if case .session(let key) = selection { lastChatKey = key }
             if selection == nil { lastChatKey = nil }
-            navigation.selectionChanged(to: selection, keepsPlace: keepsPlace, fromProject: openingFromProject)
+            navigation.selectionChanged(to: selection, keepsPlace: keepsPlace)
             openSelection()
         }
     }
@@ -177,8 +174,6 @@ final class BotWorkspace: Identifiable {
     private(set) var navigation = CompactNavigation()
     /// The next selection change keeps a compact window where it is (`CompactNavigation`).
     @ObservationIgnored private var keepsPlace = false
-    /// The next selection is a chat opened from this project's home (`CompactNavigation.parentProject`).
-    @ObservationIgnored private var openingFromProject: String?
 
     /// Selects without pushing: the other mode's selection coming back under its list, or the
     /// screen on show getting a new name.
@@ -228,27 +223,10 @@ final class BotWorkspace: Identifiable {
     /// (`DetailPass`, `docs/bots-groups-skills.md` §1.2).
     private(set) var detailPass = DetailPass()
 
-    /// The screen the main area shows for the selection. On a compact width a chat opened from a
-    /// project's home pushes over that home (`docs/projects.md` §2).
+    /// The screen the main area shows for the selection. `compact` is kept for the callers that
+    /// pass their width; with no project homes it no longer changes the route (`docs/projects.md`).
     func detailRoute(compact: Bool) -> DetailRoute {
-        DetailRoute(selection: selection, mode: sidebarMode, hasBotMode: roster != nil,
-                    parentProject: compact ? navigation.parentProject : nil)
-    }
-
-    /// Selects a chat (or, `nil`, the new-chat draft) opened from a project's home, so a compact
-    /// window's Back returns to the project.
-    private func select(_ item: SidebarItem?, fromProject projectID: String, keepingPlace: Bool = false) {
-        openingFromProject = projectID
-        if keepingPlace { reselect(item) } else { selection = item }
-        openingFromProject = nil
-    }
-
-    /// Back from a chat or a Board pushed over its project's home (a compact window): the window
-    /// is already on the project, so selecting it pushes nothing more (a push there stacked a
-    /// second copy of the home).
-    func returnToProject(_ projectID: String) {
-        reselect(.project(projectID))
-        navigation.poppedToProject(projectID)
+        DetailRoute(selection: selection, mode: sidebarMode, hasBotMode: roster != nil)
     }
 
     /// A row picked in the sidebar: the row that is already selected shows its screen again.
@@ -260,6 +238,7 @@ final class BotWorkspace: Identifiable {
     /// What the window opens on: restored from when it last closed, before the gateway answers.
     /// An iPhone that was back on the list keeps the item selected under it, unpushed.
     func openAtLaunch(_ item: SidebarItem, pushed: Bool = true) {
+        guard !item.isProjectScreen else { return }
         detailPass.open(item)
         if pushed {
             selection = item
@@ -328,11 +307,12 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored private var selectionByMode: [SidebarMode: SidebarItem?] = [:]
     /// A conversation waiting for its first message.
     private(set) var draft: ConversationModel!
-    /// Talk was asked for before its chat was on screen (a project home's composer).
+    /// Talk was asked for before its chat was on screen.
     @ObservationIgnored var voiceModeRequested = false
     /// Bumped by Chat → Talk (⌥⌘V): the open chat starts or ends a call.
     var voiceToggleRequests = 0
-    /// This gateway's projects (Bot Mode backends only).
+    /// What runs elsewhere on this gateway and its default folder (Bot Mode backends only,
+    /// `ProjectsModel`).
     private(set) var projects: ProjectsModel!
     @ObservationIgnored private var pinStore: InspectorPins?
     /// Inspector tabs pinned across this gateway's chats (`docs/inspector.md` §1).
@@ -342,39 +322,10 @@ final class BotWorkspace: Identifiable {
         pinStore = pins
         return pins
     }
-    @ObservationIgnored private var boardModels: [String: BoardModel] = [:]
-    /// A project's Board (`docs/board.md`), one per project for as long as the gateway is open.
-    func board(for projectID: String) -> BoardModel {
-        if let model = boardModels[projectID] { return model }
-        let model = BoardModel(workspace: self, projectID: projectID)
-        boardModels[projectID] = model
-        return model
-    }
-
-    /// The project on screen: its home, its Board, or a chat in it (⇧⌘B opens its Board).
-    var currentProjectID: String? {
-        switch selection {
-        case .project(let id), .board(let id): id
-        case .session(let key): projects?.projectID(forSessionID: key)
-        default: nil
-        }
-    }
-
-    /// Opens a card (a notification, a link): its project's board with the card open. Without the
-    /// project, the gateway's boards say which project the board belongs to.
+    /// A card's notification or link: this build has no Board screen (`docs/projects.md`), so it
+    /// opens the chat list.
     func openCard(_ cardID: String, board slug: String?, projectID: String?) {
         sidebarMode = .chats
-        if let projectID {
-            selection = .board(projectID)
-            board(for: projectID).openCardID = cardID
-            return
-        }
-        guard let slug, let client = roster?.boardClient else { return }
-        Task {
-            guard let info = try? await client.boards().first(where: { $0.slug == slug }), let projectID = info.projectID else { return }
-            selection = .board(projectID)
-            board(for: projectID).openCardID = cardID
-        }
     }
 
     /// Opens What Hermes Learned (a notification after a tidy): Skills → Learned, on `route`, for
@@ -385,11 +336,6 @@ final class BotWorkspace: Identifiable {
         showsLearned = true
         learnedScope = bot.map { .bot($0) } ?? .hermes
         pendingLearnedRoute = route
-    }
-
-    /// The Board on screen, if one is.
-    var shownBoard: BoardModel? {
-        if case .board(let id) = selection { board(for: id) } else { nil }
     }
 
     /// The Skills page's list, kept while the app runs so Skills opens on it at once.
@@ -495,8 +441,6 @@ final class BotWorkspace: Identifiable {
         chatSearchModel = model
         return model
     }
-    /// A project home's composer: the next chat in that project, by project id.
-    @ObservationIgnored private var projectDrafts: [String: ConversationModel] = [:]
 
     private(set) var preferredModel: ModelSelection?
     private(set) var preferredEffort: ReasoningEffort?
@@ -772,8 +716,6 @@ final class BotWorkspace: Identifiable {
         }
     }
 
-    /// Starts a fresh chat, reusing the current draft if it is still untouched. It runs where
-    /// Run In last pointed (the active project), unless a project is given.
     /// Tell Hermes Something to Remember… (`docs/memory.md` §1): a new chat, or the Bot's chat,
     /// with "Remember that " typed. Hermes saves it with its memory tool.
     func startRememberChat(bot name: String?) {
@@ -813,19 +755,13 @@ final class BotWorkspace: Identifiable {
     /// New Task opens with these filled in (setup's morning briefing).
     var pendingNewTask: TaskPrefill?
 
-    /// - Parameter fromHome: started on that project's home (Talk), so Back returns to it.
-    func startNewChat(inProject projectID: String? = nil, fromHome: Bool = false) {
-        if !draft.isEmpty || draft.sessionID != nil || (projectID != nil && draft.placement?.projectID != projectID) {
+    /// Starts a fresh chat, reusing the current draft if it is still untouched. It runs in the
+    /// gateway's default folder (`docs/projects.md`).
+    func startNewChat() {
+        if !draft.isEmpty || draft.sessionID != nil {
             draft = ConversationModel(workspace: self)
         }
-        if let projectID {
-            draft.placement = projects.placement(in: projectID)
-        }
-        if fromHome, let projectID {
-            select(nil, fromProject: projectID)
-        } else {
-            selection = nil
-        }
+        selection = nil
         navigation.show()
     }
 
@@ -836,16 +772,10 @@ final class BotWorkspace: Identifiable {
         navigation.dismiss()
     }
 
-    /// Opens a chat that may not be in the loaded history page (a project's chats come from the
-    /// tree, which reaches further back).
-    /// - Parameter projectID: the project home it was opened from, so Back returns to it.
-    func open(_ session: HermesSession, fromProject projectID: String? = nil) {
+    /// Opens a chat that may not be in the loaded history page (a link, a notification).
+    func open(_ session: HermesSession) {
         list(session)
-        if let projectID {
-            select(.session(session.stableID), fromProject: projectID)
-        } else {
-            selection = .session(session.stableID)
-        }
+        selection = .session(session.stableID)
     }
 
     /// Puts a chat opened from elsewhere in the list, in its place by time, unless it's there.
@@ -893,15 +823,6 @@ final class BotWorkspace: Identifiable {
         conversation.checkpoints.showTimeline()
     }
 
-    /// The composer at the bottom of a project home: its next chat in that project.
-    func projectDraft(for projectID: String) -> ConversationModel {
-        if let existing = projectDrafts[projectID], existing.sessionID == nil { return existing }
-        let conversation = ConversationModel(workspace: self)
-        conversation.placement = projects.placement(in: projectID)
-        projectDrafts[projectID] = conversation
-        return conversation
-    }
-
     /// The draft got its server session on first send: file it under that session.
     func adopt(_ conversation: ConversationModel, session: HermesSession) {
         // Listed as a waiting chat until now (`keepWaiting`): its row becomes the chat's.
@@ -921,12 +842,6 @@ final class BotWorkspace: Identifiable {
             draft = ConversationModel(workspace: self)
             if selection == nil {
                 reselect(.session(session.stableID))
-            }
-        } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
-            // Sent from a project home: the chat opens.
-            projectDrafts[projectID] = nil
-            if selection == .project(projectID) {
-                select(.session(session.stableID), fromProject: projectID, keepingPlace: true)
             }
         }
     }
@@ -953,10 +868,6 @@ final class BotWorkspace: Identifiable {
         if conversation === draft {
             draft = ConversationModel(workspace: self)
             if selection == nil { reselect(.session(chat.rowKey)) }
-        } else if let projectID = projectDrafts.first(where: { $0.value === conversation })?.key {
-            projectDrafts[projectID] = nil
-            // Opened from the project, as when Hermes makes the chat (`adopt`), so Back returns to it.
-            if selection == .project(projectID) { select(.session(chat.rowKey), fromProject: projectID, keepingPlace: true) }
         }
     }
 
@@ -1422,29 +1333,23 @@ final class BotWorkspace: Identifiable {
         }
     }
 
-    /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list and its
-    /// project's lanes (`docs/projects.md` §2). `place` is where it was archived from, which shows
-    /// the Undo.
-    func archive(_ session: HermesSession, from place: ArchivePlace = .chatList) async throws {
+    /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list.
+    func archive(_ session: HermesSession) async throws {
         guard let client else { return }
         let index = allSessions.firstIndex { $0.stableID == session.stableID }
         allSessions.removeAll { $0.stableID == session.stableID }
-        projects?.archiving(session)
         if selection == .session(session.stableID) { closeSelection() }
         // Undo is offered at once, not once a busy Mac has answered.
-        recentlyArchivedPlace = place
         recentlyArchived = session
         let call = Task { _ = try await client.setSessionFlags(id: session.id, archived: true) }
         archiving[session.stableID] = call
         defer { if archiving[session.stableID] == call { archiving[session.stableID] = nil } }
         do {
             try await call.value
-            projects?.chatChangeLanded(session, .archived)
         } catch {
             // Undone meanwhile: the row is back and the chat was never archived; nothing to say.
             let undone = recentlyArchived?.stableID != session.stableID && allSessions.contains { $0.stableID == session.stableID }
             if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
-            projects?.chatChangeFailed(session)
             if !allSessions.contains(where: { $0.stableID == session.stableID }) {
                 allSessions.insert(session, at: min(index ?? 0, allSessions.count))
             }
@@ -1455,18 +1360,16 @@ final class BotWorkspace: Identifiable {
     func unarchive(_ session: HermesSession) async throws {
         guard let client else { return }
         if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
-        // Back in the list and its lane at once; the gateway's row replaces it when it answers.
+        // Back in the list at once; the gateway's row replaces it when it answers.
         if !allSessions.contains(where: { $0.stableID == session.stableID }) {
             allSessions.append(session)
         }
-        projects?.restoring(session)
         // After the archive still on its way: two calls in flight could land in either order.
         if case .failure? = await archiving[session.stableID]?.result {
             return // it never was archived
         }
         do {
             let updated = try await client.setSessionFlags(id: session.id, archived: false)
-            projects?.chatChangeLanded(session, .restored)
             // A list read between Undo and here (the gateway still had it archived) took the row.
             if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
                 allSessions[index] = updated
@@ -1475,7 +1378,6 @@ final class BotWorkspace: Identifiable {
             }
         } catch {
             allSessions.removeAll { $0.stableID == session.stableID }
-            projects?.unarchiveFailed(session)
             throw error
         }
     }
@@ -1750,13 +1652,12 @@ final class BotWorkspace: Identifiable {
         waitingChats = []
         WaitingChatStore.save([], gateway: id)
         draft.forgetLocalData()
-        projectDrafts.values.forEach { $0.forgetLocalData() }
     }
 
     /// The gateway is being removed: every page its chats show closes, the Preview's and the
     /// browser's, before its web data is touched (`docs/connecting-and-voice.md` §7).
     func closeWebViews() {
-        let chats = Array(conversations.values) + Array(projectDrafts.values) + backgroundChats + [draft].compactMap { $0 }
+        let chats = Array(conversations.values) + backgroundChats + [draft].compactMap { $0 }
         for chat in chats { chat.inspectorIfLoaded?.closeWebViews() }
         roster?.closeWebViews()
     }
@@ -1772,7 +1673,6 @@ final class BotWorkspace: Identifiable {
         }
         // Chats not filed under a session yet: the draft, project drafts, background sends.
         draft.cancelAll()
-        projectDrafts.values.forEach { $0.cancelAll() }
         backgroundChats.forEach { $0.cancelAll() }
         backgroundChats.removeAll()
         projects.disconnected()

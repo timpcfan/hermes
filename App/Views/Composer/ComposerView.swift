@@ -89,11 +89,6 @@ struct ComposerView: View {
             let title = roster.bot(named: name)?.title ?? name
             return String(localized: "Message \(title)")
         }
-        if conversation.isEmpty, conversation.sessionID == nil, !conversation.isBotChat,
-           let id = (conversation.placement ?? workspace.projects.defaultPlacement).projectID,
-           let name = workspace.projects.project(id)?.name {
-            return String(localized: "Ask about \(name)")
-        }
         // A chat being opened is a reply from the start, while its messages load.
         let isNew = conversation.isEmpty && conversation.sessionID == nil
         return isNew ? String(localized: "Ask Hermes anything") : String(localized: "Reply to Hermes")
@@ -559,7 +554,6 @@ struct ComposerView: View {
         #endif
         guard !isHoldingToRecord, !dictation.isActive, dictation.failure == nil else { return false }
         return !collapsesChipSlot || conversation.processChip != .hidden
-            || ProjectChip.isShown(conversation: conversation, workspace: workspace)
     }
 
     /// The finger is on the microphone and a voice message is recording.
@@ -618,15 +612,6 @@ struct ComposerView: View {
             .composerChip()
             .accessibilityShowsLargeContentViewer()
             .layoutPriority(-1)
-            .fixedSize(horizontal: inRow, vertical: false)
-        // Where the chat runs (projects). In the controls row it stays in place under the send
-        // mode, faded, and gives way (truncates) after the process chip, before Think.
-        ProjectChip(conversation: conversation, workspace: workspace)
-            .composerChip()
-            .opacity(showsModeChip && !inRow ? 0 : 1)
-            .allowsHitTesting(!showsModeChip || inRow)
-            .animation(.easeOut(duration: 0.18), value: showsModeChip)
-            .layoutPriority(-0.5)
             .fixedSize(horizontal: inRow, vertical: false)
     }
 

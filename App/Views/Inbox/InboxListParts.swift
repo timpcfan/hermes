@@ -175,19 +175,16 @@ struct MuteMenu: View {
     }
 }
 
-/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds. It shows only in
-/// the place the chat was archived from (the chat list or a project home), so a window never
-/// shows two.
+/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds.
 struct ArchivedToast: ViewModifier {
     @Bindable var workspace: BotWorkspace
-    var place = BotWorkspace.ArchivePlace.chatList
-    /// Room left below it: the chat list's bottom bar, or a project home's composer.
+    /// Room left below it: the chat list's bottom bar.
     var bottomPadding: CGFloat = 64
     let onError: (HermesError) -> Void
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
-            if let session = workspace.recentlyArchived, workspace.recentlyArchivedPlace == place {
+            if let session = workspace.recentlyArchived {
                 HStack(spacing: 12) {
                     Text("Archived “\(session.displayTitle)”")
                         .font(.subheadline)
@@ -221,13 +218,6 @@ struct ArchivedToast: ViewModifier {
                         withAnimation(Theme.snappy) { workspace.recentlyArchived = nil }
                     }
                 }
-                // Leaving a project home ends its Undo; it would otherwise wait there with no timer.
-                // The chat list keeps its own, which shows again on return (`docs/inbox.md` §5).
-                .onDisappear {
-                    if place == .project, workspace.recentlyArchived?.stableID == session.stableID, workspace.recentlyArchivedPlace == place {
-                        workspace.recentlyArchived = nil
-                    }
-                }
             }
         }
         .animation(Theme.snappy, value: workspace.recentlyArchived?.stableID)
@@ -235,134 +225,6 @@ struct ArchivedToast: ViewModifier {
 }
 
 #if os(iOS)
-/// One of a row's swipe actions, as a `List` row's `swipeActions` would hold it.
-struct RowSwipeAction: Identifiable {
-    let title: String
-    let symbol: String
-    let tint: Color
-    let perform: () -> Void
-
-    var id: String { title }
-}
-
-/// The chat list's trailing swipe on a row outside a `List` (a project's lanes, `docs/projects.md`
-/// §2), where `swipeActions` does nothing. The actions are in `swipeActions`' order: the first sits
-/// at the edge and is what a full swipe does. It looks and moves as the system's does: round
-/// buttons with their names under them, in places and at marks `RowSwipe` holds. The pan begins
-/// only on a drag to the left (`SidewaysSwipePan`), so the lanes still scroll and the edge's back
-/// swipe stays the system's. VoiceOver gets the actions from the row's own `accessibilityAction`s.
-struct TrailingSwipeActions: ViewModifier {
-    let id: String
-    let actions: [RowSwipeAction]
-    /// The row that's open, so opening one shuts the others and a scroll shuts it.
-    @Binding var openRow: String?
-
-    @State private var offset: CGFloat = 0
-    /// Where the drag began: shut or open.
-    @State private var start: CGFloat = 0
-    @State private var rowWidth: CGFloat = 0
-    @State private var isFull = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The round button's height, as the system draws the chat list's.
-    static let buttonHeight: CGFloat = 34
-
-    private var swipe: RowSwipe {
-        RowSwipe(count: actions.count, rowWidth: rowWidth)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .offset(x: offset)
-            .background(alignment: .trailing) { buttons }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-            .gesture(SidewaysSwipePan(direction: openRow == id ? .either : .left, countsFromTouchDown: true, began: { start = offset }, changed: follow, ended: release, cancelled: { settle(.close) }))
-            .sensoryFeedback(.impact(weight: .medium), trigger: isFull) { _, full in full }
-            .onChange(of: openRow) { _, row in
-                if row != id, offset != 0 { settle(.close) }
-            }
-    }
-
-    /// Behind the row, in the space it has uncovered. They stay in the tree while the row slides
-    /// back, so they shrink and fade with it instead of vanishing.
-    private var buttons: some View {
-        ZStack(alignment: .trailing) {
-            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                let slot = swipe.slot(index, at: offset)
-                let shows = swipe.shows(index, at: offset)
-                button(action, width: slot.width)
-                    .animation(.easeOut(duration: 0.1), value: isFull)
-                    .opacity(shows ? swipe.opacity(index, at: offset) : 0)
-                    .scaleEffect(shows || reduceMotion ? 1 : 0.5)
-                    .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.72), value: shows)
-                    .padding(.trailing, slot.inset)
-            }
-        }
-        .frame(width: max(0, -offset), alignment: .trailing)
-        .frame(maxHeight: .infinity)
-        .clipped()
-    }
-
-    private func button(_ action: RowSwipeAction, width: CGFloat) -> some View {
-        Button {
-            perform(action)
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: action.symbol)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: width, height: Self.buttonHeight)
-                    .background(action.tint, in: Capsule())
-                Text(action.title)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHidden(true)
-    }
-
-    private func follow(_ translation: CGFloat) {
-        if openRow != id, openRow != nil { openRow = nil }
-        offset = swipe.offset(translation: translation, from: start)
-        isFull = swipe.isFull(offset)
-    }
-
-    /// Where the row is decides, not how fast it moved, as in the chat list.
-    private func release(_ translation: CGFloat, velocity _: CGFloat) {
-        offset = swipe.offset(translation: translation, from: start)
-        settle(swipe.release(offset: offset))
-    }
-
-    private func perform(_ action: RowSwipeAction) {
-        action.perform()
-        settle(.close)
-    }
-
-    private func settle(_ release: RowSwipe.Release) {
-        if release == .full, let first = actions.first { first.perform() }
-        let target: CGFloat = release == .open ? -swipe.openWidth : 0
-        let animation: Animation = if reduceMotion {
-            .easeOut(duration: 0.15)
-        } else if release == .full {
-            .smooth(duration: 0.6)
-        } else {
-            .spring(response: 0.35, dampingFraction: 0.86)
-        }
-        // `isFull` stays as it was until the next drag: dropping it here would snap the first
-        // button back to its own width instead of letting it shrink with the row.
-        withAnimation(animation) { offset = target }
-        if release == .open {
-            openRow = id
-        } else if openRow == id {
-            openRow = nil
-        }
-    }
-}
-
 /// A pan that begins only when the finger moves more sideways than up or down (`SidewaysSwipe`),
 /// so vertical drags stay the list's or the chat's. A SwiftUI drag on rows in a scroll view took
 /// those too, and the list and the chat stopped scrolling.

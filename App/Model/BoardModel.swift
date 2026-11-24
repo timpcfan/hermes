@@ -105,7 +105,7 @@ final class BoardModel {
 
     var isOnline: Bool { roster?.isConnected == true }
     var gatewayName: String { workspace?.bot.name ?? "" }
-    var projectName: String { workspace?.projects.project(projectID)?.name ?? info?.projectName ?? "" }
+    var projectName: String { info?.projectName ?? "" }
 
     private var rememberedSlugKey: String {
         "board.\(workspace?.id.uuidString ?? "").\(projectID)"
@@ -339,31 +339,25 @@ final class BoardModel {
         }
     }
 
-    /// The project's board: the one remembered here, the one the project names, the one scoped
-    /// to the project, or a new one (made the first time someone opens the project's Board).
+    /// The project's board: the one remembered here, the one scoped to the project, or a new one (made the first time someone opens the project's Board).
     private func resolveBoard(_ client: BackendClient) async throws -> BoardInfo? {
         let boards = try await client.boards()
-        let project = workspace?.projects.project(projectID)
         let remembered = UserDefaults.standard.string(forKey: rememberedSlugKey)
         if let found = boards.first(where: { $0.slug == remembered && ($0.projectID == nil || $0.projectID == projectID) })
-            ?? boards.first(where: { $0.slug == project?.boardSlug })
             ?? boards.first(where: { $0.projectID == projectID }) {
             UserDefaults.standard.set(found.slug, forKey: rememberedSlugKey)
             return found
         }
         guard mayCreate else { return nil }
-        let base = BoardCopy.slug(project?.slug.isEmpty == false ? project!.slug : (project?.name ?? projectID))
+        let base = BoardCopy.slug(projectID)
         var slug = base
         var suffix = 2
         while boards.contains(where: { $0.slug == slug }) {
             slug = "\(base)-\(suffix)"
             suffix += 1
         }
-        let made = try await client.createBoard(slug: slug, name: project?.name ?? slug, projectID: projectID)
+        let made = try await client.createBoard(slug: slug, name: slug, projectID: projectID)
         UserDefaults.standard.set(made.slug, forKey: rememberedSlugKey)
-        if let projects = workspace?.projects.client {
-            _ = try? await projects.update(id: projectID, boardSlug: made.slug)
-        }
         return made
     }
 
