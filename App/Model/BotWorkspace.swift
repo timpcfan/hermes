@@ -107,10 +107,11 @@ final class BotWorkspace: Identifiable {
     /// closes, as its deliveries showed (`DeliveryProtection`, Settings → Setup): nil until a
     /// delivery has been seen on the current version. Kept per gateway on the device.
     private(set) var deliveryProtection: DeliveryProtection?
-    /// The chat list's filter (`docs/inbox.md` §5): which chats it holds (Show), then which of
-    /// those (Only).
-    var inboxShow = InboxShow.atLaunch
-    var inboxFilter = InboxFilter.all
+    /// The inbox's filter (`docs/inbox.md` §5): which sources it holds, empty chats, and the
+    /// states that narrow Main. Kept per gateway on the device.
+    var inboxScope: InboxScope {
+        didSet { if inboxScope != oldValue { inboxScope.store(for: id) } }
+    }
     /// When each chat came back to the top of Main (`InboxReturns`, `docs/inbox.md` §2a). Changes
     /// only when a chat starts waiting on the person, stops or finishes.
     var inboxReturns: [String: Date] = [:]
@@ -477,6 +478,7 @@ final class BotWorkspace: Identifiable {
         self.store = store
         self.imageStore = SentImageStore(botID: bot.id)
         self.unread = UnreadStore(gatewayID: bot.id)
+        inboxScope = InboxScope.stored(for: bot.id)
         self.widgets = WidgetStore(gatewayID: bot.id)
         if let apiKey, !apiKey.isEmpty {
             client = HermesClient(baseURL: bot.baseURL, apiKey: apiKey)

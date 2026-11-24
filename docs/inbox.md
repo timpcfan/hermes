@@ -102,8 +102,7 @@ right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
   newest row's time, so the copy kept on the device never puts back an older line.
 - **The others**: when a row's activity (the list's `last_active`, a Bot's chat's) moves past
   the activity its line was read at, by more than a second, the chat's newest 8 rows are read
-  again: the Bots, the 20 newest chats and each project's newest three (the tree's preview rows)
-  as soon as the lists move, rows further down as they
+  again: the Bots and the 20 newest chats as soon as the lists move, rows further down as they
   come on screen, 4 reads at a time (1 while the Mac is busy), once per activity. A chat in a
   turn shows its activity line and is read when it stops.
 - **Group chats**, open or not, opened this launch or never: when a room's `latest_seq` moves, the
@@ -130,12 +129,13 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
 | Failed | Title | Red triangle + "Stopped: …" until opened | – |
 | Mention (group chat) | Semibold | Last message or who's working | @ badge, then the count |
 
-- Pinned first, then by each row's time, newest first; no date sections (`RowTime.ordered`).
+- In Chats mode the list is an inbox of regions (§2a); within Main, by each row's time or the
+  moment it came back, newest first; no date sections. Bots mode: pinned first, then by time
+  (`RowTime.ordered`).
 - **A row's time is its last line's message** (`RowTime`): the newest message a person or a Bot
   wrote (a reply: when it ended), the same one line 2 shows. It's also what the row sorts by, in
-  the chats, the Bots, group chats (their log's newest message) and a project's lanes. A project
-  takes the newest of its chats' times (`RowTime.ofProject`, [projects.md](projects.md) §2), and a
-  search result its chat's row's ([search.md](search.md) §2). Hermes'
+  the chats, the Bots and group chats (their log's newest message), and a search result takes its
+  chat's row's ([search.md](search.md) §2). Hermes'
   `last_active` moves for more than messages, so it only stands in until the line is read:
   - it's the newer of the turn heartbeat (`last_activity_at`, stamped about once a minute by any
     turn: API calls, tools, compaction, retries) and the newest stored row of any kind, a
@@ -155,7 +155,6 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
   (`InboxTime`), in the system's calendar and time zone, the same on every device. It redraws only
   when its words change (`InboxTime.nextChange`): each minute in the first hour, then at midnight,
   so an idle list wakes nothing.
-- Projects stay above the chats, collapsed with their count ("Projects · 3").
 - Bot rows (`BotInboxRow`) have the face at 44 pt (32 on the Mac) in the mood of what it's doing
   (`ActivityLine.faceMood`, `docs/bot-faces.md` §5.9). Group rows (`GroupInboxRow`) stack the
   members' faces with whoever is working in front.
@@ -185,7 +184,7 @@ Activity's first state.
   chats run over Bot Mode, Hermes Desktop). Turns run on the API server (`/v1/runs`) by other
   devices don't appear; this device's own runs come from the chat itself. It's asked every 5 s
   while a list is on screen and 0.5 s after a `sessions.changed` tick (see below). One answer
-  serves the chat list and the projects' running chats (`ProjectsModel.activeSessions`: a
+  serves every list on screen (`ProjectsModel.activeSessions`, all that's left of projects here: a
   request under way is joined, an answer under 2 s old reused). A Mac app behind other apps asks
   every 30 s and not on changes (its list never leaves the screen, and the dashboard is often the
   busy process on that Mac); coming to the front asks at once. Hermes' `preview` is the prompt
@@ -194,6 +193,59 @@ Activity's first state.
   available; the plan's progress is.
 - Attached chats update at most 4 times a second.
 - Without Bot Mode the chat list is fetched again every 15 s while it's on screen.
+
+## 2a. The inbox's regions (this fork)
+
+Chats mode is a GTD inbox after t3code's sidebar: chats move between regions by themselves and
+come back to the top of Main only when they need the person. One List, top to bottom:
+
+1. **Pinned**: pinned chats that aren't running or settled.
+2. **Main**: everything idle, finished, stopped or waiting on the person (an approval, a question, a
+   key). Sorted by the later of the row's time and the moment it **came back** (below), newest
+   first.
+3. **Working**: chats with a turn running, sending included, pinned ones too (they keep their pin
+   mark). Sorted by the person's last send on this device, else the chat's activity. The region,
+   header included, is absent while nothing runs. It folds with its header ("Working 2 ⌄"), open
+   by default, kept on the device (`inbox.workingExpanded`).
+4. **Settled**: chats the person marked finished, which Hermes keeps as `archived`. Folded by
+   default, the header shows how many there are ("Settled 73 ›"); open, ten slim rows, then "Show
+   25 more" at a time. Kept per gateway (`inbox.settledExpanded.<gateway>`).
+
+The rules are one function (`InboxSections.region`), in this order: settled (`archived`) wins;
+then waiting on the person goes to Main (never Working); then running goes to Working; then pinned
+goes to Pinned; the rest is Main. Counts, ⌥⌘↓ Next Unread, Mark All as Read and the list all read
+the same result (`BotWorkspace.inboxSections`): Pinned, Main, then Working.
+
+**Coming back to the top** (`InboxReturns`): the app records the moment it sees a chat start
+waiting on the person or stop with an error (at once), or finish (after 2 s, so a turn that pauses
+between tools doesn't bounce out of Working and back). Un-settling a chat counts too. The first
+look at a gateway's chats is only a baseline: what already waits when the app opens returns
+nothing by itself. The times are kept per gateway on the device (`inboxReturns.<gateway>`), only
+for chats still listed, so a cold launch keeps Main's order.
+
+**What it reads**: the regions are built in one pass and cached against the list's revision, two
+sets from `LiveActivity` (`inbox.live`, `inbox.needsYou`), which change only when a chat starts,
+stops or starts waiting (never with each streamed word, unlike `lines`), the return times, the
+last lines' revision and the filter. It never reads the selection, and row times read the live set
+instead of each chat's line. The first frame still lists 40 rows (`ChatListSnapshot`); Working and
+Settled come after them, and older pages load at the very end, below Settled.
+
+**Settled's rows** come from the Dashboard backend only: `GET /api/sessions?archived=only&order=recent`
+with `limit`/`offset`, which answers `total` (`BackendClient.archivedSessions`, `SettledChats`).
+Folded, the app asks for the count alone (`limit=1`, after each list refresh) and keeps no rows;
+open, pages carry a generation, so a refresh and a page on its way can't interleave
+(`SettledList`). Hermes back-fills pinned chats into every page across the archived filter (its
+pinned query doesn't inherit it), in both lists, so the app keeps only rows whose own `archived`
+says which side they're on, and a back-filled pin shows once. Without Bot Mode's backend there is
+no Settled region; Settle still archives, and search finds the chat. A settled chat whose
+`last_active` moved past the newest one the person saw lights a dot on the folded header (never an
+unread count); opening the region clears it.
+
+**Working's limits**: Working knows what this device runs and what `session.active_list` lists
+(Bot Mode, the gateway process's own sessions). Without Bot Mode only this device's turns show; a
+`hermes chat` in a terminal, a scheduled run, or another device's `/v1/runs` turn don't, until
+their reply lands and the row moves by its time. Telegram and Discord turns show when Hermes lists
+them in `session.active_list` (not checked against a real gateway).
 
 ## 3. Motion
 
@@ -229,8 +281,9 @@ search).
   where the window was, the way the system restores apps: a chat that was open is open again,
   already pushed, with the back button to the list; a window that was back on the list opens on
   the list, its last chat selected under it but not open (`BotWorkspace.openAtLaunch`).
-- A chat deleted or archived while it's open, or a Bot removed while its chat is open, goes back
-  to the list rather than leave an empty screen (`CompactNavigation.dismiss`).
+- A chat deleted while it's open, or a Bot removed while its chat is open, goes back to the list
+  rather than leave an empty screen (`CompactNavigation.dismiss`). A chat settled while it's open
+  gives way to the next one in Main (§5 Settle).
 - Just before a chat opens (`BotWorkspace.selection` `willSet`), the store notes how far it was
   read (`UnreadStore.noteOpening`). Opening isn't reading: what's been on screen is (below).
 - Something new: the transcript finds the New Messages line (`NewMessagesMarker`): above the head
@@ -378,66 +431,52 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 
 ## 5. Lists: filters, menus, swipes, counts
 
-- **Filters** (Chats mode): one filter button (`inboxFilterMenu`; `InboxFilterButton`) with a
-  menu: a Show section, then Only Unread n, Only Needs You n, Only Running n (one at a time;
-  turning the one that's on off shows everything again), then Mark All as Read. On iPhone it
-  leads the root's bottom toolbar, on iPad it sits in the sidebar's toolbar, on the Mac in the
-  source list's titlebar and as View ▸ Filter. For anything but This App with no Only the button
-  fills, and VoiceOver reads both choices ("This App", "Other Platforms, Unread").
-- **Show** picks which chats the list holds, by the session's `source`
-  ([sessions-and-models.md](sessions-and-models.md) §1; `SessionOrigin`, `InboxShow`):
-  - **This App**, the default: chats started here, in Hermes Desktop or another API client (no
-    source, `api_server`, `desktop`, `hermes_app`), plus any chat the person pinned, wherever it
-    came from. Each launch starts here.
-  - **All Chats**: every chat, scheduled runs left out (below).
-  - **Other Platforms**: the terminal, messaging platforms, editors and the Board's workers
-    (`cli`, `tui`, `telegram`, `discord`, `acp`, `kanban`…).
-  - **Scheduled Tasks**: the runs of scheduled tasks (`cron`) that have something in them.
+- **Filter** (Chats mode, this fork): one filter button (`InboxFilterButton`) with a menu
+  (`InboxFilterMenuContent`), kept per gateway on the device (`InboxScope`, `inboxScope.<gateway>`):
+  - **Sources**, by the session's `source` (`InboxSourceGroup`): This App (no source,
+    `api_server`, `desktop`, `hermes_app`), Telegram, Discord, Terminal (`cli`, `tui`), Editor
+    (`acp`), Scheduled (`cron`) and Other Platforms (the rest: `kanban`, Slack…). All on but
+    Scheduled: scheduled runs aren't chats (`ScheduledRuns`); runs with output show when
+    Scheduled is on, and with their task in Tasks ([tasks.md](tasks.md) §5).
+  - **Only Unread n, Only Needs You n**: they narrow Main only; Pinned, Working and Settled stay.
+    Both on shows either.
+  - **Hide Empty Chats**, on by default: a chat with no messages (opened, never used) stays out,
+    unless it's pinned or a turn runs in it (a new chat has none stored until its first lands).
+  - Mark All as Read, and Show Everything when anything differs from the standard filter.
 
-  **Scheduled runs aren't chats** (`ScheduledRuns`). Hermes's scheduler runs each task in a
-  session of its own (`source` `cron`, an id like `cron_<job>_<YYYYmmdd_HHMMSS>`, often no
-  title), also when the run has nothing to say: a task every ten minutes leaves well over a
-  hundred sessions a day, most of them empty, and they used to fill the list as "New chat". A run
-  is known by its source alone, since the newer runtime's ids (`local-…`) look like any other.
-  Runs with output have two homes: Show → Scheduled Tasks, and their task's runs in Tasks
-  ([tasks.md](tasks.md) §5). A run Hermes lists with no messages shows nowhere: the app drops it
-  as each page comes in (a row without a count isn't taken for empty). Nothing else that lists or
-  counts chats sees a run, even pinned: This App, All Chats, Other Platforms, the Only counts,
-  unread badges, the back button, the app icon, Quick Open and search.
-
-  The Only filters narrow what Show holds, and their counts count it. Projects show only under
-  This App or All Chats with no Only; the rest is one flat list. Older pages load while the end
-  of the list is on screen, under every Show: a page that brings too few chats the list shows to
-  fill the screen loads the next one, until the end is off screen or the gateway has no more.
-  Search finds every chat, whatever Show holds, and scheduled runs only under its Tasks filter
-  ([search.md](search.md) §1).
-- **Empty lists** (`CaughtUpState`): an Only with nothing in it shows "You're all caught up". A
-  Show that holds nothing, once every page is in, says so, with or without an Only: "No chats
-  from this app" (This App), "No chats from other platforms", "No scheduled runs", each with
-  where they come from (design: `caughtUpThisApp`, `caughtUpOtherPlatforms`,
-  `caughtUpScheduled`). A gateway with no chats at all shows "No chats yet" instead.
+  On iPhone the button leads the root's bottom toolbar, on iPad it sits in the sidebar's toolbar,
+  on the Mac in the source list's titlebar and as View ▸ Filter. A filter that differs from the
+  standard one fills the button and puts "Filtered: No Telegram · Unread ✕" at the top of the
+  list; ✕ shows everything again. Older pages load while the end of the list is on screen, unless
+  Unread or Needs You narrows it. Settled isn't filtered: its count is Hermes'. Search finds every
+  chat whatever the filter, scheduled runs only under its Tasks filter ([search.md](search.md) §1).
+  Upstream's Show and Only (`InboxShow`) stay in HermesKit for its other readers.
+- **Empty lists** (`CaughtUpState`): Unread or Needs You with nothing left shows "You're all caught
+  up" or "Nothing needs you"; sources that hold no chat, once every page is in, "No chats from
+  these sources". A gateway with no chats at all shows "No chats yet" instead.
 - **Mark All as Read** at the end of the Unread list and in the filter menu: every badge clears at
   once, and the gateway hears of them 4 calls at a time. A mark this device set holds over the
   gateway's until its call is back and 10 s more (or the gateway agrees), so a busy Mac's list
   read meanwhile doesn't bring a badge back.
 - **Swipes:** from the leading edge Read / Unread (the main one) and Pin; from the trailing edge
-  Mute and Archive. Every list is a `List` and uses the system's swipe actions, on iPhone as on
-  iPad and the Mac. The system draws their symbols white on the tint in both modes, so the main
-  action is ink in Light Mode and a raised grey in Dark Mode (`Theme.swipeAction`; white ink hid
-  its envelope), the others a quieter grey (`Theme.swipeActionQuiet`). A project's lanes aren't a
-  `List`, so their chats get the trailing edge's swipe from `TrailingSwipeActions`, on iPhone and
-  iPad only, with the system's numbers measured on iOS 27 (`RowSwipe`, `docs/projects.md` §2):
-  buttons 60 points wide with 10 around them, the row following the finger from where it touched
-  down (a pan's own translation leaves out the move that began it, and a short swipe shut), a
-  let-go past half of the buttons opening the row, and a full swipe at the larger of 52% of the
-  row and one button past them.
-- **Archive:** `PATCH /api/sessions/{id} {archived: true}` (the same as `session.archive`), with
-  Undo for 5 s. Archived chats leave the list (Hermes' lists leave them out). The row goes and
-  Undo shows at once; Undo brings the row back at once and sends its call after the archive's,
-  never alongside it.
-- **Menus:** Mark as Read / Unread, Pin, Mute ▸ first, then Rename…, Move to Project…, Branch,
-  Checkpoints…, Copy Session ID, Delete…. The Mac adds Archive. Bot menus: Mark as Read / Unread,
-  Pin, Mute ▸, then Edit Bot…, Routines…, Hide, Copy @handle.
+  Settle (a full swipe settles) and Mute; a settled row's trailing swipe is Un-settle. Every list
+  is a `List` and uses the system's swipe actions, on iPhone as on iPad and the Mac. The system
+  draws their symbols white on the tint in both modes, so the main action is ink in Light Mode and
+  a raised grey in Dark Mode (`Theme.swipeAction`; white ink hid its envelope), the others a
+  quieter grey (`Theme.swipeActionQuiet`).
+- **Settle / Un-settle** (this fork's Archive): `PATCH /api/sessions/{id} {archived: true|false}`
+  (the same as `session.archive`). The row goes to the top of Settled at once and "Settled “…”
+  Undo" shows for 5 s; Undo (or Un-settle) brings it back to the top of Main at once and sends its
+  call after the settle's, never alongside it. Settling the chat that's open opens the next one in
+  Main, else the one above it, else nothing (on iPhone, settled from the list, the list stays).
+  Sending in a settled chat un-settles it first, without holding up the send; activity elsewhere
+  doesn't, it lights Settled's dot instead (§2a). A settled chat opened from search, a
+  notification or a link stays settled: it shows in Settled while it's open, even folded, and
+  never in Main. On iPad and the Mac, Chat ▸ Settle Chat (⇧⌘S) settles or un-settles the open
+  chat.
+- **Menus:** Mark as Read / Unread, Pin, Mute ▸ first, then Rename…, Branch, Checkpoints…, Copy
+  Session ID, Settle, Delete…; a settled row: Un-settle, Rename…, Copy Session ID, Delete…. Bot
+  menus: Mark as Read / Unread, Pin, Mute ▸, then Edit Bot…, Routines…, Hide, Copy @handle.
 - **Counts outside the list:**
   - iPhone's back button, over a pushed chat: unread chats (not messages) elsewhere, muted and
     open ones left out (`UnreadStore.unreadElsewhere`). Without any it shows the chevron alone.
@@ -462,7 +501,8 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 
 - Rows read "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs"; live "…, Hermes: Running
   swift test"; muted "…, muted, 12 unread"; needs you "…, waiting for your approval".
-- Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Archive.
+- Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Settle; settled
+  rows Un-settle. Region headers are headers, with their count and Expanded / Collapsed.
 - VoiceOver stays where the person put it while replies arrive: on a row of the list, and on a
   message in the open chat. A reply changes a row's words and moves it up, but never takes the
   focus with it (`VoiceOverFocusUITests`, against the mock's "slow marathon" turn).
@@ -490,7 +530,8 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 ## 7. Checks
 
 Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py`; add
-`--inbox-demo` for a chat that keeps writing and one waiting on an approval) and a real Hermes:
+`--inbox-demo` for a chat that keeps writing and one waiting on an approval, `--inbox-gtd` for the
+inbox's regions) and a real Hermes:
 
 - A reply that lands while you're away makes the row semibold with a count equal to the replies
   after `last_read_at` (seeded: Release prep 3, Morning briefing 1, Stand-up summary the dot).
@@ -546,13 +587,27 @@ Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py
   two quotes, in portrait and landscape (`SelectedWordsUITests` runs these steps). A long press on
   a code block, a table or the margin, and on a streaming reply or your own message, opens the
   message menu; a link opens with no preview.
+- The inbox's regions (`backend.py --inbox-gtd`, its 2-minute cycle): "Deploy hk3 nginx" moves
+  to Working when it starts, back to the top of Main the moment it waits for an approval, and
+  stays at the top when it finishes; "Review my recent work" is pinned and sits in Working with
+  its pin; Working's header goes when nothing runs. Settled reads "Settled 37" folded; opened, ten
+  rows (and the pinned settled one Hermes back-fills), then Show 25 more until all 37 are in.
+  Settle the open chat (⇧⌘S, or a full trailing swipe on iPhone): it tops Settled and the next
+  chat in Main opens; Undo or Un-settle puts it back at the top of Main. Search "Router", open a
+  settled result: it shows under Settled, not in Main; send in it and it leaves Settled for
+  Working. The filter's Telegram off and Unread on: "Filtered: No Telegram · Unread ✕", Main only
+  unread chats, Pinned and Working unchanged; ✕ shows everything. Quit and relaunch: Main keeps
+  its order.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),
   `SidebarCountsTests` (a group chat's count read page by page, the segments' rows),
   `GroupRowSummaryTests` (a group chat's newest message and its time, opened or not),
   `SidewaysSwipeTests` (which drags a row's swipe takes, and `RowSwipe`'s geometry),
-  `SidewaysScrollTests` (which Mac scrolls reply).
+  `SidewaysScrollTests` (which Mac scrolls reply), `InboxSectionsTests` and `InboxReturnsTests`
+  (regions, their order, returns and their grace), `SettledListTests` (Settled's paging and the
+  back-fill filter), `InboxScopeTests` (sources, empty chats, the state filters, the stored
+  filter).
 
 ## 8. Setup
 

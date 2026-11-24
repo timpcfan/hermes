@@ -1,5 +1,8 @@
 # Board (kanban)
 
+> **This fork:** the Board's screens are removed with Projects (`docs/projects.md`); a chat still
+> notes the cards Hermes added. The rest of this document describes upstream.
+
 A board is a list of cards that Hermes and its Bots work through on their own. Each card can run in
 its own worktree, can wait for other cards, asks a person when it's stuck, and can go through
 review (a pull request with required checks) before it's done. The app shows a project's board,

@@ -254,9 +254,15 @@ final class ChatSearch {
     enum Place {
         case bot(BotProfile, BotAppearance)
         case task(name: String)
+        /// Settled (Hermes' archived): the row is a shade quieter (`docs/inbox.md` §2a).
+        case settled
+
+        var isSettled: Bool {
+            if case .settled = self { true } else { false }
+        }
     }
 
-    /// The Bot's face, or the task it ran for.
+    /// The Bot's face, the task it ran for, or Settled.
     func place(of hit: Hit) -> Place? {
         guard let workspace else { return nil }
         if let botName = hit.botName, let roster = workspace.roster, let bot = roster.bot(named: botName) {
@@ -264,6 +270,11 @@ final class ChatSearch {
         }
         if hit.result.isTaskRun {
             return .task(name: hit.result.title ?? String(localized: "Task"))
+        }
+        // Hermes says archived, unless the list here already has it back (un-settled since).
+        let key = hit.result.lineageRoot ?? hit.result.sessionID
+        if workspace.isSettled(key) || (hit.result.archived && workspace.session(forKey: key)?.archived != false) {
+            return .settled
         }
         return nil
     }

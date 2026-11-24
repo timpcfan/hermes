@@ -289,13 +289,16 @@ struct SidebarView: View {
     private var sessionSections: some View {
         let sections = workspace.inboxSections
         let top = sections.pinned + sections.main
+        if !workspace.inboxScope.isStandard {
+            FilteredLine(workspace: workspace)
+        }
         let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
         ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
         }
         // Nothing goes below a list cut for the first frame: it is whole a moment later.
         let isWhole = listed.count == top.count
-        if isWhole, workspace.inboxFilter == .unread, !top.isEmpty {
+        if isWhole, workspace.inboxScope.unreadOnly, !top.isEmpty {
             // Mark All as Read, at the end of the Unread list as in the filter menu
             // (`docs/inbox.md` §5).
             Button("Mark All as Read") {
@@ -319,7 +322,7 @@ struct SidebarView: View {
         if isWhole { settledRegion }
         // The next page loads at the very end, so Working and Settled follow the chats listed so
         // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
-        if isWhole, workspace.hasMoreSessions && workspace.inboxFilter == .all {
+        if isWhole, workspace.hasMoreSessions, !workspace.inboxScope.narrowsMain {
             SkeletonRows(count: 2)
                 .padding(.vertical, 8)
                 .modifier(SidebarRowInsets())
@@ -510,13 +513,13 @@ struct SidebarView: View {
             if workspace.search.isEmpty {
                 SearchEmptyState(search: workspace.search)
             }
-        } else if workspace.showHoldsNothing {
-            // The gateway has chats, none of them from where Show looks (`docs/inbox.md` §5), so
-            // that is what an Only on top of it shows too.
-            CaughtUpState(show: workspace.inboxShow)
-        } else if workspace.inboxFilter != .all {
+        } else if workspace.scopeHoldsNothing {
+            // The gateway has chats, none of them from the sources picked (`docs/inbox.md` §5), so
+            // that is what Unread or Needs You on top of it shows too.
+            CaughtUpState(sources: ())
+        } else if workspace.inboxScope.narrowsMain {
             if workspace.inboxSessions.isEmpty {
-                CaughtUpState(filter: workspace.inboxFilter)
+                CaughtUpState(scope: workspace.inboxScope)
             }
         } else if workspace.allSessions.isEmpty, !workspace.isLoadingSessions {
             // Nothing at all, runs included: on a gateway with only runs, Scheduled Tasks lists them.

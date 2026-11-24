@@ -127,7 +127,8 @@ struct SearchResultRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.primaryText)
+                    // A settled chat's result is a shade quieter, as its row in Settled is.
+                    .foregroundStyle(place?.isSettled == true ? Theme.secondaryText : Theme.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let date = time {
@@ -195,7 +196,7 @@ struct SearchSnippet: View {
     }
 }
 
-/// Where a chat lives: the Bot's face, or the task glyph.
+/// Where a chat lives: the Bot's face, the task glyph, or Settled.
 struct SearchPlaceLine: View {
     let place: ChatSearch.Place
 
@@ -209,6 +210,11 @@ struct SearchPlaceLine: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondaryText)
                     .accessibilityHidden(true)
+            case .settled:
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.tertiaryText)
+                    .accessibilityHidden(true)
             }
             Text(Self.text(for: place))
                 .font(.caption)
@@ -221,6 +227,7 @@ struct SearchPlaceLine: View {
         switch place {
         case .bot(let bot, _): bot.displayName.isEmpty ? bot.name : bot.displayName
         case .task(let name): String(localized: "Task run · \(name)")
+        case .settled: String(localized: "Settled")
         }
     }
 }
