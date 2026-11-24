@@ -685,7 +685,7 @@ struct WorkSummaryView: View, Equatable {
                 let from = countsFrom
                 // One title throughout, so its words cross-fade; it ticks each second only while
                 // "Thinking…" or the running step counts.
-                TimelineView(.periodic(from: from ?? .now, by: from != nil ? 1 : 86_400)) { context in
+                TimelineView(.periodic(from: from ?? .now, by: from != nil && !PerfAblate.timers ? 1 : 86_400)) { context in
                     TickerTitle(
                         id: shown, text: from.map { Self.counting(shown, since: $0, now: context.date) } ?? shown,
                         shimmers: shimmers, tint: isWaiting ? Theme.warning : Theme.tertiaryText
@@ -793,12 +793,23 @@ private struct TurnGlyph: View {
 
 /// The header's words, cross-fading to the next (`docs/chat.md` §4a). They shimmer while the
 /// turn works and nothing streams yet. `id` is the words without what counts up, so "Thinking… ·
-/// 12s" ticking to 13s changes in place rather than fading.
+/// 12s" ticking to 13s changes in place rather than fading. On the Mac the cross-fade comes off:
+/// the words change faster than it lasts, and an always-active transition keeps the whole window
+/// re-measuring every frame (the Mac streaming check, `docs/development.md` Performance check).
 private struct TickerTitle: View {
     let id: String
     let text: String
     let shimmers: Bool
     let tint: Color
+
+    /// The Mac drops the title cross-fade; the ablation can drop it on any platform to measure it.
+    private var noCrossfade: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return PerfAblate.titles
+        #endif
+    }
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -815,9 +826,9 @@ private struct TickerTitle: View {
                 }
             }
             .id(id)
-            .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+            .transition(noCrossfade ? AnyTransition.identity : AnyTransition.opacity.animation(.easeInOut(duration: 0.2)))
         }
-        .animation(.easeInOut(duration: 0.2), value: id)
+        .animation(noCrossfade ? nil : .easeInOut(duration: 0.2), value: id)
     }
 }
 
@@ -1030,9 +1041,21 @@ private struct StepTimeline: View {
                 }
                 }
                 // A step that starts fades in by itself; the rows around it don't animate with it.
-                .transition(.opacity.animation(.smooth(duration: 0.25)))
+                // On the Mac the fade comes off: steps arrive faster than it lasts, and an
+                // always-active transition keeps the whole window re-measuring every frame (the
+                // Mac streaming check, `docs/development.md` Performance check).
+                .transition(noStepFade ? .identity : .opacity.animation(.smooth(duration: 0.25)))
             }
         }
+    }
+
+    /// The Mac drops the step fade-in; the ablation can drop it on any platform to measure it.
+    private var noStepFade: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return PerfAblate.transitions
+        #endif
     }
 }
 
@@ -1213,7 +1236,7 @@ private struct StepLine<Accessory: View, Details: View>: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 if let runningSince {
-                    TimelineView(.periodic(from: runningSince, by: 1)) { context in
+                    TimelineView(.periodic(from: runningSince, by: PerfAblate.timers ? 86_400 : 1)) { context in
                         Text(Formatting.duration(context.date.timeIntervalSince(runningSince)))
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Theme.tertiaryText)
@@ -1432,7 +1455,7 @@ private struct ProcessStepLine: View {
             Rail(isLast: isLast) { node }
             VStack(alignment: .leading, spacing: 6) {
                 // Only a running process's time changes; an idle chat doesn't wake for the others.
-                TimelineView(.periodic(from: .now, by: state == .running ? 15 : 86_400)) { context in
+                TimelineView(.periodic(from: .now, by: state == .running && !PerfAblate.timers ? 15 : 86_400)) { context in
                     titleRow(now: context.date)
                 }
                 snippet

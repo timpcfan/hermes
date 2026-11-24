@@ -899,9 +899,9 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   working only on the rows the transcript itself keeps (a hidden nudge or a steer stored last
   doesn't flip it).
 - **Motion comes from what changed.** A tap animates its fold; a new step, card or warning fades
-  in by itself; data from Hermes (reloads, pages, a reply settling) moves nothing else with it.
-  There is no animation on the whole transcript or a whole turn, and a reply's text never fades
-  out and back in as it settles.
+  in by itself (on the Mac a new step switches in place, §4a); data from Hermes (reloads, pages, a
+  reply settling) moves nothing else with it. There is no animation on the whole transcript or a
+  whole turn, and a reply's text never fades out and back in as it settles.
 - **A streamed word redraws its own reply, nothing else.** The transcript lists the running reply
   by its outline (its id, start and state and the helpers it started: `ConversationModel.listRows`)
   and the reply's row reads the turn itself. Finished replies compare equal and are skipped, the
@@ -951,7 +951,7 @@ typing bubbles, no waving dots and no spinners for agent work.
 | A chat, while the reply streams | Nothing: the words arriving are the sign. The header goes still ("Working · 3 tools") | The composer's Stop button says it's still running |
 | A Bot chat's toolbar | The face's mood (eyes up while thinking, a glance while working). No dots | The subtitle keeps the handle. Never "Thinking…", never orange (orange means it needs you) |
 | A group chat, before a Bot's first words | `botThinkingLine`: the Bot's face thinking, no dots, and "Ada is thinking…" shimmering. One line per Bot, at most two, then "+1 more" | – |
-| Rows: chats, Bots, groups, the Mac sidebar | The activity line's words shimmer (`activityLine`) | A still ink dot before a running chat's title. Faces show the mood, without dots. While a reply streams, its newest words switch in place: only a new step cross-fades ([inbox.md](inbox.md) §3) |
+| Rows: chats, Bots, groups, the Mac sidebar | The activity line's words shimmer (`activityLine`) | A still ink dot before a running chat's title. Faces show the mood, without dots. While a reply streams, its newest words switch in place: only a new step cross-fades ([inbox.md](inbox.md) §3); on the Mac the step switches in place too (below) |
 | The jump pill | "Hermes is writing…" (or the running step) shimmers (`newMessagesPillLive`) | – |
 | Live Activity, Dynamic Island, notifications, widgets | Static words (the system can't shimmer) | The face shows its dots only where it stands alone (the compact Island) |
 | Waiting for you, or stopped | Nothing: solid orange or red words ("Waiting for your approval", "Waiting for your answer" while a question or other request waits on its card) | The card says what's waiting; the line above it doesn't shimmer the tool that asked |
@@ -970,9 +970,14 @@ typing bubbles, no waving dots and no spinners for agent work.
   another window and in Low Power Mode the words hold still in their grey, and with Reduce Motion
   there's no band at all. Its accessibility label is its words.
 - **Timing:** the header appears the moment the message is sent, so there's never an empty gap.
-  Its words change at most 4 times a second, cross-faded. After 10 s of thinking it adds the
-  time: "Thinking… · 12s"; a step that runs past 10 s adds its own, from when it started
-  ("Running the tests… · 12s", `turnHeaderRunning`).
+  Its words change at most 4 times a second, cross-faded (on the Mac they switch in place, below).
+  After 10 s of thinking it adds the time: "Thinking… · 12s"; a step that runs past 10 s adds its
+  own, from when it started ("Running the tests… · 12s", `turnHeaderRunning`).
+- **On the Mac the header title and a new step switch in place, without a cross-fade or fade-in.**
+  The words change faster than the fade lasts, and a transition that is always active keeps the
+  whole window re-measuring every frame while a long turn runs (`TickerTitle`, `StepTimeline`;
+  [development.md](development.md) Performance check). The shimmer and the times that count up are
+  unchanged; iPhone and iPad keep both fades.
 - **Face dots** only where the face stands alone (`BotFace(dots: true)`): a group's face strip,
   Talk, the compact Dynamic Island.
 - **The app's own waiting is different.** `Spinner` (a `ProgressView`, `Chips.spinner`) is only for
