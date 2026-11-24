@@ -69,7 +69,7 @@ struct ProcessChipView: View {
                 Button("Show Terminal", systemImage: "apple.terminal") { showTerminal() }
             } label: {
                 // Only "Docs site · 3 min" changes with time.
-                TimelineView(.periodic(from: .now, by: isOne ? 30 : 86_400)) { context in
+                TimelineView(.periodic(from: .now, by: isOne && !PerfAblate.timers ? 30 : 86_400)) { context in
                     label(now: context.date)
                 }
             } primaryAction: {

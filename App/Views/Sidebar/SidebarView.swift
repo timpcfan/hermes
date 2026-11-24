@@ -152,6 +152,15 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var rowContent: some View {
+        if PerfAblate.sidebar {
+            EmptyView()
+        } else {
+            rowContentFull
+        }
+    }
+
+    @ViewBuilder
+    private var rowContentFull: some View {
         if isCompact, statusPlacement.showsRow {
             // The connection under the large title at the accessibility sizes, above the Chats /
             // Bots switch, or above Tasks without Bot Mode. It isn't a button.

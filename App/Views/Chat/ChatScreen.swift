@@ -482,7 +482,11 @@ struct ChatScreen: View {
                     // A tap on the chat puts the keyboard away, as dragging it down does.
                     TranscriptView(conversation: conversation, workspace: workspace, onTap: composerFocused ? { composerFocused = false } : nil)
                     #else
-                    TranscriptView(conversation: conversation, workspace: workspace)
+                    if PerfAblate.chat {
+                        Color.clear
+                    } else {
+                        TranscriptView(conversation: conversation, workspace: workspace)
+                    }
                     #endif
                 }
                 // Voice messages and the Bot's audio play from the chat's gateway; replies are
@@ -563,9 +567,11 @@ struct ChatScreen: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(ComposerView.rowAppears)
                     }
-                    ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
-                        .glassEffectID("composer", in: bottomGlass)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+                    if !PerfAblate.composer {
+                        ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
+                            .glassEffectID("composer", in: bottomGlass)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+                    }
                     if centersComposer, !startsInProject {
                         centredChips
                             .padding(.top, 6)

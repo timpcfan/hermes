@@ -40,6 +40,7 @@ struct PausesMotionWhenAway: ViewModifier {
     }
 
     private var pauses: Bool {
+        if PerfAblate.motion { return true }
         #if os(macOS)
         if !appearsActive { return true }
         #endif
@@ -74,6 +75,39 @@ struct DecorativeLoop<Content: View>: View {
             .onDisappear { isShown = false }
             .onScrollVisibilityChange(threshold: 0.01) { isOnScreen = $0 }
     }
+}
+
+/// Measurement-only switches for the Mac streaming check (`docs/development.md` Performance check):
+/// `-HERMES_PERF_ABLATE motion,timers,chat,sidebar,composer` turns off one suspect at a time so cost
+/// can be attributed by "does it still stutter without it". Debug builds read the flag once at
+/// launch; Release folds every switch to `false`, so none of this ships.
+enum PerfAblate {
+    #if DEBUG
+    private static let flags: Set<String> = {
+        let raw = UserDefaults.standard.string(forKey: "HERMES_PERF_ABLATE") ?? ""
+        return Set(raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+    }()
+    /// Hold every decorative loop still (shimmer, halos, the face's own motion).
+    static var motion: Bool { flags.contains("motion") }
+    /// Stop the periodic time ticks (live header, running step, process step, process chip).
+    static var timers: Bool { flags.contains("timers") }
+    /// Drop the step rows' fade-in transitions (steps arrive faster than the fade lasts).
+    static var transitions: Bool { flags.contains("transitions") }
+    /// Drop the header title's cross-fade (the words change faster than the fade lasts).
+    static var titles: Bool { flags.contains("titles") }
+    /// Blank the transcript, the sidebar rows, or the composer, one at a time.
+    static var chat: Bool { flags.contains("chat") }
+    static var sidebar: Bool { flags.contains("sidebar") }
+    static var composer: Bool { flags.contains("composer") }
+    #else
+    static var motion: Bool { false }
+    static var timers: Bool { false }
+    static var transitions: Bool { false }
+    static var titles: Bool { false }
+    static var chat: Bool { false }
+    static var sidebar: Bool { false }
+    static var composer: Bool { false }
+    #endif
 }
 
 #if DEBUG
