@@ -725,10 +725,8 @@ by the desktop app, and the found repos caffeinated-site and pantry. "Fix the re
 sleep" runs a long test turn so Hermes App shows as working. Activity moves without a message there
 too: zsh startup time (dotfiles, last spoken in 32 days ago) had a heartbeat 7 minutes ago, and Post:
 Building Hermes for iPhone (Blog) was compacted 25 minutes ago; search for "zsh" or "outline" to see
-their results' times, and All Projects to see dotfiles stay last. Debug flags: `-HERMES_OPEN projects`,
-`-HERMES_OPEN project:p_4f2a9c1e` (`-HERMES_PROJECT_LANE <lane id>`, `-HERMES_PROJECT_EXPAND <id>`),
-`-HERMES_OPEN project-chat:<id>`, and `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session>|runin`.
-A project with "readonly" in its name can be renamed but not changed: Archive, Restore, Delete
+their results' times. This fork has no Projects screens (`docs/projects.md`): their chats list in
+the inbox like the rest, and the project debug flags are gone. A project with "readonly" in its name can be renamed but not changed: Archive, Restore, Delete
 and Add Folder answer 5061 "attempt to write a readonly database", as Hermes does when it can't
 write its projects.db.
 
@@ -741,9 +739,17 @@ makes Swift 6 migration plan look like it keeps writing (a 40 s cycle) and Disk 
 wait on an approval, for screenshots. Read marks change by `PATCH /api/sessions/{id} {unread}` on
 either server; `GET /api/sessions/{id}?profile=default` on the backend shows one. A chat a launch
 opened with `-HERMES_OPEN_SESSION` opens at its New Messages line when it has news.
-The list starts with this app's chats; the seeded Telegram, Slack, Discord and CLI chats and the
-scheduled run "Morning briefing · …" (`cron`) show under the filter's Show (`docs/inbox.md` §5).
-`-HERMES_INBOX_SHOW all|otherPlatforms|scheduled` starts the list there.
+The inbox holds every source but scheduled runs (the filter's Sources, `docs/inbox.md` §5);
+`-HERMES_INBOX_SCOPE '<json>'` starts it with another filter (`InboxScope`'s keys, e.g.
+`{"hiddenSources":["telegram"],"unreadOnly":true}`). `--inbox-gtd` seeds the inbox's regions
+(`docs/inbox.md` §2a): 37 settled (archived) chats, one of them pinned; a chat from Telegram,
+Discord, the terminal and an editor each; an empty chat; and three that look live on a 2-minute
+cycle: "Deploy hk3 nginx" works for 15 s, waits for an approval for 45 s, then finishes and rests;
+the pinned "Review my recent work" and "Migrate the board to Swift 6" keep working. The
+dashboard's list answers `archived=only|include|exclude` with `total` and back-fills pinned chats
+across the archived filter, as Hermes does. `--idle` leaves out the mock's standing test run ("Fix the reconnect
+after sleep"), so nothing runs on its own: the inbox without Working, or Working with just the
+`--inbox-gtd` pair.
 `VoiceOverFocusUITests` turns VoiceOver on inside the simulator, puts it on a row or a message, and only then
 starts a "slow marathon" turn: in the open chat, or in a chat listed below the row, which moves above it. Each
 test checks the reply landed while it listened and that VoiceOver stayed put (about 3 minutes each).
@@ -999,9 +1005,8 @@ gateway's words. In a chat, "… as cards" adds three cards with `kanban_create`
 /api/mock/kanban/act {card, action: needs_input|review|gave_up|complete|stale}` drives a card
 (`review` takes `ok: false` for a failing check), `POST /api/mock/kanban/config {dispatcher, socket}`
 pauses the dispatcher or refuses the socket (the app then polls every 5 s), and `POST
-/api/mock/kanban/reset` puts it back. Debug flags: `-HERMES_OPEN board:<project id>` with
-`-HERMES_BOARD_COLUMN <column>`, `-HERMES_BOARD_CARD <card id>` and
-`-HERMES_BOARD_SHEET new|assign|reopen|watch|edit`.
+/api/mock/kanban/reset` puts it back. This fork has no Board screens (`docs/projects.md`); the
+mock's Board still serves a chat's "Added N cards" note.
 
 And the Inspector (`Tools/mock-hermes/inspector.py`): a "Hermes Site" project
 (`/Users/studio/Code/hermes-site`) with files (`/api/fs/*`), git status and review with four

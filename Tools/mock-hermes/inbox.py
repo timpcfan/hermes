@@ -8,20 +8,28 @@
   else the reply being written, else the prompt before its first words, else the last thing said).
 - `--inbox-demo`: two seeded chats look live without a turn (one working and writing, one waiting
   for an approval), for screenshots and the acceptance checks.
+- `--inbox-gtd`: the inbox's regions (docs/inbox.md §2a): settled (archived) chats, one of them
+  pinned, chats from every source and an empty one, and three that look live on a cycle: a deploy
+  that works for 15 s, then waits for an approval for 45 s, then finishes and rests; a pinned
+  review and a migration that keep working.
 """
 
 import time
 
 B = None  # backend.py globals
 G = None  # server.py module
-DEMO = {"on": False, "started": time.time()}
+DEMO = {"on": False, "gtd": False, "started": time.time()}
 
 
-def install(backend_globals, gateway_module, demo=False):
+def install(backend_globals, gateway_module, demo=False, gtd=False):
     global B, G
     B, G = backend_globals, gateway_module
     DEMO["on"] = demo
+    DEMO["gtd"] = gtd
     DEMO["started"] = time.time()
+    if gtd:
+        with G.LOCK:
+            seed_gtd()
     B["HTTP_ROUTES"][("GET", "/api/sessions")] = list_sessions
     B["HTTP_ROUTES"][("POST", "/api/mock/inbox/reset")] = reset
     B["METHODS"]["session.active_list"] = active_list
@@ -67,9 +75,14 @@ def list_sessions(query, body):
     rows.sort(key=lambda r: r.get(key) or 0, reverse=True)
     page = rows[offset:offset + limit]
     # list_sessions_rich(include_pinned=True): every pin the page missed follows it, newest first.
+    # Hermes' back-fill doesn't inherit the archived filter (hermes_state_sessions.py, "Do not
+    # inherit the archived constraint"): pinned chats from the other side come along too, with
+    # their own `archived`, so a client never takes a page for one side only.
     on_page = {r["id"] for r in page}
-    page += sorted((r for r in rows if r.get("pinned") and r["id"] not in on_page),
-                   key=lambda r: r.get("started_at") or 0, reverse=True)
+    with G.LOCK:
+        pins = [dashboard_row(s, now) for s in G.SESSIONS.values()
+                if s.get("pinned") and not s.get("hidden") and s["id"] not in on_page]
+    page += sorted(pins, key=lambda r: r.get("started_at") or 0, reverse=True)
     return 200, {"sessions": page, "total": len(rows), "limit": limit, "offset": offset, "storage": {}}
 
 
@@ -153,6 +166,8 @@ def active_list(params):
                     "model": s.get("model"), "started_at": s.get("started_at"), "last_active": s.get("_last")})
     if DEMO["on"]:
         out += demo_rows(now)
+    if DEMO["gtd"]:
+        out += gtd_rows(now)
     return {"sessions": out}
 
 
@@ -194,3 +209,53 @@ def demo_row(stored, status, preview):
     return {"current": False, "id": f"demo-{stored}", "session_key": stored, "status": status, "title": s.get("title"),
             "preview": preview, "message_count": s.get("message_count", 0), "model": s.get("model"),
             "started_at": s.get("started_at"), "last_active": time.time()}
+
+
+# ---------------------------------------------------------------- --inbox-gtd
+
+GTD_SETTLED = ["Quarterly tax notes", "Router firmware update", "Holiday photos backup", "Kitchen renovation quotes",
+               "Rust borrow checker question", "Dentist appointment", "Flight to Lisbon", "Old laptop wipe",
+               "Newsletter draft", "Podcast transcript cleanup", "Spreadsheet macro", "Car insurance renewal"]
+GTD_SOURCES = [("tg_gtd_1", "Groceries for the weekend", "telegram"), ("dc_gtd_1", "Raid night schedule", "discord"),
+               ("cli_gtd_1", "Rotate the nginx logs", "cli"), ("acp_gtd_1", "Refactor the parser", "acp")]
+
+
+def seed_gtd():
+    """Settled chats (archived: 37, the last one pinned, which Hermes back-fills into every page),
+    chats from each source, an empty one, and the three the cycle makes live (`gtd_rows`)."""
+    now, hour = G.NOW, G.HOUR
+    for i in range(37):
+        sid = f"settled_{i:02d}"
+        title = GTD_SETTLED[i % len(GTD_SETTLED)] + ("" if i < len(GTD_SETTLED) else f" {i // len(GTD_SETTLED) + 1}")
+        started = now - (i + 3) * 9 * hour
+        G.session_row(sid, title, "api_server", started, started + 300, "")
+        G.add_message(sid, "user", f"Can you help with {title.lower()}?", timestamp=started)
+        G.add_message(sid, "assistant", "Done. Everything is in order now.", timestamp=started + 300)
+        G.SESSIONS[sid]["archived"] = True
+    G.SESSIONS["settled_36"]["pinned"] = True
+    for k, (sid, title, source) in enumerate(GTD_SOURCES):
+        started = now - (k + 2) * 2 * hour
+        G.session_row(sid, title, source, started, started + 60, "")
+        G.add_message(sid, "user", f"{title}, please.", timestamp=started)
+        G.add_message(sid, "assistant", "On it, here is what I found.", timestamp=started + 60)
+    G.session_row("empty_gtd", None, "api_server", now - 3 * hour, now - 3 * hour, "")
+    for k, (sid, title) in enumerate([("gtd_deploy", "Deploy hk3 nginx"), ("gtd_review", "Review my recent work"),
+                                      ("gtd_migrate", "Migrate the board to Swift 6")]):
+        started = now - (k + 1) * 30 * 60
+        G.session_row(sid, title, "api_server", started, started + 120, "")
+        G.add_message(sid, "user", f"{title}.", timestamp=started)
+        G.add_message(sid, "assistant", "Starting on it.", timestamp=started + 120)
+    G.SESSIONS["gtd_review"]["pinned"] = True
+
+
+def gtd_rows(now):
+    """The deploy works for 15 s, waits for an approval for 45 s, then rests for 60 s (finished);
+    the pinned review and the migration keep working."""
+    phase = (now - DEMO["started"]) % 120
+    rows = [demo_row("gtd_review", "working", "Reading the last week of commits"),
+            demo_row("gtd_migrate", "working", "Updating the card views")]
+    if phase < 15:
+        rows.append(demo_row("gtd_deploy", "working", "Checking the nginx config"))
+    elif phase < 60:
+        rows.append(demo_row("gtd_deploy", "waiting", "sudo systemctl reload nginx"))
+    return rows

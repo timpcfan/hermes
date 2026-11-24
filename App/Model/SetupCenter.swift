@@ -100,7 +100,6 @@ final class SetupCenter {
         facts.botScreen = reads.botScreen
         facts.access = workspace.bot.access
         if case .failed(let error) = workspace.connection { facts.accessRefusal = error.accessRefusal }
-        if let projects = workspace.projects, projects.hasLoaded, !projects.isAvailable { facts.projectsMissing = true }
         return facts
     }
 
@@ -142,8 +141,7 @@ final class SetupCenter {
             GatewaySetup.search(facts),
             GatewaySetup.checkpoints(facts),
             GatewaySetup.tasks(facts),
-            GatewaySetup.projects(facts),
-            GatewaySetup.board(facts),
+            // Projects and the Board have no screens in this build (`docs/projects.md`).
             GatewaySetup.groupChats(facts),
             GatewaySetup.botReplies(facts),
             GatewaySetup.botScreen(facts),

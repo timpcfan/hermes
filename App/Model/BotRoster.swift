@@ -1327,10 +1327,8 @@ final class BotRoster {
 
     private func route(_ event: GatewayEvent) {
         // The gateway's change watcher: broadcast to every client, not tagged with a profile.
-        if event.type == "projects.changed" {
-            workspace?.projects.changeEvent(event.type)
-            return
-        }
+        // No Projects screens in this build (`docs/projects.md`): their change event has no reader.
+        if event.type == "projects.changed" { return }
         if event.type == "sessions.changed" {
             sessionsChanged()
             return
@@ -1608,10 +1606,8 @@ final class BotRoster {
             guard let self, !Task.isCancelled else { return }
             self.sessionsTick = nil
             self.sessionsTickedAt = .now
-            // Project lanes and running chats, read marks (another device may have just read a Bot
-            // or a chat), the roster (a Bot may have written where nothing streamed here), and the
-            // chat list's live lines.
-            self.workspace?.projects.changeEvent("sessions.changed")
+            // Read marks (another device may have just read a Bot or a chat), the roster (a Bot may
+            // have written where nothing streamed here), and the chat list's live lines.
             self.readMayHaveMoved()
             self.rosterMayHaveMoved()
             self.workspace?.unread.sessionsMayHaveMoved()

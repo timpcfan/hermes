@@ -13,12 +13,22 @@ import os
 @Observable
 final class UnreadStore {
     /// What each row shows. Only rows with something to show have an entry.
-    private(set) var badges: [String: UnreadBadge] = [:]
+    private(set) var badges: [String: UnreadBadge] = [:] {
+        didSet { badgesRevision &+= 1 }
+    }
+    /// Bumped with each change to `badges`, for what is cached against them (the inbox's Unread
+    /// filter).
+    private(set) var badgesRevision = 0
     private(set) var mutes: MuteList
     /// Each row's last message, as the rows read it: only a line that changed redraws them.
     /// Hermes' list rows carry the first message, never the last, so the app reads it itself
     /// (`book`).
-    private(set) var lastLines: [String: LastLine] = [:]
+    private(set) var lastLines: [String: LastLine] = [:] {
+        didSet { linesRevision &+= 1 }
+    }
+    /// Bumped with each change to `lastLines`: the inbox's regions are cached against it rather
+    /// than comparing every line (`docs/inbox.md` §2a).
+    private(set) var linesRevision = 0
     /// The lines with the chat activity each was read at, kept on the device (`docs/inbox.md` §2).
     @ObservationIgnored private var book = LastLineBook()
     @ObservationIgnored private var bookSave: Task<Void, Never>?
@@ -351,10 +361,9 @@ final class UnreadStore {
     }
 
     /// Rows whose chat moved on since their last line was read, or that have none: their newest
-    /// few rows, the Bots, the most recent chats and each project's newest few first (the rest as
-    /// they come on screen, `needsLastLine`), since a project's time is its chats'
-    /// (`ProjectsModel.rowTime`). A chat in the middle of a turn shows what it's doing instead, and
-    /// is read once it stops.
+    /// few rows, the Bots and the most recent chats first (the rest as they come on screen,
+    /// `needsLastLine`). A chat in the middle of a turn shows what it's doing instead, and is read
+    /// once it stops.
     func readStaleLines() {
         guard let workspace, lineFetches < lineFetchLimit else { return }
         if let roster = workspace.roster {
@@ -368,10 +377,6 @@ final class UnreadStore {
             let key = session.stableID
             guard !isRunning(key), book.isStale(key, activity: session.lastActive) else { continue }
             needsLastLine(session)
-        }
-        for row in (workspace.projects?.tree.explicitProjects ?? []).flatMap(\.previewSessions) {
-            guard !isRunning(row.stableID), book.isStale(row.stableID, activity: row.lastActive) else { continue }
-            needsLastLine(row.session)
         }
     }
 

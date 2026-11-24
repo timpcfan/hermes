@@ -168,9 +168,6 @@ struct SidebarView: View {
         }
         if !isSearching {
             navigationRows
-            if botRoster == nil, workspace.showsProjects {
-                ProjectSidebarSection(workspace: workspace)
-            }
         }
         if let botRoster {
             BotRosterSections(roster: botRoster, workspace: workspace)
@@ -273,31 +270,33 @@ struct SidebarView: View {
         DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2")
     }
 
-    /// The rows above the list's own (the mode switcher, navigation rows and the Projects
-    /// section), so states centre in the space below them.
+    /// The rows above the list's own (the mode switcher and navigation rows), so states centre in
+    /// the space below them.
     private var navigationHeight: CGFloat {
         let switcher: CGFloat = isCompact && workspace.roster != nil ? 46 : 0
         guard botRoster == nil else { return switcher + CGFloat(isCompact ? 3 : 4) * SidebarMetrics.rowHeight }
-        guard workspace.showsProjects else { return switcher + 2 * SidebarMetrics.rowHeight }
-        let projects = workspace.projects!
-        guard projects.isAvailable else { return switcher + 2 * SidebarMetrics.rowHeight }
-        let expanded = UserDefaults.standard.object(forKey: "sidebar.projectsExpanded") as? Bool ?? false
-        let rows = expanded ? projects.sidebarProjects.count + 1 : 0
-        return switcher + CGFloat(2 + rows) * SidebarMetrics.rowHeight + 38
+        return switcher + 2 * SidebarMetrics.rowHeight
     }
 
     // MARK: Sessions
 
+    /// The Chats inbox (`docs/inbox.md` §2a): Pinned and Main, then Working while something runs,
+    /// then Settled. One pass builds the regions (`inboxSections`); a folded region keeps no rows,
+    /// and Working, with nothing running, not even its header.
     @ViewBuilder
     private var sessionSections: some View {
-        let shown = workspace.inboxSessions
-        let listed = ChatListSnapshot.listed(shown, firstFrame: isFirstFrame)
+        let sections = workspace.inboxSections
+        let top = sections.pinned + sections.main
+        if !workspace.inboxScope.isStandard {
+            FilteredLine(workspace: workspace)
+        }
+        let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
         ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
         }
         // Nothing goes below a list cut for the first frame: it is whole a moment later.
-        let isWhole = listed.count == shown.count
-        if isWhole, workspace.inboxFilter == .unread, !shown.isEmpty {
+        let isWhole = listed.count == top.count
+        if isWhole, workspace.inboxScope.unreadOnly, !top.isEmpty {
             // Mark All as Read, at the end of the Unread list as in the filter menu
             // (`docs/inbox.md` §5).
             Button("Mark All as Read") {
@@ -310,7 +309,18 @@ struct SidebarView: View {
             .padding(.vertical, 16)
             .modifier(SidebarRowInsets())
         }
-        if isWhole, workspace.hasMoreSessions && workspace.inboxFilter == .all {
+        if isWhole, !sections.working.isEmpty {
+            InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workspace.workingExpanded)
+            if workspace.workingExpanded {
+                ForEach(sections.working, id: \.stableID) { session in
+                    sessionRow(session)
+                }
+            }
+        }
+        if isWhole { settledRegion }
+        // The next page loads at the very end, so Working and Settled follow the chats listed so
+        // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
+        if isWhole, workspace.hasMoreSessions, !workspace.inboxScope.narrowsMain {
             SkeletonRows(count: 2)
                 .padding(.vertical, 8)
                 .modifier(SidebarRowInsets())
@@ -319,6 +329,60 @@ struct SidebarView: View {
                 // they would then wait for a scroll that can't come (`docs/inbox.md` §5).
                 .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
+    }
+
+    /// Settled (`docs/inbox.md` §2a): folded by default, its header counting every settled chat.
+    /// Open, ten rows and then 25 more at a time; folded, none, except a settled chat opened from
+    /// search while it's open. Not there without the Dashboard backend that lists them.
+    @ViewBuilder
+    private var settledRegion: some View {
+        @Bindable var settled = workspace.settled
+        let revealed = settled.revealed
+        // Nothing settled yet: no region, as Working with nothing running.
+        if (settled.isAvailable && settled.list.total != 0) || revealed != nil {
+            InboxRegionHeader(title: String(localized: "Settled"), count: settled.list.total, isExpanded: $settled.isExpanded,
+                              showsActivity: settled.hasActivity)
+            let rows = settled.isExpanded ? settled.list.rows : []
+            if let revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
+                settledRow(revealed)
+            }
+            ForEach(rows, id: \.stableID) { session in
+                settledRow(session)
+            }
+            if settled.isExpanded {
+                if settled.isLoading {
+                    SkeletonRows(count: 2)
+                        .padding(.vertical, 4)
+                        .modifier(SidebarRowInsets())
+                } else if settled.list.hasMore {
+                    SettledMoreRow(settled: settled)
+                }
+            }
+        }
+    }
+
+    /// A settled chat: Un-settle is its trailing swipe (a full swipe does it) and first in its menu.
+    @ViewBuilder
+    private func settledRow(_ session: HermesSession) -> some View {
+        SettledRow(session: session, workspace: workspace)
+            .contextMenu {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                Divider()
+                Button("Rename…", systemImage: "pencil") {
+                    renameText = session.title ?? ""
+                    renaming = session
+                }
+                Button("Copy Session ID", systemImage: "number") { Pasteboard.copy(session.id) }
+                Divider()
+                Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                    .tint(Theme.swipeAction)
+            }
+            #if os(macOS)
+            .accessibilityAction(named: Text("Un-settle")) { unsettle(session) }
+            #endif
     }
 
     @ViewBuilder
@@ -360,10 +424,11 @@ struct SidebarView: View {
                 Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") { togglePin(session) }
                     .tint(Theme.swipeActionQuiet)
             }
+            // Settle first: a full swipe settles (`docs/inbox.md` §5).
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button("Settle", systemImage: "checkmark.circle") { archive(session) }
+                    .tint(Theme.swipeAction)
                 Button(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) }
-                    .tint(Theme.swipeActionQuiet)
-                Button("Archive", systemImage: "archivebox") { archive(session) }
                     .tint(Theme.swipeActionQuiet)
             }
             // VoiceOver on iPhone and iPad already offers the swipe actions as the row's actions.
@@ -371,7 +436,7 @@ struct SidebarView: View {
             .accessibilityAction(named: isUnread ? Text("Mark as Read") : Text("Mark as Unread")) { toggleRead(key, isUnread: isUnread) }
             .accessibilityAction(named: session.pinned ? Text("Unpin") : Text("Pin")) { togglePin(session) }
             .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute")) { toggleMute(key, muted: muted) }
-            .accessibilityAction(named: Text("Archive")) { archive(session) }
+            .accessibilityAction(named: Text("Settle")) { archive(session) }
             #endif
     }
 
@@ -388,8 +453,13 @@ struct SidebarView: View {
         if muted { workspace.unread.unmute(key) } else { workspace.unread.mute(key, for: .untilTurnedOff) }
     }
 
+    /// Settle: Hermes archives it, and it moves to Settled.
     private func archive(_ session: HermesSession) {
         Task { await run { try await workspace.archive(session) } }
+    }
+
+    private func unsettle(_ session: HermesSession) {
+        Task { await run { try await workspace.unarchive(session) } }
     }
 
     @ViewBuilder
@@ -408,11 +478,6 @@ struct SidebarView: View {
             renameText = session.title ?? ""
             renaming = session
         }
-        if workspace.projects.isAvailable {
-            Button("Move to Project…", systemImage: "folder") {
-                workspace.projects.movingSession = session
-            }
-        }
         if workspace.capabilities?.features.sessionFork != false {
             Button("Branch", systemImage: "arrow.triangle.branch") {
                 Task { await run { try await workspace.fork(session) } }
@@ -427,13 +492,11 @@ struct SidebarView: View {
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(session.id)
         }
-        #if os(macOS)
-        // No swipe without a trackpad: Archive is here too.
-        Button("Archive", systemImage: "archivebox") {
+        Divider()
+        // Every platform: the menu is how a Mac and iPad settle (with ⇧⌘S for the open chat).
+        Button("Settle", systemImage: "checkmark.circle") {
             archive(session)
         }
-        #endif
-        Divider()
         Button("Delete…", systemImage: "trash", role: .destructive) {
             deleting = session
         }
@@ -449,13 +512,13 @@ struct SidebarView: View {
             if workspace.search.isEmpty {
                 SearchEmptyState(search: workspace.search)
             }
-        } else if workspace.showHoldsNothing {
-            // The gateway has chats, none of them from where Show looks (`docs/inbox.md` §5), so
-            // that is what an Only on top of it shows too.
-            CaughtUpState(show: workspace.inboxShow)
-        } else if workspace.inboxFilter != .all {
+        } else if workspace.scopeHoldsNothing {
+            // The gateway has chats, none of them from the sources picked (`docs/inbox.md` §5), so
+            // that is what Unread or Needs You on top of it shows too.
+            CaughtUpState(sources: ())
+        } else if workspace.inboxScope.narrowsMain {
             if workspace.inboxSessions.isEmpty {
-                CaughtUpState(filter: workspace.inboxFilter)
+                CaughtUpState(scope: workspace.inboxScope)
             }
         } else if workspace.allSessions.isEmpty, !workspace.isLoadingSessions {
             // Nothing at all, runs included: on a gateway with only runs, Scheduled Tasks lists them.

@@ -3,114 +3,132 @@ import SwiftUI
 
 // MARK: - Filters
 
-/// The list's filter menu (`docs/inbox.md` §5): which chats show, then Only Unread, Needs You or
-/// Running, then Mark All as Read. The sidebar's filter button, iPhone's bottom bar and the Mac's
-/// View ▸ Filter menu all show it.
+/// The inbox's filter menu (`docs/inbox.md` §5): the sources it holds, the states that narrow
+/// Main, Hide Empty Chats, then Mark All as Read and Show Everything. The sidebar's filter button,
+/// iPhone's bottom bar and the Mac's View ▸ Filter menu all show it. Kept per gateway.
 struct InboxFilterMenuContent: View {
     @Bindable var workspace: BotWorkspace
 
     var body: some View {
-        Section("Show") {
-            Picker("Show", selection: $workspace.inboxShow) {
-                ForEach(InboxShow.allCases, id: \.self) { show in
-                    Label(show.title, systemImage: show.symbol).tag(show)
+        let counts = workspace.stateCounts()
+        Section("Sources") {
+            ForEach(InboxSourceGroup.allCases, id: \.self) { group in
+                Toggle(isOn: source(group)) {
+                    Label(group.title, systemImage: group.symbol)
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         }
         Section("Only") {
-            ForEach([InboxFilter.unread, .needsYou, .running], id: \.self) { filter in
-                Toggle(isOn: only(filter)) {
-                    Text(filter.title)
-                    let count = workspace.count(for: filter)
-                    if count > 0 { Text("\(count)") }
-                }
+            Toggle(isOn: $workspace.inboxScope.unreadOnly) {
+                Text("Unread")
+                if counts.unread > 0 { Text("\(counts.unread)") }
             }
+            Toggle(isOn: $workspace.inboxScope.needsYouOnly) {
+                Text("Needs You")
+                if counts.needsYou > 0 { Text("\(counts.needsYou)") }
+            }
+        }
+        Section {
+            Toggle("Hide Empty Chats", isOn: $workspace.inboxScope.hidesEmpty)
         }
         Section {
             Button("Mark All as Read", systemImage: "envelope.open") {
                 Task { await workspace.unread.markAllRead(workspace.unreadChatKeys) }
             }
-            .disabled(workspace.unreadChatKeys.isEmpty)
+            .disabled(counts.unread == 0)
+            if !workspace.inboxScope.isStandard {
+                Button("Show Everything", systemImage: "line.3.horizontal.decrease.circle") {
+                    workspace.inboxScope = .standard
+                }
+            }
         }
     }
 
-    /// One filter on at a time; turning the one that's on off shows everything again.
-    private func only(_ filter: InboxFilter) -> Binding<Bool> {
+    private func source(_ group: InboxSourceGroup) -> Binding<Bool> {
         Binding {
-            workspace.inboxFilter == filter
-        } set: { on in
-            workspace.inboxFilter = on ? filter : .all
+            workspace.inboxScope.shows(group)
+        } set: { shown in
+            workspace.inboxScope.set(group, shown: shown)
         }
     }
 }
 
-/// The filter button: filled for any choice but the default (This App, nothing narrowed), so a
-/// narrowed list is never a surprise, and saying both choices in VoiceOver.
+/// The filter button: filled for any choice but the standard one (every source but scheduled
+/// runs, empty chats hidden, nothing narrowed), so a narrowed list is never a surprise, and saying
+/// what it changes in VoiceOver.
 struct InboxFilterButton: View {
     @Bindable var workspace: BotWorkspace
 
-    private var isNarrowed: Bool {
-        workspace.inboxShow != .thisApp || workspace.inboxFilter != .all
-    }
-
-    private var value: String {
-        workspace.inboxFilter == .all
-            ? workspace.inboxShow.title
-            : "\(workspace.inboxShow.title), \(workspace.inboxFilter.title)"
-    }
-
     var body: some View {
+        let scope = workspace.inboxScope
         Menu {
             InboxFilterMenuContent(workspace: workspace)
         } label: {
-            Label("Filter", systemImage: isNarrowed
-                  ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+            Label("Filter", systemImage: scope.isStandard
+                  ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
         }
         .accessibilityLabel("Filter")
-        .accessibilityValue(value)
+        .accessibilityValue(scope.isStandard ? String(localized: "Everything") : scope.summary)
         .accessibilityIdentifier("inbox.filter")
     }
 }
 
-/// A filter with nothing in it (`caughtUp`), centred in the free space: Only with no chat in that
-/// state, or Show holding no chat (`caughtUpThisApp`, `caughtUpOtherPlatforms`,
-/// `caughtUpScheduled`, `docs/inbox.md` §5).
+/// "Filtered: No Telegram · Unread ✕" at the top of a filtered inbox: what it leaves out, and a
+/// tap back to everything (`docs/inbox.md` §5).
+struct FilteredLine: View {
+    @Bindable var workspace: BotWorkspace
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                .foregroundStyle(Theme.tertiaryText)
+                .accessibilityHidden(true)
+            Text("Filtered: \(workspace.inboxScope.summary)")
+                .foregroundStyle(Theme.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Button {
+                withAnimation(Theme.snappy) { workspace.inboxScope = .standard }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Theme.tertiaryText)
+                    .frame(minWidth: 24, minHeight: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show Everything")
+        }
+        .font(.footnote)
+        .padding(.vertical, 6)
+        .modifier(SidebarRowInsets())
+    }
+}
+
+/// A filter with nothing in it (`caughtUp`), centred in the free space: Unread or Needs You with no
+/// chat in that state, or sources that hold no chat (`docs/inbox.md` §5).
 struct CaughtUpState: View {
     private let symbol: String
     private let title: String
     private let message: String
 
-    init(filter: InboxFilter) {
+    /// Unread or Needs You narrowed everything away.
+    init(scope: InboxScope) {
         symbol = "checkmark.circle.fill"
-        switch filter {
-        case .unread, .all:
-            title = String(localized: "You’re all caught up")
-            message = String(localized: "Nothing unread in your chats.")
-        case .needsYou:
+        if scope.needsYouOnly, !scope.unreadOnly {
             title = String(localized: "Nothing needs you")
             message = String(localized: "Hermes isn’t waiting on you in any chat.")
-        case .running:
-            title = String(localized: "Nothing running")
-            message = String(localized: "No chat is running right now.")
+        } else {
+            title = String(localized: "You’re all caught up")
+            message = String(localized: "Nothing unread in your chats.")
         }
     }
 
-    /// A list that is simply empty, so its Show glyph rather than a check.
-    init(show: InboxShow) {
-        symbol = show.symbol
-        switch show {
-        case .thisApp, .all:
-            title = String(localized: "No chats from this app")
-            message = String(localized: "Chats you start in this app show up here.")
-        case .otherPlatforms:
-            title = String(localized: "No chats from other platforms")
-            message = String(localized: "Telegram, Discord and CLI chats show up here.")
-        case .scheduled:
-            title = String(localized: "No scheduled runs")
-            message = String(localized: "Runs from your scheduled tasks show up here.")
-        }
+    /// The sources picked hold no chat.
+    init(sources: Void) {
+        symbol = "line.3.horizontal.decrease.circle"
+        title = String(localized: "No chats from these sources")
+        message = String(localized: "Pick more sources in Filter, or show everything.")
     }
 
     var body: some View {
@@ -130,23 +148,6 @@ struct CaughtUpState: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-    }
-}
-
-extension InboxShow {
-    /// The choice's glyph, in the menu and on its empty state. This App is the device it runs on.
-    var symbol: String {
-        switch self {
-        case .thisApp:
-            #if os(macOS)
-            "macbook"
-            #else
-            UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-            #endif
-        case .all: "tray"
-        case .otherPlatforms: "bubble.left.and.bubble.right"
-        case .scheduled: "calendar.badge.clock"
-        }
     }
 }
 
@@ -175,21 +176,18 @@ struct MuteMenu: View {
     }
 }
 
-/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds. It shows only in
-/// the place the chat was archived from (the chat list or a project home), so a window never
-/// shows two.
+/// "Settled “Release notes”  Undo" at the foot of the list, for 5 seconds (`docs/inbox.md` §5).
 struct ArchivedToast: ViewModifier {
     @Bindable var workspace: BotWorkspace
-    var place = BotWorkspace.ArchivePlace.chatList
-    /// Room left below it: the chat list's bottom bar, or a project home's composer.
+    /// Room left below it: the chat list's bottom bar.
     var bottomPadding: CGFloat = 64
     let onError: (HermesError) -> Void
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
-            if let session = workspace.recentlyArchived, workspace.recentlyArchivedPlace == place {
+            if let session = workspace.recentlyArchived {
                 HStack(spacing: 12) {
-                    Text("Archived “\(session.displayTitle)”")
+                    Text("Settled “\(session.displayTitle)”")
                         .font(.subheadline)
                         .foregroundStyle(Theme.primaryText)
                         .lineLimit(1)
@@ -215,17 +213,10 @@ struct ArchivedToast: ViewModifier {
                 .padding(.bottom, bottomPadding)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: session.stableID) {
-                    AccessibilityNotification.Announcement(String(localized: "Archived \(session.displayTitle)")).post()
+                    AccessibilityNotification.Announcement(String(localized: "Settled \(session.displayTitle)")).post()
                     try? await Task.sleep(for: .seconds(5))
                     if workspace.recentlyArchived?.stableID == session.stableID {
                         withAnimation(Theme.snappy) { workspace.recentlyArchived = nil }
-                    }
-                }
-                // Leaving a project home ends its Undo; it would otherwise wait there with no timer.
-                // The chat list keeps its own, which shows again on return (`docs/inbox.md` §5).
-                .onDisappear {
-                    if place == .project, workspace.recentlyArchived?.stableID == session.stableID, workspace.recentlyArchivedPlace == place {
-                        workspace.recentlyArchived = nil
                     }
                 }
             }
@@ -235,134 +226,6 @@ struct ArchivedToast: ViewModifier {
 }
 
 #if os(iOS)
-/// One of a row's swipe actions, as a `List` row's `swipeActions` would hold it.
-struct RowSwipeAction: Identifiable {
-    let title: String
-    let symbol: String
-    let tint: Color
-    let perform: () -> Void
-
-    var id: String { title }
-}
-
-/// The chat list's trailing swipe on a row outside a `List` (a project's lanes, `docs/projects.md`
-/// §2), where `swipeActions` does nothing. The actions are in `swipeActions`' order: the first sits
-/// at the edge and is what a full swipe does. It looks and moves as the system's does: round
-/// buttons with their names under them, in places and at marks `RowSwipe` holds. The pan begins
-/// only on a drag to the left (`SidewaysSwipePan`), so the lanes still scroll and the edge's back
-/// swipe stays the system's. VoiceOver gets the actions from the row's own `accessibilityAction`s.
-struct TrailingSwipeActions: ViewModifier {
-    let id: String
-    let actions: [RowSwipeAction]
-    /// The row that's open, so opening one shuts the others and a scroll shuts it.
-    @Binding var openRow: String?
-
-    @State private var offset: CGFloat = 0
-    /// Where the drag began: shut or open.
-    @State private var start: CGFloat = 0
-    @State private var rowWidth: CGFloat = 0
-    @State private var isFull = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The round button's height, as the system draws the chat list's.
-    static let buttonHeight: CGFloat = 34
-
-    private var swipe: RowSwipe {
-        RowSwipe(count: actions.count, rowWidth: rowWidth)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .offset(x: offset)
-            .background(alignment: .trailing) { buttons }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-            .gesture(SidewaysSwipePan(direction: openRow == id ? .either : .left, countsFromTouchDown: true, began: { start = offset }, changed: follow, ended: release, cancelled: { settle(.close) }))
-            .sensoryFeedback(.impact(weight: .medium), trigger: isFull) { _, full in full }
-            .onChange(of: openRow) { _, row in
-                if row != id, offset != 0 { settle(.close) }
-            }
-    }
-
-    /// Behind the row, in the space it has uncovered. They stay in the tree while the row slides
-    /// back, so they shrink and fade with it instead of vanishing.
-    private var buttons: some View {
-        ZStack(alignment: .trailing) {
-            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
-                let slot = swipe.slot(index, at: offset)
-                let shows = swipe.shows(index, at: offset)
-                button(action, width: slot.width)
-                    .animation(.easeOut(duration: 0.1), value: isFull)
-                    .opacity(shows ? swipe.opacity(index, at: offset) : 0)
-                    .scaleEffect(shows || reduceMotion ? 1 : 0.5)
-                    .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.72), value: shows)
-                    .padding(.trailing, slot.inset)
-            }
-        }
-        .frame(width: max(0, -offset), alignment: .trailing)
-        .frame(maxHeight: .infinity)
-        .clipped()
-    }
-
-    private func button(_ action: RowSwipeAction, width: CGFloat) -> some View {
-        Button {
-            perform(action)
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: action.symbol)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: width, height: Self.buttonHeight)
-                    .background(action.tint, in: Capsule())
-                Text(action.title)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHidden(true)
-    }
-
-    private func follow(_ translation: CGFloat) {
-        if openRow != id, openRow != nil { openRow = nil }
-        offset = swipe.offset(translation: translation, from: start)
-        isFull = swipe.isFull(offset)
-    }
-
-    /// Where the row is decides, not how fast it moved, as in the chat list.
-    private func release(_ translation: CGFloat, velocity _: CGFloat) {
-        offset = swipe.offset(translation: translation, from: start)
-        settle(swipe.release(offset: offset))
-    }
-
-    private func perform(_ action: RowSwipeAction) {
-        action.perform()
-        settle(.close)
-    }
-
-    private func settle(_ release: RowSwipe.Release) {
-        if release == .full, let first = actions.first { first.perform() }
-        let target: CGFloat = release == .open ? -swipe.openWidth : 0
-        let animation: Animation = if reduceMotion {
-            .easeOut(duration: 0.15)
-        } else if release == .full {
-            .smooth(duration: 0.6)
-        } else {
-            .spring(response: 0.35, dampingFraction: 0.86)
-        }
-        // `isFull` stays as it was until the next drag: dropping it here would snap the first
-        // button back to its own width instead of letting it shrink with the row.
-        withAnimation(animation) { offset = target }
-        if release == .open {
-            openRow = id
-        } else if openRow == id {
-            openRow = nil
-        }
-    }
-}
-
 /// A pan that begins only when the finger moves more sideways than up or down (`SidewaysSwipe`),
 /// so vertical drags stay the list's or the chat's. A SwiftUI drag on rows in a scroll view took
 /// those too, and the list and the chat stopped scrolling.

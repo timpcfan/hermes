@@ -45,14 +45,12 @@ struct SetupProvider: Identifiable, Hashable {
 
 /// Where the last step can send the person (`startCard`), only what the gateway backs.
 enum StartingPoint: Identifiable, Hashable {
-    case project(root: String, label: String, sessions: Int)
     case bots(count: Int, lead: String?)
     case briefing
     case question(gateway: String)
 
     var id: String {
         switch self {
-        case .project(let root, _, _): "project:\(root)"
         case .bots: "bots"
         case .briefing: "briefing"
         case .question: "question"
@@ -61,7 +59,6 @@ enum StartingPoint: Identifiable, Hashable {
 
     var symbol: String {
         switch self {
-        case .project: "folder"
         case .bots: "person.3"
         case .briefing: "sun.max"
         case .question: "bubble.left"
@@ -70,7 +67,6 @@ enum StartingPoint: Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .project(_, let label, _): String(localized: "Make \(label) a project")
         case .bots(let count, _): count == 1 ? String(localized: "Meet your Bot") : String(localized: "Meet your \(count) Bots")
         case .briefing: String(localized: "Get a morning briefing")
         case .question(let gateway): String(localized: "Ask about \(gateway)")
@@ -79,8 +75,6 @@ enum StartingPoint: Identifiable, Hashable {
 
     var detail: String {
         switch self {
-        case .project(let root, _, let sessions):
-            String(localized: "Hermes has worked in \(Self.shortPath(root)) \(sessions) times")
         case .bots(_, let lead):
             lead.map { String(localized: "\($0) and the others are ready in Bot Mode") } ?? String(localized: "They're ready in Bot Mode")
         case .briefing: String(localized: "Weather, calendar and what needs you, at 07:30")
@@ -278,14 +272,6 @@ final class SetupModel {
     func loadStartingPoints() async {
         guard startingPoints == nil else { return }
         var points: [StartingPoint] = []
-        // A folder Hermes has worked in often that isn't a project yet.
-        for _ in 0..<12 where roster?.isConnected == true && !workspace.projects.isAvailable {
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        await workspace.projects.loadDiscovered()
-        if let repo = workspace.projects.suggestedRepos.filter({ $0.sessions >= 3 }).max(by: { $0.sessions < $1.sessions }) {
-            points.append(.project(root: repo.root, label: repo.label, sessions: repo.sessions))
-        }
         if let roster, roster.isConnected {
             let bots = roster.visibleBots.filter { !$0.isDefault }
             if !bots.isEmpty { points.append(.bots(count: bots.count, lead: bots.first?.title)) }
@@ -297,21 +283,9 @@ final class SetupModel {
         startingPoints = Array(points.prefix(4))
     }
 
-    /// Goes where the card points. False if it couldn't (a project the gateway refused).
+    /// Goes where the card points. False if it couldn't.
     func open(_ point: StartingPoint) async -> Bool {
         switch point {
-        case .project(let root, let label, _):
-            isWorking = true
-            defer { isWorking = false }
-            do {
-                let project = try await workspace.projects.create(name: label, folders: [root], primary: root, appearance: ProjectAppearance())
-                workspace.sidebarMode = .chats
-                workspace.selection = .project(project.id)
-                WelcomeProgress.shared.mark(.meetBots)
-            } catch {
-                message = error.localizedDescription
-                return false
-            }
         case .bots:
             workspace.sidebarMode = .bots
             workspace.selection = nil

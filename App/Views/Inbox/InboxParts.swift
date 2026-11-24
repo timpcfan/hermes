@@ -6,6 +6,8 @@ import SwiftUI
 enum InboxMetrics {
     #if os(macOS)
     static let rowHeight: CGFloat = 46
+    /// A settled chat's one line (`docs/inbox.md` §2a).
+    static let slimRowHeight: CGFloat = 28
     static let botRowHeight: CGFloat = 50
     static let faceSize: CGFloat = 32
     static let titleFont = Font.system(size: 13)
@@ -18,6 +20,7 @@ enum InboxMetrics {
     static let lineSpacing: CGFloat = 2
     #else
     static let rowHeight: CGFloat = 62
+    static let slimRowHeight: CGFloat = 44
     static let botRowHeight: CGFloat = 66
     static let faceSize: CGFloat = 44
     static let titleFont = Font.body

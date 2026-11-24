@@ -1,113 +1,256 @@
 import Foundation
 import HermesKit
+#if os(iOS)
+import UIKit
+#endif
 
-/// The filters over the chat list (`filterChip`, `docs/inbox.md` §5).
-enum InboxFilter: String, CaseIterable {
-    case all, unread, needsYou, running
-
+/// The filter's source groups and states as the menu and the "Filtered:" line name them
+/// (`docs/inbox.md` §5).
+extension InboxSourceGroup {
     var title: String {
         switch self {
-        case .all: String(localized: "All")
-        case .unread: String(localized: "Unread")
-        case .needsYou: String(localized: "Needs You")
-        case .running: String(localized: "Running")
+        case .thisApp: String(localized: "This App")
+        case .telegram: String(localized: "Telegram")
+        case .discord: String(localized: "Discord")
+        case .terminal: String(localized: "Terminal")
+        case .editor: String(localized: "Editor")
+        case .scheduled: String(localized: "Scheduled")
+        case .other: String(localized: "Other Platforms")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .thisApp:
+            #if os(macOS)
+            "macbook"
+            #else
+            UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            #endif
+        case .telegram: "paperplane"
+        case .discord: "gamecontroller"
+        case .terminal: "terminal"
+        case .editor: "chevron.left.forwardslash.chevron.right"
+        case .scheduled: "calendar.badge.clock"
+        case .other: "bubble.left.and.bubble.right"
         }
     }
 }
 
-/// Show's choices, as the filter menu names them (`inboxFilterMenu`, `docs/inbox.md` §5).
-extension InboxShow {
+extension InboxScope.Change {
     var title: String {
         switch self {
-        case .thisApp: String(localized: "This App")
-        case .all: String(localized: "All Chats")
-        case .otherPlatforms: String(localized: "Other Platforms")
-        case .scheduled: String(localized: "Scheduled Tasks")
+        case .source(let group, let shown): shown ? group.title : String(localized: "No \(group.title)")
+        case .unread: String(localized: "Unread")
+        case .needsYou: String(localized: "Needs You")
+        case .showsEmpty: String(localized: "Empty Chats")
         }
     }
+}
 
-    /// Each launch starts with this app's chats. `-HERMES_INBOX_SHOW all|otherPlatforms|scheduled`
-    /// starts with another choice, for screenshots.
-    static var atLaunch: InboxShow {
+extension InboxScope {
+    /// "No Telegram · Unread": what the filter changes, for its line and its button.
+    var summary: String { changes.map(\.title).joined(separator: " · ") }
+
+    private static func key(_ id: UUID) -> String { "inboxScope.\(id.uuidString)" }
+
+    /// The filter kept for this gateway. `-HERMES_INBOX_SCOPE <json>` starts with another one, for
+    /// screenshots.
+    static func stored(for gateway: UUID) -> InboxScope {
+        var data = UserDefaults.standard.data(forKey: key(gateway))
         #if DEBUG
-        UserDefaults.standard.string(forKey: "HERMES_INBOX_SHOW").flatMap(InboxShow.init(rawValue:)) ?? .thisApp
-        #else
-        .thisApp
+        if let flag = UserDefaults.standard.string(forKey: "HERMES_INBOX_SCOPE") { data = Data(flag.utf8) }
         #endif
+        return data.flatMap { try? JSONDecoder().decode(InboxScope.self, from: $0) } ?? .standard
+    }
+
+    func store(for gateway: UUID) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(self), forKey: Self.key(gateway))
     }
 }
 
 extension BotWorkspace {
-    /// The chats in the list: pinned first, then by activity, newest first; no date sections
-    /// (`docs/inbox.md` §2). Show picks where they come from, this app's by default
-    /// (`docs/inbox.md` §5). In the whole list (This App or All Chats, no Only), chats in a project
-    /// stay in the project (pinned ones show here too); a narrower list covers every chat it holds.
-    /// Scheduled runs are in it only under Scheduled Tasks (`ScheduledRuns`).
-    var inboxSessions: [HermesSession] {
-        let projects = projects!
-        let held = allSessions.filter(shows)
-        let shown = showsProjects
-            ? held.filter { $0.pinned || !projects.isScoped($0) }
-            : held.filter { matches(inboxFilter, key: $0.stableID) }
-        let ordered = RowTime.ordered(shown, pinned: \.pinned) { self.rowTime($0) }
-        // New chats whose first message waits for the gateway, under the pinned ones (`docs/chat.md` §4).
-        // They are this app's, so they show wherever this app's chats do.
-        guard inboxFilter == .all, inboxShow.includes(.thisApp), !waitingChats.isEmpty else { return ordered }
-        let waiting = WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
-        let pinned = ordered.prefix { $0.pinned }.count
-        return Array(ordered[..<pinned]) + waiting + ordered[pinned...]
+    /// The chats in the list, region by region: Pinned, Main, Working (`docs/inbox.md` §2a).
+    /// Settled is listed apart (`settledSessions`).
+    var inboxSessions: [HermesSession] { inboxSections.ordered }
+
+    /// The Chats inbox's regions (`docs/inbox.md` §2a). The filter picks which sources it holds
+    /// and whether empty chats hide, and Unread or Needs You narrow Main (`docs/inbox.md` §5);
+    /// every chat it holds is listed, as this build has no projects to keep some apart
+    /// (`docs/projects.md`).
+    ///
+    /// Built once per change to what it reads, never per row drawn: the list, which chats run or
+    /// wait (sets that move only when one starts, stops or starts waiting, not with each streamed
+    /// word), the return times, the last lines and the filter. The selection isn't among them.
+    var inboxSections: InboxSections<HermesSession> {
+        let key = InboxSectionsCache.Key(
+            sessions: sessionsRevision, activity: activity.inbox, returns: inboxReturns,
+            lines: unread.linesRevision, scope: inboxScope,
+            filterInputs: inboxScope.unreadOnly ? unread.badgesRevision : 0, waiting: waitingChats.map(\.key)
+        )
+        if let sectionsCache, sectionsCache.key == key { return sectionsCache.sections }
+        let sections = buildSections(activity: key.activity)
+        sectionsCache = InboxSectionsCache(key: key, sections: sections)
+        return sections
+    }
+
+    private func buildSections(activity: InboxActivity) -> InboxSections<HermesSession> {
+        let scope = inboxScope
+        var rows = allSessions.filter { holds($0, live: activity.live) }
+        // New chats whose first message waits for the gateway (`docs/chat.md` §4). They are this
+        // app's, so they show wherever this app's chats do; sending, they sit in Working.
+        if scope.shows(.thisApp), !waitingChats.isEmpty {
+            rows += WaitingChat.rows(waitingChats, listed: Set(sessions.map(\.stableID)))
+        }
+        let returns = inboxReturns
+        var sections = InboxSections.partition(
+            rows, key: \.stableID, pinned: \.pinned, archived: \.archived, activity: activity, returns: returns,
+            rowTime: { self.rowTime($0, live: activity.live) },
+            workingTime: { session in
+                [self.lastSentAt[session.stableID], session.lastActive].compactMap(\.self).max()
+            }
+        )
+        // Unread and Needs You narrow Main only: what's pinned, running or settled stays in view.
+        if scope.narrowsMain {
+            sections.main = sections.main.filter { session in
+                let key = session.stableID
+                return scope.narrowsIn(unread: unread.badge(for: key).isUnread, needsYou: activity.needsYou.contains(key))
+            }
+        }
+        return sections
+    }
+
+    /// Whether the filter holds a chat. An empty chat stays while a turn runs in it or the person
+    /// sent in it here: a new chat has no stored messages until its first lands.
+    private func holds(_ session: HermesSession, live: Set<String>) -> Bool {
+        let key = session.stableID
+        return inboxScope.holds(session, keep: live.contains(key) || lastSentAt[key] != nil)
     }
 
     /// A chat's time on its row and in the order (`RowTime`, `docs/inbox.md` §2): its last line's
     /// message, standing at its activity only while a turn runs in it.
-    /// A project chat's time, by the same rule.
-    func rowTime(_ row: ProjectSessionRow) -> Date? {
-        let key = row.stableID
-        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
-                          activity: row.lastActive, created: row.startedAt)
-    }
-
     func rowTime(_ session: HermesSession) -> Date? {
-        let key = session.stableID
-        return RowTime.of(line: unread.lastLines[key], live: activity.line(for: key)?.isLive == true,
-                          activity: session.lastActive, created: session.startedAt)
+        rowTime(session, live: activity.inbox.live)
     }
 
-    /// Whether Show holds a chat (`docs/inbox.md` §5).
-    func shows(_ session: HermesSession) -> Bool {
-        inboxShow.shows(session)
+    /// A row's time when the row already knows whether its chat runs (its own line): it doesn't
+    /// then follow every chat's start and stop.
+    func rowTime(_ session: HermesSession, isLive: Bool) -> Date? {
+        RowTime.of(line: unread.lastLines[session.stableID], live: isLive, activity: session.lastActive, created: session.startedAt)
     }
 
-    /// The list is whole: this app's chats or all of them, nothing narrowed to a state. Only then
-    /// do projects keep their chats in the Projects section.
-    var showsProjects: Bool {
-        inboxFilter == .all && (inboxShow == .thisApp || inboxShow == .all)
+    private func rowTime(_ session: HermesSession, live: Set<String>) -> Date? {
+        rowTime(session, isLive: live.contains(session.stableID))
     }
 
-    /// Show holds no chat at all, projects' and new ones' included, while the gateway has some: the
-    /// Show empty state (`caughtUpThisApp`…). With no chats at all, "No chats yet" says so instead.
-    var showHoldsNothing: Bool {
-        !allSessions.isEmpty && !hasMoreSessions && !allSessions.contains(where: shows)
-            && (waitingChats.isEmpty || !inboxShow.includes(.thisApp))
+    // MARK: Returns (`docs/inbox.md` §2a)
+
+    private static func returnsKey(_ id: UUID) -> String { "inboxReturns.\(id.uuidString)" }
+
+    /// The return times kept on this device, so a cold launch keeps Main's order.
+    func restoreReturns() {
+        returnTracker = InboxReturns.decoded(UserDefaults.standard.data(forKey: Self.returnsKey(id)))
+        inboxReturns = returnTracker.times
     }
 
-    func matches(_ filter: InboxFilter, key: String) -> Bool {
-        switch filter {
-        case .all: true
-        case .unread: unread.badge(for: key).isUnread
-        case .needsYou: activity.line(for: key)?.needsYou == true
-        case .running: activity.line(for: key).map { $0.isLive && !$0.needsYou } ?? false
+    /// What the chats are doing changed (`LiveActivity`): chats that started waiting on the
+    /// person or stopped return now; finished ones after a short grace.
+    func noteActivity(_ phases: [String: InboxReturns.Phase]) {
+        returnTracker.observe(phases, now: .now)
+        publishReturns()
+        scheduleReturnGrace()
+    }
+
+    /// Un-settled, or sent in from Settled: back at the top of Main.
+    func noteReturned(_ key: String) {
+        returnTracker.returned(key, at: .now)
+        publishReturns()
+    }
+
+    /// The person sent in a chat here: Working's order.
+    func noteSent(_ key: String) {
+        lastSentAt[key] = .now
+    }
+
+    // MARK: Settled (`docs/inbox.md` §2a)
+
+    /// Whether the app knows this chat as settled: listed in Settled, opened from search as one,
+    /// or back-filled into the chat list with `archived`.
+    func isSettled(_ key: String) -> Bool {
+        settled.contains(key) || session(forKey: key)?.archived == true
+    }
+
+    /// The chat being sent in is settled: un-settle it, fire and forget (S3). The send goes ahead
+    /// whatever Hermes answers; a failure leaves it settled.
+    func unsettleBeforeSend(_ key: String) {
+        guard isSettled(key) else { return }
+        let session = settled.session(forKey: key) ?? session(forKey: key) ?? HermesSession(id: key)
+        Task { try? await unarchive(session) }
+    }
+
+    /// The chat to settle or un-settle from the menu bar (⇧⌘S): the open one.
+    var openSettleTarget: HermesSession? {
+        guard case .session(let key) = selection, waitingChat(forKey: key) == nil else { return nil }
+        return session(forKey: key) ?? settled.session(forKey: key)
+    }
+
+    /// ⇧⌘S: settles the open chat, or un-settles it when it's settled.
+    func toggleOpenChatSettled() async throws {
+        guard let session = openSettleTarget else { return }
+        if isSettled(session.stableID) {
+            try await unarchive(session)
+        } else {
+            try await archive(session)
         }
     }
 
-    /// How many of the chats Show holds a filter would show.
-    func count(for filter: InboxFilter) -> Int {
-        allSessions.reduce(0) { shows($1) && matches(filter, key: $1.stableID) ? $0 + 1 : $0 }
+    private func scheduleReturnGrace() {
+        returnGrace?.cancel()
+        guard let deadline = returnTracker.nextDeadline else { return }
+        returnGrace = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow) + 0.05))
+            guard let self, !Task.isCancelled else { return }
+            self.returnTracker.settle(now: .now)
+            self.publishReturns()
+            self.scheduleReturnGrace()
+        }
     }
 
-    /// The unread chats Show holds, for Mark All as Read.
+    /// Only chats still listed keep a time; the rest go when the list is next saved.
+    private func publishReturns() {
+        let listed = Set(allSessions.map(\.stableID))
+        if hasFetchedSessions { returnTracker.prune(keeping: listed) }
+        let times = returnTracker.times
+        guard times != inboxReturns else { return }
+        inboxReturns = times
+        returnsSave?.cancel()
+        returnsSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, !Task.isCancelled else { return }
+            UserDefaults.standard.set(self.returnTracker.encoded(), forKey: Self.returnsKey(self.id))
+        }
+    }
+
+    /// The filter holds no chat at all, new ones included, while the gateway has some: its empty
+    /// state. With no chats at all, "No chats yet" says so instead.
+    var scopeHoldsNothing: Bool {
+        !allSessions.isEmpty && !hasMoreSessions && !allSessions.contains { holds($0, live: activity.inbox.live) }
+            && (waitingChats.isEmpty || !inboxScope.shows(.thisApp))
+    }
+
+    /// How many listed chats are unread, and how many wait on the person, for the menu's counts.
+    /// Read when the menu opens, not as the list draws.
+    func stateCounts() -> (unread: Int, needsYou: Int) {
+        let sections = inboxSections
+        let rows = sections.ordered
+        let unreadCount = rows.reduce(0) { unread.badge(for: $1.stableID).isUnread ? $0 + 1 : $0 }
+        let needsYou = rows.reduce(0) { activity.inbox.needsYou.contains($1.stableID) ? $0 + 1 : $0 }
+        return (unreadCount, needsYou)
+    }
+
+    /// The unread chats the inbox lists, Pinned, then Main, then Working, for Mark All as Read.
     var unreadChatKeys: [String] {
-        allSessions.filter(shows).map(\.stableID).filter { unread.badge(for: $0).isUnread }
+        inboxSections.ordered.map(\.stableID).filter { unread.badge(for: $0).isUnread }
     }
 
     /// ⌥⌘↓ / ⌥⌘↑: the next or previous unread chat (or Bot) along the list.
@@ -137,6 +280,34 @@ extension BotWorkspace {
         } else {
             unread.markUnread(key)
             // Marked unread: it reads as new next time; the chat stays open meanwhile.
+        }
+    }
+}
+
+/// The inbox's regions as last built, and what they were built from (`BotWorkspace.inboxSections`).
+struct InboxSectionsCache {
+    struct Key: Equatable {
+        var sessions: Int
+        var activity: InboxActivity
+        var returns: [String: Date]
+        var lines: Int
+        var scope: InboxScope
+        /// What the filter reads besides the list (the unread badges under Unread).
+        var filterInputs: Int
+        var waiting: [String]
+    }
+
+    let key: Key
+    let sections: InboxSections<HermesSession>
+}
+
+extension SidebarItem {
+    /// A project's home, its Board or All Projects: screens this build doesn't have
+    /// (`docs/projects.md`). A window restored onto one, or a launch flag naming one, opens nothing.
+    var isProjectScreen: Bool {
+        switch self {
+        case .project, .board, .allProjects: true
+        default: false
         }
     }
 }

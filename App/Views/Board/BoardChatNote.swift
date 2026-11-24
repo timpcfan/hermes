@@ -1,26 +1,17 @@
 import HermesKit
 import SwiftUI
 
-/// Cards Hermes added from a chat (`cardsAddedNote`): each with where it landed, and Open Board.
+/// Cards Hermes added from a chat (`cardsAddedNote`): each with where it landed.
 struct CardsAddedNote: View {
     let cards: [BoardAddedCard]
     let context: MemoryNoteContext
 
     private var workspace: BotWorkspace { context.workspace }
 
-    /// The project whose board they're on: the cards', else the chat's.
-    private var projectID: String? {
-        if let id = cards.compactMap(\.projectID).first { return id }
-        if let id = context.conversation.placement?.projectID { return id }
-        return context.conversation.sessionID.flatMap { workspace.projects?.projectID(forSessionID: $0) }
-    }
-
+    /// Where they landed is all the note says: this build has no Board screen to open
+    /// (`docs/projects.md`).
     private var title: String {
-        let count = BoardCopy.cards(cards.count)
-        if let projectID, let name = workspace.projects?.project(projectID)?.name {
-            return String(localized: "Added \(count) to the \(name) board")
-        }
-        return String(localized: "Added \(count) to the board")
+        String(localized: "Added \(BoardCopy.cards(cards.count)) to the board")
     }
 
     var body: some View {
@@ -38,7 +29,6 @@ struct CardsAddedNote: View {
             Rectangle().fill(Theme.hairline).frame(height: 0.5)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(cards) { card in
-                    let opensBoard = projectID != nil && workspace.roster != nil
                     HStack(spacing: 8) {
                         Circle()
                             .fill(Theme.tertiaryText)
@@ -58,50 +48,25 @@ struct CardsAddedNote: View {
                     .accessibilityElement(children: .combine)
                     // The note's last element can end the reply: where VoiceOver lands reading back
                     // (`docs/chat.md` §1).
-                    .modifier(VoiceOverLandingTarget(isLast: !opensBoard && card.id == cards.last?.id))
+                    .modifier(VoiceOverLandingTarget(isLast: card.id == cards.last?.id))
                 }
             }
             .padding(.vertical, 3)
-            if let projectID, workspace.roster != nil {
-                Rectangle().fill(Theme.hairline).frame(height: 0.5)
-                Button {
-                    workspace.sidebarMode = .chats
-                    workspace.selection = .board(projectID)
-                } label: {
-                    Text("Open Board")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.link)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .modifier(VoiceOverLandingTarget())
-            }
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .frame(maxWidth: 520, alignment: .leading)
     }
 
-    /// "Ready · Ada", "Ready", "After 2 cards": as it is now when the board is loaded.
+    /// "Ready · Ada", "Ready", "After 2 cards": as Hermes reported it when it added the card.
     private func place(of card: BoardAddedCard) -> String {
-        let board = projectID.map { workspace.board(for: $0) }
-        let live = board?.card(card.id)
-        let column = live?.column ?? card.column
-        var waiting = card.isWaiting && column == "todo"
-        if let live, let board {
-            if case .waiting = board.state(of: live) { waiting = true } else { waiting = false }
-        }
-        if waiting {
-            let count = live?.parentCount ?? card.parentCount
+        if card.isWaiting && card.column == "todo" {
+            let count = card.parentCount
             return count == 1 ? String(localized: "After 1 card") : String(localized: "After \(count) cards")
         }
-        let columnTitle = board?.columnTitle(column) ?? BoardColumn(key: column, label: column).title
-        let assignee = live?.assignee ?? card.assignee
+        let columnTitle = BoardColumn(key: card.column, label: card.column).title
+        let assignee = card.assignee
         let isHermes = assignee == nil || assignee == "default" || workspace.roster?.bot(named: assignee ?? "")?.isDefault == true
         guard !isHermes, let assignee else { return columnTitle }
-        let name = board?.name(of: assignee) ?? assignee.capitalized
-        return "\(columnTitle) · \(name)"
+        return "\(columnTitle) · \(assignee.capitalized)"
     }
 }

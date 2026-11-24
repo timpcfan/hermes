@@ -3,8 +3,8 @@ import HermesKit
 import SwiftUI
 
 /// ⌘K on the Mac (`screens/mac/search.elyx` → `macSearch`): a glass palette over the window with
-/// Chats (snippet rows, at most 3, then Show All Results), Projects and Actions. Keyboard only
-/// works: ↑↓ move, Return opens, ⌘Return opens in a new window, ⌘1–⌘3 open a project, Esc closes.
+/// Chats (snippet rows, at most 3, then Show All Results) and Actions. Keyboard only works: ↑↓
+/// move, Return opens, ⌘Return opens in a new window, Esc closes.
 struct SearchPalette: View {
     let workspace: BotWorkspace
     let router: WindowRouter
@@ -23,8 +23,7 @@ struct SearchPalette: View {
         case chat(ChatSearch.Hit)
         case recent(HermesSession)
         case showAll
-        case project(HermesProject)
-        case newChat(projectID: String?, name: String?)
+        case newChat
         case find(String)
     }
 
@@ -45,13 +44,7 @@ struct SearchPalette: View {
             if search.hits.count > 3 { items.append(.showAll) }
             sections.append(Section(id: "chats", title: String(localized: "Chats · \(search.hits.count)"), items: items))
         }
-        let projects = typed.isEmpty ? [] : search.projects
-        if !projects.isEmpty {
-            sections.append(Section(id: "projects", title: String(localized: "Projects"), items: projects.prefix(3).map(Item.project)))
-        }
-        var actions: [Item] = []
-        let active = workspace.projects.activeProjectID.flatMap { workspace.projects.projects[$0] }
-        actions.append(.newChat(projectID: active?.id, name: active?.name))
+        var actions: [Item] = [.newChat]
         if !typed.isEmpty, case .session? = workspace.selection {
             actions.append(.find(typed))
         }
@@ -119,7 +112,7 @@ struct SearchPalette: View {
                 .font(.title3)
                 .foregroundStyle(Theme.secondaryText)
                 .accessibilityHidden(true)
-            MacSearchField(text: $search.query, prompt: String(localized: "Search chats, projects and actions"),
+            MacSearchField(text: $search.query, prompt: String(localized: "Search chats and actions"),
                            font: .preferredFont(forTextStyle: .title3), focusesOnAppear: true) { key in
                 handle(key, items: items)
             }
@@ -145,10 +138,8 @@ struct SearchPalette: View {
             close()
         case .open(let newWindow):
             if items.indices.contains(selected) { open(items[selected], newWindow: newWindow) }
-        case .command(let digit):
-            let projects = items.compactMap { item -> Item? in if case .project = item { item } else { nil } }
-            guard digit <= 3, projects.indices.contains(digit - 1) else { return false }
-            open(projects[digit - 1], newWindow: false)
+        case .command:
+            return false
         }
         return true
     }
@@ -187,12 +178,8 @@ struct SearchPalette: View {
             actionLabel(symbol: "bubble.left", title: session.displayTitle, shortcut: nil)
         case .showAll:
             actionLabel(symbol: "list.bullet", title: String(localized: "Show All Results"), shortcut: nil)
-        case .project(let project):
-            let path = project.primaryPath.map(CheckpointsModel.shortened) ?? ""
-            let number = (search.projects.firstIndex(of: project) ?? 0) + 1
-            actionLabel(symbol: "folder", title: path.isEmpty ? project.name : "\(project.name) · \(path)", shortcut: number <= 3 ? "⌘\(number)" : nil)
-        case .newChat(_, let name):
-            actionLabel(symbol: "square.and.pencil", title: name.map { String(localized: "New Chat in \($0)") } ?? String(localized: "New Chat"), shortcut: "⌘N")
+        case .newChat:
+            actionLabel(symbol: "square.and.pencil", title: String(localized: "New Chat"), shortcut: "⌘N")
         case .find(let text):
             actionLabel(symbol: "text.magnifyingglass", title: String(localized: "Find “\(text)” in This Chat"), shortcut: "⌘F")
         }
@@ -236,12 +223,9 @@ struct SearchPalette: View {
             workspace.sidebarMode = .chats
             workspace.searchText = query
             router.focusSidebarSearch()
-        case .project(let project):
+        case .newChat:
             workspace.sidebarMode = .chats
-            workspace.pick(.project(project.id))
-        case .newChat(let projectID, _):
-            workspace.sidebarMode = .chats
-            workspace.startNewChat(inProject: projectID)
+            workspace.startNewChat()
         case .find(let text):
             workspace.currentConversation.find(text)
         }

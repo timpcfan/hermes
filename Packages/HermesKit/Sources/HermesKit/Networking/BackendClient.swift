@@ -341,6 +341,19 @@ public actor BackendClient {
         return try JSONDecoder().decode(DashboardSessionPage.self, from: data).sessions
     }
 
+    /// A page of the settled chats (Hermes' archived ones), most recently active first, and how
+    /// many there are (`GET /api/sessions?archived=only&order=recent`, `docs/inbox.md` §2a). Hermes
+    /// back-fills pinned chats into every page whatever their `archived` (its pinned query doesn't
+    /// inherit the filter), so only rows that say they are archived are kept.
+    public func archivedSessions(limit: Int, offset: Int, profile: String?) async throws -> SettledPage {
+        let query = [
+            URLQueryItem(name: "archived", value: "only"), URLQueryItem(name: "order", value: "recent"),
+            URLQueryItem(name: "limit", value: String(min(100, max(1, limit)))), URLQueryItem(name: "offset", value: String(max(0, offset))),
+        ] + Self.profileQuery(profile)
+        let (data, _) = try await send(path: "api/sessions", query: query)
+        return SettledPage(dashboard: try JSONDecoder().decode(DashboardSessionPage.self, from: data))
+    }
+
     /// A 404 that says the route itself is missing (Hermes' catch-all for unmatched `/api/*`, or a
     /// headless `hermes serve`), not that the session or profile is unknown: Desktop's test.
     static func isUnroutedPath(_ detail: String) -> Bool {

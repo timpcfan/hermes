@@ -12,7 +12,7 @@ Where it lives:
 - **iPad and Mac:** the sidebar's search field shows the same results in the sidebar column.
   Search Chats (⌥⌘F) focuses it. In Bots mode the same field filters the Bots instead.
 - **Mac:** ⌘K (File → Open Quickly…) opens a glass palette over the window (`macSearch`) with
-  Chats, Projects and Actions. On iPhone and iPad, ⌘K opens Quick Open, which jumps to chats, Bots
+  Chats and Actions (this fork has no Projects, `docs/projects.md`). On iPhone and iPad, ⌘K opens Quick Open, which jumps to chats, Bots
   and places by name.
 - **In a chat:** Find in Chat (⌘F) searches the loaded transcript (§2).
 
@@ -29,9 +29,9 @@ source: `hermes_cli/web_routers/sessions.py`.
 | Param | Use |
 |---|---|
 | `q` | The typed text, trimmed. Never sent empty. Each word is prefix-matched ("reconn" finds "reconnect"); quoted phrases match exactly |
-| `limit` | Hermes defaults to 20 and allows at most 100. The app asks for 40 (All, Chats, Tasks), 60 (Projects, filtered afterwards) and 10 per Bot |
+| `limit` | Hermes defaults to 20 and allows at most 100. The app asks for 40 (All, Chats, Tasks) and 10 per Bot |
 | `profile` | Whose chats: the gateway's own profile (from a `/p/<profile>` address) or none for the active one; a Bot's name for that Bot's chats |
-| `sources` / `exclude_sources` | Comma-separated sources (`cron`, `telegram`, `cli`…). Tasks uses `sources=cron`; All, Chats, Projects and each Bot's search use `exclude_sources=cron`. Hermes stores scheduled task runs with source `cron` (`SessionSearch.taskSource`), and they show only under Tasks ([inbox.md](inbox.md) §5) |
+| `sources` / `exclude_sources` | Comma-separated sources (`cron`, `telegram`, `cli`…). Tasks uses `sources=cron`; All, Chats and each Bot's search use `exclude_sources=cron`. Hermes stores scheduled task runs with source `cron` (`SessionSearch.taskSource`), and they show only under Tasks ([inbox.md](inbox.md) §5) |
 
 Hermes finds ID matches first (a pasted chat id finds that chat), then message content, then
 titles to fill the remaining places. Results are folded by compression lineage, so a compressed chat
@@ -65,31 +65,30 @@ is one row; branches stay separate rows. Each result (`SessionSearchResult`):
   results replace them when they come: a busy Mac takes its time over a search. On the Mac, the
   sidebar's field and the ⌘K palette's each search the text as typed, never correcting its
   spelling or replacing words in it first.
-- **Filter chips** (All / Chats / Projects / Bots / Tasks). Projects shows only with projects (Bot
-  Mode), Bots only with Bot Mode linked.
+- **Filter chips** (All / Chats / Bots / Tasks). Bots shows only with Bot Mode linked.
 
   | Chip | Search |
   |---|---|
-  | All | The gateway's profile, plus one search per Bot (in parallel), newest first by the time each row shows, without task runs. Matching projects first |
+  | All | The gateway's profile, plus one search per Bot (in parallel), newest first by the time each row shows, without task runs |
   | Chats | The gateway's profile, without task runs |
-  | Projects | Project names that contain every typed word (local, from `projects.list`), then chats that belong to a project |
   | Bots | One search per Bot, without task runs; each row shows the Bot's face |
   | Tasks | Task runs only (`sources=cron`), without the empty ones: Hermes titles each run after its task, so a task's name finds runs with nothing in them (`ScheduledRuns.shown`). Titles that match while it searches come from the runs the list keeps, never from the chats |
 
 - **Count line:** "4 chats mention “reconnect”". A failed search shows the error there instead.
 - **Row** (`searchResultRow`): title (else the preview, else "Untitled chat") and time, the
-  highlighted snippet, then where it lives: the project tile and lane, the Bot's face and name, or
-  "Task run · *task name*".
+  highlighted snippet, then where it lives: the Bot's face and name, "Task run · *task name*", or
+  "Settled" for a settled (archived) chat, whose title is a shade quieter (`docs/inbox.md` §2a).
+  While searching, the inbox's regions give way to these flat results, settled chats included.
 - **The time** (`ChatSearch.time(of:)`, `SessionSearchResult.time(row:)`) is the one the chat's
-  row shows (`RowTime`, [inbox.md](inbox.md) §2) for a chat the app lists: in the chat list, among
-  a project's chats, or a Bot's own Bot Chat. A result the app doesn't list shows when its chat
+  row shows (`RowTime`, [inbox.md](inbox.md) §2) for a chat the app lists: in the chat list, or a
+  Bot's own Bot Chat. A result the app doesn't list shows when its chat
   started. Never `last_active`: a title hit for a chat last spoken in yesterday doesn't read
   "7 min" because Hermes' heartbeat moved, and a result agrees with its chat's row.
-- **Matching projects** come before the chat rows, with their tile and folder; tapping one opens
-  the project.
-- **Picking a result** (a project, a chat, a Bot's chat, here or in the Mac's ⌘K palette) picks
+- **Picking a result** (a chat, a Bot's chat, here or in the Mac's ⌘K palette) picks
   like its sidebar row ([bots-groups-skills.md](bots-groups-skills.md) §1.2): the result already
   selected shows its screen again.
+- **Opening a settled result** leaves it settled: it shows in the inbox's Settled region while
+  it's open, never in Main (`docs/inbox.md` §5 Settle).
 - **Opening a result** opens the chat (a Bot's result opens that Bot's chat) and lands on the first
   message that has the snippet's phrase (all its matched words without one). If the message isn't
   loaded yet, the app loads up to five older pages to find it, and only then settles for a message

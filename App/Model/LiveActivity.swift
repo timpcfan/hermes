@@ -19,6 +19,7 @@ final class LiveActivity {
     private(set) var lines: [String: ActivityLine] = [:] {
         didSet {
             for (key, slot) in slots where slot.line != lines[key] { slot.line = lines[key] }
+            noteInboxActivity()
             #if HERMES_PUSH
             // In front, the badge counts the chats whose row waits on the person (`docs/notifications.md` §2 Badge).
             if Set(lines.filter { $0.value.needsYou }.keys) != Set(oldValue.filter { $0.value.needsYou }.keys) {
@@ -33,6 +34,12 @@ final class LiveActivity {
         fileprivate(set) var line: ActivityLine?
     }
     @ObservationIgnored private var slots: [String: Slot] = [:]
+    /// Which chats run and which wait on the person, for the inbox's regions (`docs/inbox.md`
+    /// §2a). Unlike `lines` it changes only when a chat starts, stops or starts waiting, never
+    /// with each streamed word, so the list isn't rebuilt while a reply streams.
+    private(set) var inbox = InboxActivity()
+    /// What each chat was doing at the last change, for the inbox's return times.
+    @ObservationIgnored private var phases: [String: InboxReturns.Phase] = [:]
     /// Bots whose reply just landed: their face is happy for 2 s (`docs/bot-faces.md` §9).
     private(set) var justReplied: Set<String> = []
 
@@ -65,6 +72,22 @@ final class LiveActivity {
             }
         }
         #endif
+    }
+
+    /// `lines` changed: the inbox's sets and its return times follow, only if a chat's phase did.
+    private func noteInboxActivity() {
+        var next: [String: InboxReturns.Phase] = [:]
+        for (key, line) in lines {
+            next[key] = if case .failed = line { .failed } else if line.needsYou { .needsYou } else { .working }
+        }
+        guard next != phases else { return }
+        phases = next
+        let activity = InboxActivity(
+            live: Set(next.filter { $0.value != .failed }.keys),
+            needsYou: Set(next.filter { $0.value == .needsYou }.keys)
+        )
+        if activity != inbox { inbox = activity }
+        workspace?.noteActivity(next)
     }
 
     // MARK: Reading

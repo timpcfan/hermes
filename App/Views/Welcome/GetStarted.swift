@@ -11,6 +11,7 @@ import TipKit
 struct GetStartedCard: View {
     let workspace: BotWorkspace
     @State private var progress = WelcomeProgress.shared
+    @Environment(WindowRouter.self) private var router: WindowRouter?
 
     private typealias Item = WelcomeProgress.Item
 
@@ -124,7 +125,7 @@ struct GetStartedCard: View {
         case .connect: String(localized: "Connect to your gateway")
         case .aboutYou: String(localized: "Tell Hermes about you")
         case .runCommand: String(localized: "Let Hermes run a command")
-        case .meetBots: hasBotMode ? String(localized: "Meet your Bots") : String(localized: "Start a project")
+        case .meetBots: hasBotMode ? String(localized: "Meet your Bots") : String(localized: "Link Bot Mode")
         case .checkpoints: String(localized: "Turn on undo for files")
         case .cards: AppPlugin.widgets.words.checklist(workspace.bot.name).title
         }
@@ -141,7 +142,7 @@ struct GetStartedCard: View {
         case .runCommand:
             return String(localized: "It asks first, you approve: “\(Self.diskQuestion)”")
         case .meetBots:
-            if !hasBotMode { return String(localized: "Group chats and folders Hermes works in") }
+            if !hasBotMode { return String(localized: "Bots, group chats and search by what was said") }
             return botCount == 1 ? String(localized: "1 Bot is ready in Bot Mode") : String(localized: "\(botCount) Bots are ready in Bot Mode")
         case .checkpoints:
             return String(localized: "Checkpoints let you take back a turn")
@@ -167,8 +168,8 @@ struct GetStartedCard: View {
                 workspace.sidebarMode = .bots
                 workspace.selection = nil
             } else {
-                workspace.sidebarMode = .chats
-                workspace.selection = .allProjects
+                // Bot Mode is linked in Edit Gateway (`docs/setup.md` §4.1).
+                router?.sheet = .editGateway(workspace.bot)
             }
         case .cards:
             // Its review: Install there is the consent.

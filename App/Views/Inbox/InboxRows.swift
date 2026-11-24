@@ -24,7 +24,7 @@ struct ChatInboxRow: View {
                                    key: key, open: open)
         let lastLine = unread.lastLines[key]
         let strong = badge.isUnread || (line?.isLive ?? false)
-        let date = workspace.rowTime(session)
+        let date = workspace.rowTime(session, isLive: line?.isLive == true)
         InboxRowLayout(
             title: session.displayTitle,
             date: date,

@@ -83,24 +83,6 @@ struct RootView: View {
                                     chat.send()
                                 }
                             }
-                        case "projects":
-                            workspace.sidebarMode = .chats
-                            workspace.selection = .allProjects
-                        case let page? where page.hasPrefix("board:"):
-                            // `-HERMES_OPEN board:<project id>` (and `-HERMES_BOARD_CARD <card id>`,
-                            // `-HERMES_BOARD_COLUMN <column>`, `-HERMES_BOARD_SHEET new|assign|reopen|watch`).
-                            workspace.sidebarMode = .chats
-                            let projectID = String(page.dropFirst(6))
-                            workspace.selection = .board(projectID)
-                            await openDebugBoard(workspace.board(for: projectID))
-                        case let page? where page.hasPrefix("project:"):
-                            // `-HERMES_OPEN project:<id>` (and `-HERMES_PROJECT_LANE <lane id>`).
-                            workspace.sidebarMode = .chats
-                            workspace.projects.focusLane = UserDefaults.standard.string(forKey: "HERMES_PROJECT_LANE")
-                            if let expand = UserDefaults.standard.string(forKey: "HERMES_PROJECT_EXPAND") {
-                                workspace.projects.expandedIDs.insert(expand)
-                            }
-                            workspace.selection = .project(String(page.dropFirst(8)))
                         case let page? where page.hasPrefix("chat:"):
                             // `-HERMES_OPEN chat:<session id>`, with `-HERMES_CHECKPOINTS` for its checkpoints.
                             workspace.sidebarMode = .chats
@@ -110,17 +92,10 @@ struct RootView: View {
                             }
                             workspace.open(workspace.session(forKey: id) ?? .opened(id: id))
                             await openDebugCheckpoints(in: workspace)
-                        case let page? where page.hasPrefix("project-chat:"):
-                            workspace.sidebarMode = .chats
-                            for _ in 0..<40 where !workspace.projects.isAvailable {
-                                try? await Task.sleep(for: .milliseconds(250))
-                            }
-                            workspace.startNewChat(inProject: String(page.dropFirst(13)))
                         default: break
                         }
                         // What the flags opened settles like a restored selection.
                         workspace.settleLaunchSelection()
-                        await openProjectSheet(in: workspace)
                         await sendDebugMessage(in: workspace)
                         await openDebugHelpers(in: workspace)
                         // `-HERMES_SEARCH <text>` types it in the chats search (screenshots).
@@ -211,7 +186,7 @@ struct RootView: View {
             Text(app.storageError ?? "")
         }
         .onOpenURL { url in
-            if !openBoardLink(url) { router.open(url) }
+            if !ignoresBoardLink(url) { router.open(url) }
         }
         #if os(macOS)
         // Settings → Apps & Tools opens in the Settings window, with a plugin link's review there
@@ -314,33 +289,14 @@ struct RootView: View {
         }
     }
 
-    /// A new gateway that other devices can reach goes straight to its pairing code on the Mac.
-    /// `hermesapp://board/<project id>?card=<id>&gateway=<id>` (Copy Link, a card's push):
-    /// opens the project's board on that gateway with the card open.
-    private func openBoardLink(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased(), PairingLink.acceptedSchemes.contains(scheme), url.host() == "board" else { return false }
-        let projectID = url.pathComponents.dropFirst().first ?? ""
-        guard !projectID.isEmpty else { return true }
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        if let gateway = items.first(where: { $0.name == "gateway" })?.value.flatMap(UUID.init(uuidString:)), app.workspaces[gateway] != nil {
-            app.select(gateway, in: router.windowID)
-        }
-        guard let workspace = windowWorkspace else { return true }
-        let card = items.first(where: { $0.name == "card" })?.value
-        // Any app or page can send this link, and opening a board makes it when it's missing: only
-        // one of the gateway's own projects opens, once the list is in (security scan F37).
-        Task {
-            for _ in 0..<40 where workspace.projects?.hasLoaded != true {
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            guard workspace.projects?.project(projectID) != nil else { return }
-            workspace.sidebarMode = .chats
-            workspace.selection = .board(projectID)
-            if let card { workspace.board(for: projectID).openCardID = card }
-        }
-        return true
+    /// `hermesapp://board/…` (a card's Copy Link or push): this build has no Board screen
+    /// (`docs/projects.md`), so the link opens nothing rather than reaching the pairing handler.
+    private func ignoresBoardLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), PairingLink.acceptedSchemes.contains(scheme) else { return false }
+        return url.host() == "board"
     }
 
+    /// A new gateway that other devices can reach goes straight to its pairing code on the Mac.
     private func pairAfterAdding(_ bot: BotConfiguration) {
         #if os(macOS)
         if app.pairingLink(for: bot.id)?.isReachableFromOtherDevices == true {
@@ -659,48 +615,6 @@ struct RootView: View {
         }
     }
 
-    /// `-HERMES_PROJECT_SHEET new|edit:<id>|move:<session id>|runin` opens a projects sheet once
-    /// the projects have loaded (screenshots).
-    private func openProjectSheet(in workspace: BotWorkspace) async {
-        guard let sheet = UserDefaults.standard.string(forKey: "HERMES_PROJECT_SHEET") else { return }
-        for _ in 0..<40 where !workspace.projects.isAvailable {
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        try? await Task.sleep(for: .milliseconds(600))
-        let projects = workspace.projects!
-        switch sheet {
-        case "new": projects.editing = .new(folder: nil)
-        case let value where value.hasPrefix("edit:"): projects.editing = .edit(String(value.dropFirst(5)))
-        case let value where value.hasPrefix("move:"):
-            let id = String(value.dropFirst(5))
-            projects.movingSession = workspace.session(forKey: id) ?? HermesSession(id: id)
-        case "runin": projects.runInConversation = workspace.currentConversation
-        default: break
-        }
-    }
-
-    /// The board's debug flags (screenshots): a card open, a column, a sheet.
-    private func openDebugBoard(_ board: BoardModel) async {
-        let defaults = UserDefaults.standard
-        for _ in 0..<60 where board.phase != .ready {
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        if let column = defaults.string(forKey: "HERMES_BOARD_COLUMN") { board.visibleColumn = column }
-        try? await Task.sleep(for: .milliseconds(500))
-        if let card = defaults.string(forKey: "HERMES_BOARD_CARD") { board.openCardID = card }
-        guard let sheet = defaults.string(forKey: "HERMES_BOARD_SHEET") else { return }
-        try? await Task.sleep(for: .milliseconds(800))
-        let card = board.openCardID.flatMap(board.card)
-        switch sheet {
-        case "new": board.newCard = BoardModel.NewCardTarget()
-        case "assign": board.assigning = card
-        case "reopen": board.reopening = card
-        case "watch": board.watching = card
-        case "edit": board.editing = card
-        default: break
-        }
-    }
-
     /// `-HERMES_OPEN_PAIRING YES|reveal` opens the current gateway's pairing code;
     /// `-HERMES_OPEN_LINK <url>` opens a pairing link; `-HERMES_OPEN_QUICK <query>` opens
     /// Quick Open (screenshot and flow tests).
@@ -735,7 +649,6 @@ struct MainView: View {
     /// The window's width: the Inspector's widest panel, and on the Mac collapsing the sidebar
     /// when the Inspector opens.
     @State private var windowWidth: CGFloat = 0
-    @State private var boardHidesSidebar = false
     /// iPad in portrait (or a window under 700 pt): the sidebar rests hidden so the detail runs
     /// full width; the system's sidebar button brings it back beside the detail
     /// (`docs/design-to-swiftui.md` §6).
@@ -756,7 +669,6 @@ struct MainView: View {
             // Replies' pictures from the gateway itself show by themselves (`WebLink.isOnGateway`).
             .environment(\.gatewayHosts, workspace.bot.hosts)
             .modifier(BotSheets(workspace: workspace))
-            .modifier(ProjectSheets(workspace: workspace))
             // A media card's pictures and videos open full screen over the whole window.
             .mediaViewerHost()
             #if os(macOS)
@@ -820,8 +732,7 @@ struct MainView: View {
     }
 
     private func reopen(_ stored: String) {
-        guard let item = SidebarItem(storedValue: stored) else { return }
-        if case .project = item { workspace.sidebarMode = .chats }
+        guard let item = SidebarItem(storedValue: stored), !item.isProjectScreen else { return }
         workspace.openAtLaunch(item, pushed: !(horizontalSizeClass == .compact && storedOnList))
     }
 
@@ -883,7 +794,7 @@ struct MainView: View {
             router?.layout.closeSidebarOver()
             #endif
             #if os(iOS)
-            if horizontalSizeClass != .compact, isPortraitLike, !boardHidesSidebar, columnVisibility != .detailOnly {
+            if horizontalSizeClass != .compact, isPortraitLike, columnVisibility != .detailOnly {
                 withAnimation(Theme.snappy) { columnVisibility = .detailOnly }
             }
             #endif
@@ -912,10 +823,10 @@ struct MainView: View {
         } action: { portraitLike in
             isPortraitLike = portraitLike
             // Turning the iPad puts the sidebar where that orientation keeps it, unless the
-            // Inspector or the Board has it hidden. It waits a turn: set during the split view's
+            // Inspector has it hidden. It waits a turn: set during the split view's
             // first layout, the change was overwritten and portrait kept the sidebar docked.
             Task {
-                guard horizontalSizeClass != .compact, !teamHidesSidebar, !boardHidesSidebar else { return }
+                guard horizontalSizeClass != .compact, !teamHidesSidebar else { return }
                 columnVisibility = restingVisibility
             }
         }
@@ -925,15 +836,6 @@ struct MainView: View {
             guard horizontalSizeClass != .compact else { return }
             teamHidesSidebar = isOpen
             withAnimation(Theme.snappy) { columnVisibility = isOpen ? .detailOnly : restingVisibility }
-        }
-        // iPad: the Board takes the sidebar's room (`ipadBoard`); its back button returns to the
-        // project.
-        .onChange(of: workspace.selection, initial: true) { _, selection in
-            let isBoard = if case .board = selection { true } else { false }
-            guard isBoard != boardHidesSidebar else { return }
-            boardHidesSidebar = isBoard
-            guard horizontalSizeClass != .compact else { return }
-            withAnimation(Theme.snappy) { columnVisibility = isBoard ? .detailOnly : restingVisibility }
         }
         #endif
     }
@@ -1117,24 +1019,9 @@ struct DetailView: View {
                 } else {
                     StateMessage(symbol: "person.3", title: String(localized: "Group chat not found"), message: String(localized: "It may have been deleted on the gateway."))
                 }
-            case .project(let id), .board(let id), .projectChat(let id):
-                // The Board, and on iPhone a chat opened here, push over their project, so the
-                // back button and swipe are the system's and lead to the project
-                // (`docs/projects.md` §2).
-                ProjectHomeView(workspace: workspace, projectID: id)
-                    .navigationDestination(isPresented: boardShown(id)) {
-                        BoardScreen(workspace: workspace, projectID: id)
-                    }
-                    .navigationDestination(item: chatShown(id)) { conversationID in
-                        // By the conversation it pushed with: going back selects the project
-                        // before the chat has slid away, and it keeps its transcript meanwhile.
-                        ChatScreen(conversation: workspace.loadedConversation(id: conversationID) ?? workspace.currentConversation,
-                                   workspace: workspace)
-                    }
-                    .id(id)
-            case .allProjects:
-                AllProjectsView(workspace: workspace)
-            case .chat:
+            case .project, .board, .projectChat, .allProjects, .chat:
+                // Projects and their Boards have no screen in this build (`docs/projects.md`): a
+                // selection that still names one (a window restored from before) shows the chat.
                 // One screen for every chat: opening another one swaps its data and its transcript,
                 // not the toolbar, the composer and its text view (that cost a long frame per switch).
                 ChatScreen(conversation: workspace.currentConversation, workspace: workspace)
@@ -1143,32 +1030,6 @@ struct DetailView: View {
         .sheet(item: $workspace.openedFile) { file in
             GatewayFileSheet(file: file)
                 .environment(\.references, ReferenceContext(workspace: workspace))
-        }
-    }
-
-    /// The project's Board is on show; going back from it shows the project.
-    private func boardShown(_ id: String) -> Binding<Bool> {
-        Binding {
-            workspace.selection == .board(id)
-        } set: { shown in
-            if shown {
-                if workspace.selection != .board(id) { workspace.selection = .board(id) }
-            } else if workspace.selection == .board(id), let back = route.backSelection {
-                // A compact window is already on the project's home, as from its chats.
-                if horizontalSizeClass == .compact { workspace.returnToProject(id) } else { workspace.selection = back }
-            }
-        }
-    }
-
-    /// A chat opened from the project's home is on show over it (compact widths); going back from
-    /// it shows the project. The chat stays as read as it was: the project is selected, so its
-    /// replies count as unread again (`docs/inbox.md` §4).
-    private func chatShown(_ id: String) -> Binding<UUID?> {
-        Binding {
-            route == .projectChat(id) ? workspace.currentConversation.id : nil
-        } set: { conversationID in
-            guard conversationID == nil, route == .projectChat(id) else { return }
-            workspace.returnToProject(id)
         }
     }
 }

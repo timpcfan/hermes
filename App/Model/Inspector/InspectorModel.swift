@@ -462,10 +462,6 @@ final class InspectorModel {
     /// Where Files and Changes look: the chat's working folder on the gateway.
     var workingFolder: String? {
         if let cwd = conversation?.liveWorkspace?.cwd, !cwd.isEmpty { return cwd }
-        if let placement = conversation?.placement {
-            if let cwd = placement.cwd { return cwd }
-            if let projectID = placement.projectID, let path = workspace?.projects.project(projectID)?.primaryPath { return path }
-        }
         return workspace?.projects.defaultFolder
     }
 

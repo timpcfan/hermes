@@ -10,30 +10,8 @@ struct EmptyChatView: View {
 
     @State private var appeared = false
 
-    /// The project a new chat starts in, if any (`projectNewChat`).
-    private var projectID: String? {
-        guard conversation.sessionID == nil, workspace.projects.isAvailable else { return nil }
-        return (conversation.placement ?? workspace.projects.defaultPlacement).projectID
-    }
-
     var body: some View {
-        if let projectID {
-            VStack(spacing: 0) {
-                Spacer(minLength: 24)
-                ProjectNewChatHero(workspace: workspace, conversation: conversation, projectID: projectID, composerFocused: composerFocused)
-                if centersComposer {
-                    // Right above the composer, which the chat screen lifts to the middle.
-                    Spacer().frame(height: 28)
-                } else {
-                    // A little above the middle, as in the design.
-                    Spacer(minLength: 24)
-                    Spacer().frame(height: 80)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            generalHome
-        }
+        generalHome
     }
 
     /// The getting-started checklist (`firstChat`) until it's dismissed or done.

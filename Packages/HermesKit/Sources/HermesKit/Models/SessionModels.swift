@@ -193,11 +193,14 @@ public struct SessionPage: Decodable, Sendable {
 /// The dashboard's `GET /api/sessions` (`hermes serve`): `{sessions, total, limit, offset}`.
 struct DashboardSessionPage: Decodable {
     var sessions: [HermesSession]
+    /// How many rows the filter matches in all (`total`), back-filled pins not counted.
+    var total: Int?
 
     init(from decoder: any Decoder) throws {
-        enum Keys: String, CodingKey { case sessions }
+        enum Keys: String, CodingKey { case sessions, total }
         let c = try decoder.container(keyedBy: Keys.self)
         sessions = try c.decode([LossyElement<HermesSession>].self, forKey: .sessions).compactMap(\.value)
+        total = try? c.decodeIfPresent(Int.self, forKey: .total)
     }
 }
 

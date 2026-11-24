@@ -87,12 +87,6 @@ struct ChatScreen: View {
         conversation.isBotChat ? workspace.roster : nil
     }
 
-    /// A new chat in a project shows the project's own suggestions above the composer.
-    private var startsInProject: Bool {
-        conversation.sessionID == nil && !conversation.isBotChat && workspace.projects.isAvailable
-            && (conversation.placement ?? workspace.projects.defaultPlacement).projectID != nil
-    }
-
     /// Wide layouts centre the composer on an empty chat, like Grok on the web and Mac.
     private var centersComposer: Bool {
         isWide && conversation.isKnownEmpty
@@ -566,7 +560,7 @@ struct ChatScreen: View {
                     ComposerView(conversation: conversation, workspace: workspace, focused: $composerFocused, onVoiceMode: voiceModeAction)
                         .glassEffectID("composer", in: bottomGlass)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
-                    if centersComposer, !startsInProject {
+                    if centersComposer {
                         centredChips
                             .padding(.top, 6)
                             .onGeometryChange(for: CGFloat.self) { $0.size.height + 16 } action: { chipsHeight = $0 }
