@@ -383,8 +383,8 @@ struct RootView: View {
     /// from one that returned early to the next.
     private func sendDebugMessage(in workspace: BotWorkspace) async {
         let stuckAfter = LaunchFlags.takeSeconds("HERMES_STUCK_TURN")
-        #if os(iOS)
         let cycle = LaunchFlags.take("HERMES_OPEN_CYCLE")
+        #if os(iOS)
         let refreshAfter = LaunchFlags.takeSeconds("HERMES_REFRESH_AFTER")
         let showChanges = LaunchFlags.takeSeconds("HERMES_SHOW_CHANGES")
         #endif
@@ -400,7 +400,6 @@ struct RootView: View {
                 workspace.currentConversation.holdAsIfATurnEndWasMissed()
             }
         }
-        #if os(iOS)
         // `-HERMES_OPEN_CYCLE bot:ops,chat:<id>,…` opens each in turn (`-HERMES_OPEN_CYCLE_ROUNDS`
         // times, 3 by default), marking the frame log (`-HERMES_FRAME_LOG`) as each opens and 4 s
         // later: the main thread's work per open, without taps or accessibility queries.
@@ -425,6 +424,7 @@ struct RootView: View {
             }
             return
         }
+        #if os(iOS)
         // `-HERMES_REFRESH_AFTER <s>` runs the background refresh (`AppModel.refreshInBackground`,
         // what a `sync` push does too) that long after launch, without waiting for iOS to.
         if let refreshAfter {
@@ -813,7 +813,7 @@ struct MainView: View {
                 storedSelectionGateway = workspace.id.uuidString
                 storedSelection = workspace.selection?.storedValue
                 Keyboard.dismiss()
-                #if DEBUG && os(iOS)
+                #if DEBUG
                 FrameMonitor.shared.mark("selection changed")
                 #endif
             }

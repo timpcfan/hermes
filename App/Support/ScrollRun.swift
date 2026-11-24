@@ -1,4 +1,5 @@
 #if DEBUG
+import HermesKit
 import QuartzCore
 import SwiftUI
 #if os(iOS)
@@ -12,7 +13,7 @@ import AppKit
 /// only up), `-HERMES_SCROLL_SPEED` points a second (2000 by default), a step each frame as a
 /// finger would. The chat takes it as a drag
 /// (`drags`), so pages come in at the top and go below as they would under a finger. Each leg is
-/// marked (`SCROLLRUN`, and in the frame log on iOS): scroll hitches and the window's changes are
+/// marked (`SCROLLRUN`, and in the frame log): scroll hitches and the window's changes are
 /// read without a tapping tool, whose accessibility queries cost more than the scrolling.
 @MainActor
 final class ScrollRun {
@@ -130,9 +131,7 @@ final class ScrollRun {
     private func mark(_ event: String) {
         print("SCROLLRUN \(Int(CACurrentMediaTime() * 1000) % 100_000)ms \(event)")
         HangLog.shared.mark(event)
-        #if os(iOS)
         FrameMonitor.shared.mark(event)
-        #endif
     }
 
     #if os(macOS)
@@ -187,6 +186,10 @@ final class ScrollRun {
         setting = true
         scroll.offset = y
         setting = false
+        // The scroll view may round what it's given to its pixels: the step it took is the run's,
+        // to within a point (more than that is the chat moving by itself, which the probe reads).
+        let rounded = min(max(scroll.offset - y, -1), 1)
+        ScrollProbe.shared.runStepped(by: y - from + rounded)
         // With the scroll log: what the run set and where it found the chat, so a check can tell
         // its moves from the chat's (with the rows' tops, `SCROLLLOG row`, what moved on screen).
         if logsSteps { print(String(format: "SCROLLRUN set %.0f from %.0f", Double(y), Double(from))) }
@@ -207,6 +210,75 @@ final class ScrollRun {
             self.glide = nil
             glide.done.resume()
         }
+    }
+}
+
+/// Debug only (`-HERMES_SCROLL_PROBE YES`, with `-HERMES_FRAME_LOG`): reads how the open chat's
+/// content moves on screen each frame (`ScrollMotion`): jumps, and drift from where it should be
+/// while it's held or a scroll run drives it. The transcript reports its rows' tops in the content
+/// as they change and the frame log samples once a frame, so the probe adds no work per frame but
+/// a lookup; each mark prints a `SCROLLSPAN` line after the frame log's `FRAMESPAN`
+/// (docs/development.md, Performance check).
+@MainActor
+final class ScrollProbe {
+    static let shared = ScrollProbe()
+    static let isOn = UserDefaults.standard.bool(forKey: "HERMES_SCROLL_PROBE")
+
+    private var rows: [String: Double] = [:]
+    private var motion = ScrollMotion()
+    /// How far the scroll run moved the offset since the last sample.
+    private var stepped: Double = 0
+    /// Until when the chat moves by design (a sent message gliding up): not held.
+    private var movesUntil: CFTimeInterval = 0
+    private var scroll: Scrolled?
+    /// When the chat's scroll view was last looked for: a walk of every view, so not each frame.
+    private var lookedAt: CFTimeInterval = 0
+
+    func rowMoved(_ key: String, top: CGFloat) {
+        rows[key] = Double(top)
+    }
+
+    func rowGone(_ key: String) {
+        rows[key] = nil
+    }
+
+    /// The scroll run moved the offset by `delta` (`ScrollRun`).
+    func runStepped(by delta: CGFloat) {
+        stepped += Double(delta)
+    }
+
+    /// The chat moves by itself for `seconds`, on purpose: those frames aren't held.
+    func movesByDesign(for seconds: Double) {
+        movesUntil = max(movesUntil, CACurrentMediaTime() + seconds)
+    }
+
+    func sample() {
+        guard let scroll = transcript() else { return }
+        let offset = Double(scroll.offset)
+        motion.add(rows: rows, visibleTop: offset - Double(scroll.top), offset: offset, stepped: stepped,
+                   held: CACurrentMediaTime() >= movesUntil)
+        stepped = 0
+    }
+
+    /// The span's line, with how far the chat's end is below what's visible, and a fresh span.
+    func closeSpan() -> String {
+        // Looked for again at each mark: another chat may have opened.
+        let found = Scrolled.transcript()
+        if found?.view !== scroll?.view { motion.restart() }
+        scroll = found
+        let line = motion.line(fromEnd: scroll.map { Double($0.end - $0.offset) })
+        motion.clearCounts()
+        return line
+    }
+
+    private func transcript() -> Scrolled? {
+        if let scroll, scroll.view.window != nil { return scroll }
+        let now = CACurrentMediaTime()
+        guard now - lookedAt > 1 else { return nil }
+        lookedAt = now
+        scroll = Scrolled.transcript()
+        motion.restart()
+        return scroll
     }
 }
 
