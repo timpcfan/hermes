@@ -120,6 +120,38 @@ extension BotWorkspace {
         lastSentAt[key] = .now
     }
 
+    // MARK: Settled (`docs/inbox.md` §2a)
+
+    /// Whether the app knows this chat as settled: listed in Settled, opened from search as one,
+    /// or back-filled into the chat list with `archived`.
+    func isSettled(_ key: String) -> Bool {
+        settled.contains(key) || session(forKey: key)?.archived == true
+    }
+
+    /// The chat being sent in is settled: un-settle it, fire and forget (S3). The send goes ahead
+    /// whatever Hermes answers; a failure leaves it settled.
+    func unsettleBeforeSend(_ key: String) {
+        guard isSettled(key) else { return }
+        let session = settled.session(forKey: key) ?? session(forKey: key) ?? HermesSession(id: key)
+        Task { try? await unarchive(session) }
+    }
+
+    /// The chat to settle or un-settle from the menu bar (⇧⌘S): the open one.
+    var openSettleTarget: HermesSession? {
+        guard case .session(let key) = selection, waitingChat(forKey: key) == nil else { return nil }
+        return session(forKey: key) ?? settled.session(forKey: key)
+    }
+
+    /// ⇧⌘S: settles the open chat, or un-settles it when it's settled.
+    func toggleOpenChatSettled() async throws {
+        guard let session = openSettleTarget else { return }
+        if isSettled(session.stableID) {
+            try await unarchive(session)
+        } else {
+            try await archive(session)
+        }
+    }
+
     private func scheduleReturnGrace() {
         returnGrace?.cancel()
         guard let deadline = returnTracker.nextDeadline else { return }

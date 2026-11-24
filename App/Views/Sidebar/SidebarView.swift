@@ -316,6 +316,7 @@ struct SidebarView: View {
                 }
             }
         }
+        if isWhole { settledRegion }
         // The next page loads at the very end, so Working and Settled follow the chats listed so
         // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
         if isWhole, workspace.hasMoreSessions && workspace.inboxFilter == .all {
@@ -327,6 +328,59 @@ struct SidebarView: View {
                 // they would then wait for a scroll that can't come (`docs/inbox.md` §5).
                 .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
+    }
+
+    /// Settled (`docs/inbox.md` §2a): folded by default, its header counting every settled chat.
+    /// Open, ten rows and then 25 more at a time; folded, none, except a settled chat opened from
+    /// search while it's open. Not there without the Dashboard backend that lists them.
+    @ViewBuilder
+    private var settledRegion: some View {
+        @Bindable var settled = workspace.settled
+        let revealed = settled.revealed
+        if settled.isAvailable || revealed != nil {
+            InboxRegionHeader(title: String(localized: "Settled"), count: settled.list.total, isExpanded: $settled.isExpanded,
+                              showsActivity: settled.hasActivity)
+            let rows = settled.isExpanded ? settled.list.rows : []
+            if let revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
+                settledRow(revealed)
+            }
+            ForEach(rows, id: \.stableID) { session in
+                settledRow(session)
+            }
+            if settled.isExpanded {
+                if settled.isLoading {
+                    SkeletonRows(count: 2)
+                        .padding(.vertical, 4)
+                        .modifier(SidebarRowInsets())
+                } else if settled.list.hasMore {
+                    SettledMoreRow(settled: settled)
+                }
+            }
+        }
+    }
+
+    /// A settled chat: Un-settle is its trailing swipe (a full swipe does it) and first in its menu.
+    @ViewBuilder
+    private func settledRow(_ session: HermesSession) -> some View {
+        SettledRow(session: session, workspace: workspace)
+            .contextMenu {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                Divider()
+                Button("Rename…", systemImage: "pencil") {
+                    renameText = session.title ?? ""
+                    renaming = session
+                }
+                Button("Copy Session ID", systemImage: "number") { Pasteboard.copy(session.id) }
+                Divider()
+                Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                    .tint(Theme.swipeAction)
+            }
+            #if os(macOS)
+            .accessibilityAction(named: Text("Un-settle")) { unsettle(session) }
+            #endif
     }
 
     @ViewBuilder
@@ -368,10 +422,11 @@ struct SidebarView: View {
                 Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") { togglePin(session) }
                     .tint(Theme.swipeActionQuiet)
             }
+            // Settle first: a full swipe settles (`docs/inbox.md` §5).
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button("Settle", systemImage: "checkmark.circle") { archive(session) }
+                    .tint(Theme.swipeAction)
                 Button(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash") { toggleMute(key, muted: muted) }
-                    .tint(Theme.swipeActionQuiet)
-                Button("Archive", systemImage: "archivebox") { archive(session) }
                     .tint(Theme.swipeActionQuiet)
             }
             // VoiceOver on iPhone and iPad already offers the swipe actions as the row's actions.
@@ -379,7 +434,7 @@ struct SidebarView: View {
             .accessibilityAction(named: isUnread ? Text("Mark as Read") : Text("Mark as Unread")) { toggleRead(key, isUnread: isUnread) }
             .accessibilityAction(named: session.pinned ? Text("Unpin") : Text("Pin")) { togglePin(session) }
             .accessibilityAction(named: muted ? Text("Unmute") : Text("Mute")) { toggleMute(key, muted: muted) }
-            .accessibilityAction(named: Text("Archive")) { archive(session) }
+            .accessibilityAction(named: Text("Settle")) { archive(session) }
             #endif
     }
 
@@ -396,8 +451,13 @@ struct SidebarView: View {
         if muted { workspace.unread.unmute(key) } else { workspace.unread.mute(key, for: .untilTurnedOff) }
     }
 
+    /// Settle: Hermes archives it, and it moves to Settled.
     private func archive(_ session: HermesSession) {
         Task { await run { try await workspace.archive(session) } }
+    }
+
+    private func unsettle(_ session: HermesSession) {
+        Task { await run { try await workspace.unarchive(session) } }
     }
 
     @ViewBuilder
@@ -430,13 +490,11 @@ struct SidebarView: View {
         Button("Copy Session ID", systemImage: "number") {
             Pasteboard.copy(session.id)
         }
-        #if os(macOS)
-        // No swipe without a trackpad: Archive is here too.
-        Button("Archive", systemImage: "archivebox") {
+        Divider()
+        // Every platform: the menu is how a Mac and iPad settle (with ⇧⌘S for the open chat).
+        Button("Settle", systemImage: "checkmark.circle") {
             archive(session)
         }
-        #endif
-        Divider()
         Button("Delete…", systemImage: "trash", role: .destructive) {
             deleting = session
         }

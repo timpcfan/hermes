@@ -175,7 +175,7 @@ struct MuteMenu: View {
     }
 }
 
-/// "Archived “Release notes”  Undo" at the foot of the list, for a few seconds.
+/// "Settled “Release notes”  Undo" at the foot of the list, for 5 seconds (`docs/inbox.md` §5).
 struct ArchivedToast: ViewModifier {
     @Bindable var workspace: BotWorkspace
     /// Room left below it: the chat list's bottom bar.
@@ -186,7 +186,7 @@ struct ArchivedToast: ViewModifier {
         content.overlay(alignment: .bottom) {
             if let session = workspace.recentlyArchived {
                 HStack(spacing: 12) {
-                    Text("Archived “\(session.displayTitle)”")
+                    Text("Settled “\(session.displayTitle)”")
                         .font(.subheadline)
                         .foregroundStyle(Theme.primaryText)
                         .lineLimit(1)
@@ -212,7 +212,7 @@ struct ArchivedToast: ViewModifier {
                 .padding(.bottom, bottomPadding)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: session.stableID) {
-                    AccessibilityNotification.Announcement(String(localized: "Archived \(session.displayTitle)")).post()
+                    AccessibilityNotification.Announcement(String(localized: "Settled \(session.displayTitle)")).post()
                     try? await Task.sleep(for: .seconds(5))
                     if workspace.recentlyArchived?.stableID == session.stableID {
                         withAnimation(Theme.snappy) { workspace.recentlyArchived = nil }

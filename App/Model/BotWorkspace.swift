@@ -178,6 +178,8 @@ final class BotWorkspace: Identifiable {
         didSet {
             if case .session(let key) = selection { lastChatKey = key }
             if selection == nil { lastChatKey = nil }
+            // A settled chat opened from search shows in Settled only while it's the one open.
+            if let revealed = settled?.revealed, selection != .session(revealed.stableID) { settled.revealed = nil }
             navigation.selectionChanged(to: selection, keepsPlace: keepsPlace)
             openSelection()
         }
@@ -327,6 +329,8 @@ final class BotWorkspace: Identifiable {
     /// What runs elsewhere on this gateway and its default folder (Bot Mode backends only,
     /// `ProjectsModel`).
     private(set) var projects: ProjectsModel!
+    /// The inbox's Settled region: Hermes' archived chats (`docs/inbox.md` §2a).
+    private(set) var settled: SettledChats!
     @ObservationIgnored private var pinStore: InspectorPins?
     /// Inspector tabs pinned across this gateway's chats (`docs/inspector.md` §1).
     var inspectorPins: InspectorPins {
@@ -491,6 +495,7 @@ final class BotWorkspace: Identifiable {
         preferredEffort = defaults.string(forKey: "effort.\(bot.id.uuidString)").flatMap(ReasoningEffort.init(rawValue:))
         draft = ConversationModel(workspace: self)
         projects = ProjectsModel(workspace: self)
+        settled = SettledChats(workspace: self)
         roster?.workspace = self
         unread.workspace = self
         activity.workspace = self
@@ -625,7 +630,7 @@ final class BotWorkspace: Identifiable {
         if let existing = conversations[key] { return existing }
         // A waiting chat that's gone (sent, or deleted) has no chat to load under its key.
         if WaitingChat.isKey(key) { return draft }
-        let session = allSessions.first { $0.stableID == key } ?? HermesSession(id: key)
+        let session = allSessions.first { $0.stableID == key } ?? settled.session(forKey: key) ?? HermesSession(id: key)
         let conversation = ConversationModel(workspace: self, session: session)
         conversations[key] = conversation
         return conversation
@@ -821,8 +826,15 @@ final class BotWorkspace: Identifiable {
             session.source = result.source
             session.startedAt = result.sessionStarted
             session.lastActive = result.lastActive ?? result.sessionStarted
+            session.archived = result.archived
         }
-        list(session)
+        if session.archived {
+            // A settled chat stays settled: it shows in Settled while it's open, never in Main
+            // (`docs/inbox.md` §2a S5).
+            settled.revealed = settled.session(forKey: session.stableID) ?? session
+        } else {
+            list(session)
+        }
         pick(.session(session.stableID))
         let conversation = conversation(forKey: session.stableID)
         conversation.loadIfNeeded()
@@ -1148,6 +1160,8 @@ final class BotWorkspace: Identifiable {
             }
             if case .failed = connection { connection = .online(version: nil) }
             prefetchRecent()
+            // The list moved: Settled's count, and its rows while it's open.
+            settled.refresh()
         } catch is CancellationError {
         } catch is TooSlow {
             // Too slow, but alive: a busy Mac, not an offline one. Try again shortly.
@@ -1347,12 +1361,23 @@ final class BotWorkspace: Identifiable {
         }
     }
 
-    /// Archive (`docs/inbox.md` §5): Hermes keeps the chat and leaves it out of the list.
+    /// Settle (`docs/inbox.md` §5): Hermes archives the chat, and it moves to Settled. Settling the
+    /// open chat opens the next one in Main (the one above it if it was last; nothing if Main is
+    /// empty); on iPhone, settled from the list, the list stays.
     func archive(_ session: HermesSession) async throws {
         guard let client else { return }
-        let index = allSessions.firstIndex { $0.stableID == session.stableID }
-        allSessions.removeAll { $0.stableID == session.stableID }
-        if selection == .session(session.stableID) { closeSelection() }
+        let key = session.stableID
+        let index = allSessions.firstIndex { $0.stableID == key }
+        let next = InboxNext.after(key, in: inboxSections.main.map(\.stableID))
+        allSessions.removeAll { $0.stableID == key }
+        settled.settledHere(session)
+        if selection == .session(key) {
+            if navigation.showsDetail, let next {
+                selection = .session(next)
+            } else {
+                closeSelection()
+            }
+        }
         // Undo is offered at once, not once a busy Mac has answered.
         recentlyArchived = session
         let call = Task { _ = try await client.setSessionFlags(id: session.id, archived: true) }
@@ -1364,6 +1389,7 @@ final class BotWorkspace: Identifiable {
             // Undone meanwhile: the row is back and the chat was never archived; nothing to say.
             let undone = recentlyArchived?.stableID != session.stableID && allSessions.contains { $0.stableID == session.stableID }
             if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
+            settled.unsettledHere(key)
             if !allSessions.contains(where: { $0.stableID == session.stableID }) {
                 allSessions.insert(session, at: min(index ?? 0, allSessions.count))
             }
@@ -1371,13 +1397,19 @@ final class BotWorkspace: Identifiable {
         }
     }
 
+    /// Un-settle (or Undo a settle): back at the top of Main at once; the gateway's row replaces
+    /// it when it answers.
     func unarchive(_ session: HermesSession) async throws {
         guard let client else { return }
         if recentlyArchived?.stableID == session.stableID { recentlyArchived = nil }
-        // Back in the list at once; the gateway's row replaces it when it answers.
+        settled.unsettledHere(session.stableID)
         if !allSessions.contains(where: { $0.stableID == session.stableID }) {
-            allSessions.append(session)
+            var row = session
+            row.archived = false
+            allSessions.append(row)
         }
+        // Listed first: return times are kept only for listed chats.
+        noteReturned(session.stableID)
         // After the archive still on its way: two calls in flight could land in either order.
         if case .failure? = await archiving[session.stableID]?.result {
             return // it never was archived
@@ -1690,6 +1722,7 @@ final class BotWorkspace: Identifiable {
         backgroundChats.forEach { $0.cancelAll() }
         backgroundChats.removeAll()
         projects.disconnected()
+        settled.tearDown()
         unread.tearDown()
         activity.tearDown()
         widgets.tearDown()

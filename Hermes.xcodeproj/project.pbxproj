@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1BB83DB253089BB7CFD38F45 /* SettledChats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CCD99B9315BE931433C02F /* SettledChats.swift */; };
 		839A4658CE5B92A2A70E8502 /* InboxSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD85002297F5C5AEE363F0E3 /* InboxSidebar.swift */; };
 		001DBDA178379735F849569C /* CommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA130514841F895F341DD77 /* CommandViews.swift */; };
 		02479417E466AEA3D884A0ED /* CodeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8037ADEB48C6AD7870A4F59 /* CodeTextView.swift */; };
@@ -385,6 +386,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		87CCD99B9315BE931433C02F /* SettledChats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettledChats.swift; sourceTree = "<group>"; };
 		CD85002297F5C5AEE363F0E3 /* InboxSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxSidebar.swift; sourceTree = "<group>"; };
 		001AFFF1B26CFACB5C78146B /* ImageAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAttachment.swift; sourceTree = "<group>"; };
 		01ECFDF06FC24F6C00F32865 /* AskingWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskingWidgets.swift; sourceTree = "<group>"; };
@@ -752,6 +754,7 @@
 		025B1A824EA51C4C441DA035 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				87CCD99B9315BE931433C02F /* SettledChats.swift */,
 				E3B06410EF11AC1F0FAB7466 /* Inspector */,
 				3C8303AA6ACBA04683326E9F /* AppModel.swift */,
 				1F96872BC70B063149D21947 /* AppPluginsModel.swift */,
@@ -1742,6 +1745,7 @@
 			files = (
 				3AB9E4CB87F978FBCAEB8D12 /* AccessSignInSheet.swift in Sources */,
 				39FE8AD218F2F31163457CB7 /* AnswerFromActivityIntent.swift in Sources */,
+				1BB83DB253089BB7CFD38F45 /* SettledChats.swift in Sources */,
 				E5D2600DF0831D8B85562670 /* AppModel.swift in Sources */,
 				0F7ED6BF6AA6FEEDE84FAB3B /* AppPluginConsentCard.swift in Sources */,
 				DF74C2DDE15F26E4DD6DFE46 /* AppPluginReviewView.swift in Sources */,

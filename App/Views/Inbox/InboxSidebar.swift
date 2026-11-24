@@ -57,3 +57,63 @@ struct InboxRegionHeader: View {
         return label
     }
 }
+
+/// A settled chat (`docs/inbox.md` §2a): one slim line, a shade quieter than the inbox's rows,
+/// with its title and time. It reads the selection itself, like the inbox's rows.
+struct SettledRow: View {
+    let session: HermesSession
+    let workspace: BotWorkspace
+
+    var body: some View {
+        let item = SidebarItem.session(session.stableID)
+        let date = session.lastActive ?? session.startedAt
+        SidebarRow(isSelected: workspace.selection == item, height: InboxMetrics.slimRowHeight) {
+            workspace.pick(item)
+        } label: {
+            HStack(spacing: 8) {
+                Text(session.displayTitle)
+                    .font(InboxMetrics.titleFont)
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+                if session.pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: InboxMetrics.glyphSize))
+                        .foregroundStyle(Theme.tertiaryText)
+                        .accessibilityHidden(true)
+                }
+                Spacer(minLength: 8)
+                if let date { InboxTimeText(date: date) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.spoken(session, date: date))
+    }
+
+    /// "Router firmware update, settled, pinned, Yesterday".
+    static func spoken(_ session: HermesSession, date: Date?) -> String {
+        var parts = [session.displayTitle, String(localized: "settled")]
+        if session.pinned { parts.append(String(localized: "pinned")) }
+        if let date { parts.append(InboxTimeText.spoken(date)) }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// "Show 25 more" at the end of an open Settled region, while Hermes has more (a page on its way
+/// shows skeleton rows in its place).
+struct SettledMoreRow: View {
+    let settled: SettledChats
+
+    var body: some View {
+        Button {
+            Task { await settled.loadMore() }
+        } label: {
+            Text("Show \(SettledList.morePage) more")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.secondaryText)
+            .frame(maxWidth: .infinity, minHeight: InboxMetrics.slimRowHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(SidebarRowInsets())
+    }
+}

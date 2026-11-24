@@ -457,6 +457,13 @@ struct HermesCommands: Commands {
             }
             .keyboardShortcut("u", modifiers: [.command, .shift])
             .disabled(workspace?.unread.openKey == nil)
+            // Settle or un-settle the open chat (`docs/inbox.md` §5).
+            let settleTarget = workspace?.openSettleTarget
+            Button(settleTarget.map { workspace?.isSettled($0.stableID) == true } == true ? "Un-settle Chat" : "Settle Chat") {
+                Task { try? await workspace?.toggleOpenChatSettled() }
+            }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(settleTarget == nil)
 
             Button("Next Conversation") {
                 workspace?.selectAdjacent(1)

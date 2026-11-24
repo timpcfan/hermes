@@ -3677,8 +3677,12 @@ final class ConversationModel: Identifiable {
         isRemoteTurn = false
         if !isBotChat {
             workspace?.rememberModelChoice(model, effort: reasoningEffort)
-            // Working lists the chats the person sent in last first (`docs/inbox.md` §2a).
-            if let stableKey { workspace?.noteSent(stableKey) }
+            // Working lists the chats the person sent in last first (`docs/inbox.md` §2a); a
+            // settled chat is un-settled first, without holding up the send (S3).
+            if let stableKey {
+                workspace?.noteSent(stableKey)
+                workspace?.unsettleBeforeSend(stableKey)
+            }
         }
         turnUsesGateway = usesGateway
         if turnUsesGateway {
