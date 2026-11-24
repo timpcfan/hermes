@@ -1175,6 +1175,26 @@ def run_chat_turn(sid, text):
         stream(sid, answer)
         return finish(sid, stored, answer)
 
+    # The performance run's turns (docs/development.md, Performance check), as in Bot Chats: "tools N"
+    # makes N tool calls before its reply, "essay" streams a long reply.
+    tools_run = B["TOOLS_RE"].search(lower)
+    if tools_run:
+        count = max(1, min(int(tools_run.group(1)), 200))
+        for step in range(1, count + 1):
+            if step % 10 == 1:
+                emit(sid, "message.interim", {"text": f"Batch {step // 10 + 1}: the next ten checks.", "already_streamed": False})
+            name, args, result, context = B["tools_call"](step)
+            if not tool(sid, stored, name, args, 0.15, context=context, result=result):
+                return finish(sid, stored, "", status="interrupted")
+        answer = B["TOOLS_ANSWER"].format(count=count)
+        if not stream(sid, answer):
+            return finish(sid, stored, "", status="interrupted")
+        return finish(sid, stored, answer)
+    if "essay" in lower:
+        if not stream(sid, B["ESSAY_ANSWER"]):
+            return finish(sid, stored, "", status="interrupted")
+        return finish(sid, stored, B["ESSAY_ANSWER"])
+
     if any(k in lower for k in ("batch", "flagged", "clarify", "secret", "sudo", "unlock", "save login", "2fa",
                                 "choose ", "connect linear", "sign in", "install", "timeout")):
         if run_request_turn(sid, stored, lower):

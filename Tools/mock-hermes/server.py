@@ -197,8 +197,10 @@ def page_rows(rows, query):
     return page, {"limit": limit, "offset": offset, "order": order, "returned": len(page)}
 
 
-def seed_long_chat(turns=60):
-    """A chat as big as a long real one: many turns of agent work with sizeable tool output."""
+def seed_long_chat(turns=60, rich=False):
+    """A chat as big as a long real one: many turns of agent work with sizeable tool output. `rich`
+    gives the replies a heading, a code block and a table in turn, as long real replies have, for a
+    scroll back that lays out what people read (docs/development.md, Performance check)."""
     sid = "long_history"
     session_row(sid, "Homelab rebuild", "cli", NOW - 9 * 86400, NOW - 3 * 60, "Rebuild the homelab")
     t = NOW - 9 * 86400
@@ -210,9 +212,20 @@ def seed_long_chat(turns=60):
                         tool_calls=[{"id": cid, "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": f"systemctl status svc-{call} --no-pager"})}}])
             output = "\n".join(f"svc-{call}.service line {i}: Active: active (running) since Tue; Main PID {1000 + i}; Tasks: {i % 9}; Memory: {i * 3}M" for i in range(30))
             add_message(sid, "tool", json.dumps({"output": output, "exit_code": 0}), timestamp=t + call * 4 + 3, tool_call_id=cid, tool_name="terminal")
-        add_message(sid, "assistant", f"Node {turn % 7} is healthy again. I restarted **svc-{turn % 5}**, cleared a stale lock and confirmed the health checks pass.\n\n- Disk: 41% used\n- Load: 0.{turn % 9}\n- Next: watch the backups tonight.", timestamp=t + 200)
+        reply = f"Node {turn % 7} is healthy again. I restarted **svc-{turn % 5}**, cleared a stale lock and confirmed the health checks pass.\n\n- Disk: 41% used\n- Load: 0.{turn % 9}\n- Next: watch the backups tonight."
+        if rich:
+            reply = f"## Node {turn % 7}\n\n{reply}\n\n" + LONG_CHAT_BLOCKS[turn % len(LONG_CHAT_BLOCKS)].format(n=turn % 7, svc=turn % 5)
+        add_message(sid, "assistant", reply, timestamp=t + 200)
         t += 3 * 3600
     SESSIONS[sid]["_last_read_at"] = NOW - 2 * 86400  # read two days ago: many replies since
+
+
+# What a rich long chat's replies end with, in turn (`seed_long_chat`).
+LONG_CHAT_BLOCKS = [
+    "```bash\nsudo systemctl restart svc-{svc}\nsudo rm -f /var/lock/svc-{svc}.lock\ncurl -fsS http://node{n}:8080/health\n```",
+    "| Check | Before | After |\n|---|---|---|\n| Health | failing | passing |\n| Disk | 78% | 41% |\n| Restarts | 14 | 0 |",
+    "1. Watch the backups tonight.\n2. Rotate the logs on node{n}.\n3. Move svc-{svc} off the shared disk.\n\n> The lock came back twice last week: worth a look at the cron job that takes it.",
+]
 
 
 def seed_landing_chats(widgets):
