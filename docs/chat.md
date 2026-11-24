@@ -1188,7 +1188,14 @@ typing bubbles, no waving dots and no spinners for agent work.
   another window and in Low Power Mode the words hold still in their grey, and with Reduce Motion
   there's no band at all. Its accessibility label is its words.
 - **Timing:** the header appears the moment the message is sent, so there's never an empty gap.
-  Its words change at most 4 times a second, cross-faded. After 10 s of thinking it adds the
+  Its words change at most 4 times a second, cross-faded. On iPhone and iPad, until the reply's
+  words arrive they are drawn in a SwiftUI host of their own (`SeparateRedraws`): while any
+  animation runs, SwiftUI updates its whole window every frame, and in a turn of many quick
+  steps each cross-fade redrew the whole chat for its frames, a fifth to a quarter of the
+  iPhone's main thread in turns of 40 and 130 tool calls against the mock. Once the reply
+  streams, and once the turn is done, the words are in the chat's own host again (they hold
+  still then), so finished replies don't each carry one. Not on the Mac: an AppKit host there
+  made those turns cost the main thread more, not less. After 10 s of thinking it adds the
   time: "Thinking… · 12s"; a step that runs past 10 s adds its own, from when it started
   ("Running the tests… · 12s", `turnHeaderRunning`).
 - **Face dots** only where the face stands alone (`BotFace(dots: true)`): a group's face strip,

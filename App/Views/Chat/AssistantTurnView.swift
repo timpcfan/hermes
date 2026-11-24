@@ -688,10 +688,29 @@ struct WorkSummaryView: View, Equatable {
                 // One title throughout, so its words cross-fade; it ticks each second only while
                 // "Thinking…" or the running step counts.
                 TimelineView(.periodic(from: from ?? .now, by: from != nil ? 1 : 86_400)) { context in
-                    TickerTitle(
+                    let ticker = TickerTitle(
                         id: shown, text: from.map { Self.counting(shown, since: $0, now: context.date) } ?? shown,
                         shimmers: shimmers, tint: isWaiting ? Theme.warning : Theme.tertiaryText
                     )
+                    #if os(iOS)
+                    // Until the reply's words come, the turn's words cross-fade with every step: in
+                    // a host of their own, each fade redraws them and not the chat. Then they hold
+                    // still in the chat's own, where a host would only weigh on the chat scrolling
+                    // after the reply, and on opening and scrolling a chat of finished replies.
+                    // One place for both, as for the words themselves: while one gives way to the
+                    // other they overlap, never stand side by side.
+                    ZStack(alignment: .leading) {
+                        if turn.isWorking, turn.answer.isEmpty {
+                            SeparateRedraws { ticker }
+                                .transition(.opacity)
+                        } else {
+                            ticker
+                                .transition(.opacity)
+                        }
+                    }
+                    #else
+                    ticker
+                    #endif
                 }
                 if hasSteps, !isWaiting {
                     DisclosureChevron(isOpen: isExpanded)
@@ -796,7 +815,7 @@ private struct TurnGlyph: View {
 /// The header's words, cross-fading to the next (`docs/chat.md` §4a). They shimmer while the
 /// turn works and nothing streams yet. `id` is the words without what counts up, so "Thinking… ·
 /// 12s" ticking to 13s changes in place rather than fading.
-private struct TickerTitle: View {
+private struct TickerTitle: View, Equatable {
     let id: String
     let text: String
     let shimmers: Bool

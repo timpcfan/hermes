@@ -115,3 +115,111 @@ extension View {
     }
 }
 #endif
+
+#if os(iOS)
+/// Draws `content` in a SwiftUI host of its own, so an animation inside it redraws only it. While
+/// any animation runs, SwiftUI updates the whole window it's in every frame: the live turn
+/// header's words cross-fade each time a step starts, and in the chat's window each of those
+/// frames cost about as much as a streamed word redrawing the reply (`docs/chat.md` §4a).
+///
+/// The host draws and nothing else: taps go to the view around it, and it takes from outside what
+/// its content reads that the system doesn't hand a host (decorative motion pausing, and whether
+/// it's scrolled out of sight). VoiceOver reads its content as part of the view around it. The
+/// content is handed over only when it changed, so the view around it redrawing (a streamed
+/// word) doesn't redraw the host.
+///
+/// iPhone and iPad only: on the Mac an AppKit host made a turn of many steps cost the main thread
+/// more, not less, so there the words stay in the window's own host.
+struct SeparateRedraws<Content: View & Equatable>: View {
+    let content: Content
+    @Environment(\.pausesDecorativeMotion) private var motionPaused
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.legibilityWeight) private var legibility
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isOnScreen = true
+
+    init(content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        OwnHost(hosted: Hosted(
+            content: content,
+            // A host has no scroll view around it to say it's out of sight: this one says.
+            motionPaused: motionPaused || !isOnScreen,
+            typeSize: typeSize, legibility: legibility, layoutDirection: layoutDirection, locale: locale, colorScheme: colorScheme
+        ))
+        .onScrollVisibilityChange(threshold: 0.01) { isOnScreen = $0 }
+    }
+
+    /// The content with what it reads from outside.
+    fileprivate struct Hosted: View, Equatable {
+        let content: Content
+        let motionPaused: Bool
+        let typeSize: DynamicTypeSize
+        let legibility: LegibilityWeight?
+        let layoutDirection: LayoutDirection
+        let locale: Locale
+        let colorScheme: ColorScheme
+
+        var body: some View {
+            content
+                .environment(\.pausesDecorativeMotion, motionPaused)
+                .environment(\.dynamicTypeSize, typeSize)
+                .environment(\.legibilityWeight, legibility)
+                .environment(\.layoutDirection, layoutDirection)
+                .environment(\.locale, locale)
+                .environment(\.colorScheme, colorScheme)
+        }
+    }
+
+    /// What the host draws, handed over as a change it observes rather than as a new root view:
+    /// a host takes a new root without its animations, so the content's own fades didn't run.
+    @Observable
+    fileprivate final class Shown {
+        var hosted: Hosted
+
+        init(_ hosted: Hosted) {
+            self.hosted = hosted
+        }
+
+        func show(_ new: Hosted) {
+            if new != hosted { hosted = new }
+        }
+    }
+
+    fileprivate struct Root: View {
+        let shown: Shown
+
+        var body: some View {
+            shown.hosted
+        }
+    }
+
+    private struct OwnHost: UIViewControllerRepresentable {
+        let hosted: Hosted
+
+        func makeUIViewController(context: Context) -> UIHostingController<Root> {
+            let host = UIHostingController(rootView: Root(shown: Shown(hosted)))
+            host.view.backgroundColor = .clear
+            // Taps go to the view around it.
+            host.view.isUserInteractionEnabled = false
+            // Its content's size follows its own redraws (a fade holds both titles' room): the
+            // view around it lays it out again when that changes, not on every frame of a fade.
+            host.sizingOptions = .intrinsicContentSize
+            host.safeAreaRegions = []
+            return host
+        }
+
+        func updateUIViewController(_ host: UIHostingController<Root>, context: Context) {
+            host.rootView.shown.show(hosted)
+        }
+
+        func sizeThatFits(_ proposal: ProposedViewSize, uiViewController host: UIHostingController<Root>, context: Context) -> CGSize? {
+            host.sizeThatFits(in: CGSize(width: proposal.width ?? .infinity, height: proposal.height ?? .infinity))
+        }
+    }
+}
+#endif
