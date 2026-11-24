@@ -443,7 +443,8 @@ def prompt_background(params):
 
 
 def process_list(params):
-    return {"processes": [{"id": pid, "command": p["command"], "started_at": p["started"], "running": p["running"]}
+    return {"processes": [{"id": pid, "command": p["command"], "started_at": p["started"], "running": p["running"],
+                           "uptime_seconds": int(time.time() - p["started"])}
                           for pid, p in PROCESSES.items()]}
 
 
@@ -467,6 +468,31 @@ def run_dev_server(sid):
         time.sleep(1.5)
         n += 1
     emit(sid, "terminal.close", {"process_id": pid})
+
+
+def start_watch_process(stored):
+    """The Mac streaming check's one background process (`--perf-process`): a watcher already
+    running when the long chat opens, so the composer's chip shows a single process and its 30 s
+    clock ticks while a later turn streams. Listed by `process.list`; output goes out only once
+    the chat attaches (emit drops events for a session nobody is attached to), as the dev
+    server's does. Runs ten minutes, longer than any measured run."""
+    pid = f"proc_{uuid.uuid4().hex[:6]}"
+    # Started 105 s ago: the chip reads "1 min" when the chat opens, and its first 30 s tick lands
+    # inside the measured turn, where the words change to "2 min".
+    PROCESSES[pid] = {"command": "npm run watch", "running": True, "started": time.time() - 105}
+    print(f"[mock-hermes] perf watcher {pid} on {stored}", flush=True)
+
+    def watch():
+        n = 0
+        while PROCESSES[pid]["running"] and n < 200:
+            sid = next((s for s, r in B["RUNTIME"].items() if r.get("stored") == stored), None)
+            if sid:
+                emit(sid, "agent.terminal.output",
+                     {"process_id": pid, "chunk": f"[watch] src/app.ts rebuilt in {120 + n % 40} ms\n"})
+                n += 1
+            time.sleep(3)
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def session_branch(params):

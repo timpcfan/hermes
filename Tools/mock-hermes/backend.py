@@ -3260,6 +3260,9 @@ def main():
                         help="with --long-chat: that many turns in 'Homelab rebuild' (a scroll back of a few hundred)")
     parser.add_argument("--long-chat-rich", action="store_true",
                         help="with --long-chat: its replies carry headings, code blocks, lists and tables")
+    parser.add_argument("--perf-process", action="store_true",
+                        help="with --long-chat: one watcher process already running in it, so the composer's chip "
+                             "shows a single process while a turn streams (the Mac streaming check)")
     parser.add_argument("--many-chats", type=int, default=0, metavar="N",
                         help="seed N more ordinary chats on the gateway, to measure a long chat list")
     parser.add_argument("--sparse-chats", action="store_true",
@@ -3389,6 +3392,8 @@ def main():
         spec.loader.exec_module(chats)
         chats.install(globals(), gateway)
         CHATS.append(chats)
+        if args.long_chat and args.perf_process:
+            chats.start_watch_process("long_history")
         spec = importlib.util.spec_from_file_location("mock_projects", here / "projects.py")
         projects = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(projects)
