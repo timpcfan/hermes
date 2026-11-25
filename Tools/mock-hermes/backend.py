@@ -2260,7 +2260,8 @@ def method_session_resume(params):
             session = STORED[add_session(profile, "Untitled", source="desktop", sid=stored)]
         if session is None or session["profile"] != profile:
             raise RPCError(4007, "session not found")
-        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored and not r.get("dead")), None)
+        sid = next((k for k, r in RUNTIME.items()
+                    if r["stored"] == stored and r["profile"] == profile and not r.get("dead")), None)
         if sid is None:
             retire_undrained_queue_rows(session["messages"])
             sid = new_runtime(stored, profile)

@@ -673,6 +673,13 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   `profile` and an idempotency key, so a retry lands one branch (`BotWorkspace.fork`).
 - **Reading**: an aggregated row's badge reads Hermes' `last_read_at` like any row (§1); marking
   read goes through the same mutation-snapshot call under the row's profile.
+- **Opening a row** runs it in its own profile: the chat reads its history from that profile's
+  store (`messages?profile=<name>`, `ConversationModel.fetchPage`) and every gateway call that
+  names a profile — resume, create, slash commands, path completion, audio, the in-app browser —
+  takes the row's (`ConversationModel.gatewayProfile`, read from the row key, so a list refresh
+  can't dirty what observes it). The turn itself, steering and approvals ride the runtime the
+  resume minted, which Hermes already binds to that profile. Two profiles' chats with one id
+  resume as two runtimes: the profile names whose chat opens.
 - **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it
   always was: no badges, no Profile filter (the kept choice waits, `InboxScope.withoutProfile`),
   and the device's marks for other profiles' rows are dropped (`UnreadStore.forgetProfiled`). A

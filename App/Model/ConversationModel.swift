@@ -933,8 +933,14 @@ final class ConversationModel: Identifiable {
         }
     }
 
-    /// The profile gateway calls are scoped to: the Bot, or the gateway's own profile.
-    private var gatewayProfile: String? { botName ?? workspace?.bot.profileName }
+    /// The profile gateway calls are scoped to: the Bot, this row's own profile when the list
+    /// holds every profile's chats (`docs/inbox.md` §9), or the gateway's own. The row's key names
+    /// its profile, so this reads no list state: a refresh can't dirty what observes it.
+    private var gatewayProfile: String? {
+        if let botName { return botName }
+        if let stableKey, let profile = ProfileRowKey.parse(stableKey).profile { return profile }
+        return workspace?.bot.profileName
+    }
     /// The profile whose config Turn On Checkpoints writes.
     var gatewayProfileForCheckpoints: String? { gatewayProfile }
     /// The backend this chat's audio goes to (the Bot's voice, Realtime), with its profile.
@@ -1794,6 +1800,12 @@ final class ConversationModel: Identifiable {
     private func fetchPage(_ id: String, limit: Int, offset: Int) async throws -> SessionTranscript {
         if let botName, let roster {
             return try await roster.transcript(storedSessionID: id, profile: botName, limit: limit, offset: offset)
+        }
+        // Another profile's row: only its own profile's store holds it (`docs/inbox.md` §9), so
+        // the read goes to the backend under that profile even with the API server connected.
+        if let roster = gatewayRoster, roster.isConnected,
+           let profile = ProfileRowKey.parse(stableKey ?? id).profile {
+            return try await roster.transcript(storedSessionID: id, profile: profile, limit: limit, offset: offset)
         }
         if let client = workspace?.client {
             return try await client.transcript(sessionID: id, limit: limit, offset: offset)
