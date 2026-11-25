@@ -41,15 +41,27 @@ public struct InboxScope: Codable, Equatable, Sendable {
     public var needsYouOnly: Bool
     /// Chats with no messages (a chat opened and never used) stay out.
     public var hidesEmpty: Bool
+    /// The one profile listed while the list holds every profile's chats (`docs/inbox.md` §9); nil
+    /// is All Profiles. It holds every region, Settled included.
+    public var profile: String?
 
     public static let standard = InboxScope()
 
     public init(hiddenSources: Set<InboxSourceGroup> = [.scheduled], unreadOnly: Bool = false, needsYouOnly: Bool = false,
-                hidesEmpty: Bool = true) {
+                hidesEmpty: Bool = true, profile: String? = nil) {
         self.hiddenSources = hiddenSources
         self.unreadOnly = unreadOnly
         self.needsYouOnly = needsYouOnly
         self.hidesEmpty = hidesEmpty
+        self.profile = profile
+    }
+
+    /// The filter as it applies to a list of one profile's chats (Bot Mode not connected, or a
+    /// Hermes without every profile's list): the profile choice waits, kept, for the next time.
+    public var withoutProfile: InboxScope {
+        var scope = self
+        scope.profile = nil
+        return scope
     }
 
     public var isStandard: Bool { self == .standard }
@@ -65,8 +77,10 @@ public struct InboxScope: Codable, Equatable, Sendable {
 
     /// Whether the inbox holds this chat. A pinned chat is kept even when empty, and so is one
     /// with a turn running here (`keep`): a new chat has no messages until its first is stored.
-    public func holds(_ session: HermesSession, keep: Bool = false) -> Bool {
+    /// `home` is the gateway's own profile, which rows without a profile belong to.
+    public func holds(_ session: HermesSession, keep: Bool = false, home: String? = nil) -> Bool {
         guard shows(InboxSourceGroup(source: session.source)) else { return false }
+        if let profile, ProfileRows.profileName(of: session, home: home) != profile { return false }
         if hidesEmpty, session.messageCount == 0, !session.pinned, !keep { return false }
         return true
     }
@@ -86,6 +100,7 @@ public struct InboxScope: Codable, Equatable, Sendable {
         if unreadOnly { changes.append(.unread) }
         if needsYouOnly { changes.append(.needsYou) }
         if !hidesEmpty { changes.append(.showsEmpty) }
+        if let profile { changes.append(.profile(profile)) }
         return changes
     }
 
@@ -94,11 +109,12 @@ public struct InboxScope: Codable, Equatable, Sendable {
         case unread
         case needsYou
         case showsEmpty
+        case profile(String)
     }
 
     // MARK: Stored
 
-    private enum Keys: String, CodingKey { case hiddenSources, unreadOnly, needsYouOnly, hidesEmpty }
+    private enum Keys: String, CodingKey { case hiddenSources, unreadOnly, needsYouOnly, hidesEmpty, profile }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -107,6 +123,7 @@ public struct InboxScope: Codable, Equatable, Sendable {
         unreadOnly = (try? c.decodeIfPresent(Bool.self, forKey: .unreadOnly)) ?? false
         needsYouOnly = (try? c.decodeIfPresent(Bool.self, forKey: .needsYouOnly)) ?? false
         hidesEmpty = (try? c.decodeIfPresent(Bool.self, forKey: .hidesEmpty)) ?? true
+        profile = (try? c.decodeIfPresent(String.self, forKey: .profile)) ?? nil
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -115,5 +132,6 @@ public struct InboxScope: Codable, Equatable, Sendable {
         try c.encode(unreadOnly, forKey: .unreadOnly)
         try c.encode(needsYouOnly, forKey: .needsYouOnly)
         try c.encode(hidesEmpty, forKey: .hidesEmpty)
+        try c.encodeIfPresent(profile, forKey: .profile)
     }
 }

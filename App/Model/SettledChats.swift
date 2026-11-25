@@ -82,9 +82,9 @@ final class SettledChats {
 
     /// The count, and the newest settled chat's activity for the header's dot.
     private func readCount() async {
-        guard let client, let workspace else { return }
+        guard let workspace else { return }
         do {
-            let page = try await client.archivedSessions(limit: 1, offset: 0, profile: workspace.bot.profileName)
+            let page = try await settledPage(limit: 1, offset: 0, home: workspace.bot.profileName)
             // Only what changed is set: an observed property set to the same value still redraws
             // the sidebar, and this runs after every list refresh, a turn's included.
             if !isAvailable { isAvailable = true }
@@ -115,11 +115,11 @@ final class SettledChats {
     }
 
     private func load(offset: Int, limit: Int, generation: Int) async {
-        guard let client, let workspace else { return }
+        guard let workspace else { return }
         isLoading = true
         defer { if list.generation == generation { isLoading = false } }
         do {
-            let page = try await client.archivedSessions(limit: limit, offset: offset, profile: workspace.bot.profileName)
+            let page = try await settledPage(limit: limit, offset: offset, home: workspace.bot.profileName)
             if !isAvailable { isAvailable = true }
             list.apply(page, offset: offset, limit: limit, generation: generation)
             if offset == 0 {
@@ -129,6 +129,24 @@ final class SettledChats {
         } catch {
             noteFailure(error)
         }
+    }
+
+    /// A page of settled chats: every profile's while the list holds them all
+    /// (`docs/inbox.md` §9), else the gateway's own profile's.
+    private func settledPage(limit: Int, offset: Int, home: String?) async throws -> SettledPage {
+        guard let client else { throw BackendClient.Failure.signInRequired }
+        if workspace?.listsEveryProfile == true {
+            do {
+                // The profile filter holds every region, Settled included (`docs/inbox.md` §9).
+                let page = try await client.profileSessions(profile: workspace?.inboxScope.profile, archived: .only, limit: limit, offset: offset)
+                let tagged = ProfileSessionsPage(sessions: ProfileRows.tagged(page.sessions, home: home), total: page.total)
+                return SettledPage(profiles: tagged, limit: limit, offset: offset)
+            } catch {
+                // A gateway without the aggregate route keeps its own settled list.
+                guard BackendClient.isMissingRoute(error) else { throw error }
+            }
+        }
+        return try await client.archivedSessions(limit: limit, offset: offset, profile: home)
     }
 
     private func noteFailure(_ error: any Error) {

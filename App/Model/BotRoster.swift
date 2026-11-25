@@ -573,6 +573,9 @@ final class BotRoster {
                 startPolling()
                 workspace?.projects.connected()
                 workspace?.unread.connected()
+                // The chat list holds every profile's chats now (`docs/inbox.md` §9); the unread
+                // poll's refresh covers it, and one goes at once so it doesn't wait a poll.
+                Task { await workspace?.refreshSessions() }
                 workspace?.plugins.connected()
                 workspace?.setup.connected()
                 groupRooms.connected()

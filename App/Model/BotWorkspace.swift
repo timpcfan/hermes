@@ -116,7 +116,13 @@ final class BotWorkspace: Identifiable {
     /// The inbox's filter (`docs/inbox.md` §5): which sources it holds, empty chats, and the
     /// states that narrow Main. Kept per gateway on the device.
     var inboxScope: InboxScope {
-        didSet { if inboxScope != oldValue { inboxScope.store(for: id) } }
+        didSet {
+            guard inboxScope != oldValue else { return }
+            inboxScope.store(for: id)
+            // The profile filter holds every region: Settled reads its pages again under it
+            // (`docs/inbox.md` §9).
+            if inboxScope.profile != oldValue.profile { settled.refresh() }
+        }
     }
     /// When each chat came back to the top of Main (`InboxReturns`, `docs/inbox.md` §2a). Changes
     /// only when a chat starts waiting on the person, stops or finishes.
@@ -134,6 +140,16 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored private var archiving: [String: Task<Void, any Error>] = [:]
     private(set) var isLoadingSessions = false
     private(set) var hasMoreSessions = false
+    /// The list holds every profile's chats (`docs/inbox.md` §9): Bot Mode is connected and Hermes
+    /// answered the profiles list. The rows' profile marks and the profile filter show only while
+    /// it does; otherwise the list is the gateway's own, as before.
+    private(set) var listsEveryProfile = false
+    /// The chat list's paging generation (`ChatListPaging`): a refresh starts a new one, so a page
+    /// asked for before it lands on nothing (`docs/inbox.md` §5 Paging).
+    @ObservationIgnored private var listPaging = ChatListPaging()
+    /// The roster whose Hermes answered 404 for the profiles list (an older one): the gateway's own
+    /// list is read instead, without asking again each refresh. A new roster asks once more.
+    @ObservationIgnored private var profilesRouteMissing: ObjectIdentifier?
     /// Server-side paging position. Pinned rows are back-filled outside the page, so
     /// `allSessions.count` can't be used as the next offset. Observed: the loading rows at the end of
     /// the list load again each time it moves (`docs/inbox.md` §5).
@@ -587,6 +603,16 @@ final class BotWorkspace: Identifiable {
             roster.tearDown()
             self.roster = nil
             sidebarMode = .chats
+            // The gateway's own chats are listed again: what this device kept for another
+            // profile's rows (unread marks, cached transcripts, return times) goes, keyed apart.
+            if listsEveryProfile {
+                listsEveryProfile = false
+                allSessions.removeAll { $0.keyProfile != nil }
+                unread.forgetProfiled()
+                returnTracker.prune(keeping: Set(allSessions.map(\.stableID)))
+                publishReturns()
+                Task { await refreshSessions() }
+            }
             if case .bot = selection { closeSelection() }
         case (let roster?, let link?):
             if link != roster.link || stopped != nil {
@@ -638,7 +664,7 @@ final class BotWorkspace: Identifiable {
         if let existing = conversations[key] { return existing }
         // A waiting chat that's gone (sent, or deleted) has no chat to load under its key.
         if WaitingChat.isKey(key) { return draft }
-        let session = allSessions.first { $0.stableID == key } ?? settled.session(forKey: key) ?? HermesSession(id: key)
+        let session = allSessions.first { $0.stableID == key } ?? settled.session(forKey: key) ?? HermesSession.placeholder(forKey: key)
         let conversation = ConversationModel(workspace: self, session: session)
         conversations[key] = conversation
         return conversation
@@ -1127,9 +1153,35 @@ final class BotWorkspace: Identifiable {
         guard let client else { return }
         isLoadingSessions = true
         defer { isLoadingSessions = false }
+        let generation = listPaging.beginRefresh()
         do {
             let limit = min(200, max(50, nextSessionOffset))
-            let page = try await watchingForBusy { try await client.sessions(limit: limit) }
+            var page: SessionPage
+            if let roster, roster.isConnected, profilesRouteMissing != ObjectIdentifier(roster) {
+                // Every profile's chats in one list (`docs/inbox.md` §9). A Hermes without the
+                // route answers 404: the gateway's own list is read instead, quietly.
+                do {
+                    let merged = try await watchingForBusy {
+                        try await roster.boardClient.profileSessions(archived: .exclude, limit: limit, offset: 0)
+                    }
+                    let rows = ProfileRows.tagged(merged.sessions, home: bot.profileName)
+                    page = SessionPage(sessions: rows, hasMore: merged.hasMore(offset: 0, limit: limit))
+                    listsEveryProfile = true
+                } catch {
+                    guard BackendClient.isMissingRoute(error) else { throw error }
+                    profilesRouteMissing = ObjectIdentifier(roster)
+                    listsEveryProfile = false
+                    page = try await watchingForBusy { try await client.sessions(limit: limit) }
+                }
+            } else {
+                if listsEveryProfile {
+                    listsEveryProfile = false
+                    unread.forgetProfiled()
+                }
+                page = try await watchingForBusy { try await client.sessions(limit: limit) }
+            }
+            // A refresh started while this read was out: its answer is the list now.
+            guard listPaging.accepts(generation) else { return }
             let localOnly = allSessions.filter { local in
                 // Keep rows this device just created if the list hasn't caught up yet.
                 conversations[local.stableID]?.isWorking == true && !page.sessions.contains { $0.stableID == local.stableID }
@@ -1163,6 +1215,8 @@ final class BotWorkspace: Identifiable {
             #endif
             hasMoreSessions = page.hasMore
             nextSessionOffset = limit
+            listPaging.nextOffset = limit
+            listPaging.hasMore = page.hasMore
             for session in allSessions {
                 conversations[session.stableID]?.adoptSessionID(session.id)
                 // A model picked on another device follows into the open chat (`docs/sessions-and-models.md` §4).
@@ -1280,10 +1334,18 @@ final class BotWorkspace: Identifiable {
         prefetched.formUnion(recent.map(\.stableID))
         let botID = bot.id.uuidString
         let gateway = bot.id
+        let roster = listsEveryProfile ? self.roster : nil
         Task(priority: .utility) {
             try? await Task.sleep(for: .seconds(2))
             for session in recent {
-                guard let transcript = try? await client.transcript(sessionID: session.id) else { continue }
+                let transcript: SessionTranscript?
+                if let profile = session.keyProfile, let roster {
+                    // Another profile's chat reads over the dashboard, under its profile.
+                    transcript = try? await roster.boardClient.transcript(storedSessionID: session.id, profile: profile)
+                } else {
+                    transcript = try? await client.transcript(sessionID: session.id)
+                }
+                guard let transcript else { continue }
                 TranscriptCache.save("\(botID)-\(session.stableID)", gateway: gateway, sessionID: transcript.sessionID,
                                      messages: transcript.messages, hasEarlier: transcript.hasEarlier)
             }
@@ -1294,12 +1356,24 @@ final class BotWorkspace: Identifiable {
         guard let client, hasMoreSessions, !isLoadingSessions else { return }
         isLoadingSessions = true
         defer { isLoadingSessions = false }
-        if let page = try? await client.sessions(limit: 50, offset: nextSessionOffset) {
-            let known = Set(allSessions.map(\.stableID))
-            allSessions += ScheduledRuns.kept(page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild && !$0.archived })
-            hasMoreSessions = page.hasMore
-            nextSessionOffset += 50
+        let generation = listPaging.generation
+        let offset = listPaging.nextOffset
+        let page: SessionPage?
+        if listsEveryProfile, let roster, roster.isConnected {
+            page = (try? await roster.boardClient.profileSessions(archived: .exclude, limit: 50, offset: offset))
+                .map { SessionPage(sessions: ProfileRows.tagged($0.sessions, home: bot.profileName), hasMore: $0.hasMore(offset: offset, limit: 50)) }
+        } else {
+            page = try? await client.sessions(limit: 50, offset: offset)
         }
+        // A refresh landed while this page was out: its rows replace the list, so this page's
+        // rows, read against the old one, would come back after the fresh ones.
+        guard let page, listPaging.accepts(generation) else { return }
+        let known = Set(allSessions.map(\.stableID))
+        allSessions += ScheduledRuns.kept(page.sessions.filter { !known.contains($0.stableID) && !$0.isInternalChild && !$0.archived })
+        hasMoreSessions = page.hasMore
+        nextSessionOffset = offset + 50
+        listPaging.nextOffset = offset + 50
+        listPaging.hasMore = page.hasMore
     }
 
     func loadModelOptions(refresh: Bool = false) async {
@@ -1339,11 +1413,27 @@ final class BotWorkspace: Identifiable {
 
     // MARK: - Session actions
 
+    /// The client a row's sidebar edits go through: the dashboard while Bot Mode is connected, so
+    /// any profile's chat can be edited under its own profile (`docs/inbox.md` §9); otherwise the
+    /// gateway's own API, which only serves the gateway's own chats.
+    private func editClient(for session: HermesSession) -> (backend: BackendClient, profile: String?)? {
+        guard let roster, roster.isConnected else { return nil }
+        return (roster.boardClient, session.profile ?? bot.profileName)
+    }
+
     func rename(_ session: HermesSession, to title: String) async throws {
         guard let client else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let updated = try await client.renameSession(id: session.id, title: trimmed.isEmpty ? nil : String(trimmed.prefix(100)))
-        replace(session, with: updated)
+        let title = trimmed.isEmpty ? nil : String(trimmed.prefix(100))
+        if let (backend, profile) = editClient(for: session) {
+            try await backend.editSession(storedSessionID: session.id, profile: profile, fields: ["title": title.map(JSONValue.string) ?? .null])
+            var updated = session
+            updated.title = title
+            replace(session, with: updated)
+        } else {
+            let updated = try await client.renameSession(id: session.id, title: title)
+            replace(session, with: updated)
+        }
     }
 
     func setPinned(_ session: HermesSession, _ pinned: Bool) async throws {
@@ -1359,8 +1449,15 @@ final class BotWorkspace: Identifiable {
             allSessions[index].pinned = pinned
         }
         do {
-            let updated = try await client.setSessionFlags(id: session.id, pinned: pinned)
-            replace(session, with: updated)
+            if let (backend, profile) = editClient(for: session) {
+                try await backend.editSession(storedSessionID: session.id, profile: profile, fields: ["pinned": .bool(pinned)])
+                var updated = session
+                updated.pinned = pinned
+                replace(session, with: updated)
+            } else {
+                let updated = try await client.setSessionFlags(id: session.id, pinned: pinned)
+                replace(session, with: updated)
+            }
         } catch {
             if joined {
                 allSessions.removeAll { $0.stableID == session.stableID }
@@ -1390,7 +1487,14 @@ final class BotWorkspace: Identifiable {
         }
         // Undo is offered at once, not once a busy Mac has answered.
         recentlyArchived = session
-        let call = Task { _ = try await client.setSessionFlags(id: session.id, archived: true) }
+        let edits = editClient(for: session)
+        let call = Task {
+            if let (backend, profile) = edits {
+                try await backend.editSession(storedSessionID: session.id, profile: profile, fields: ["archived": .bool(true)])
+            } else {
+                _ = try await client.setSessionFlags(id: session.id, archived: true)
+            }
+        }
         archiving[session.stableID] = call
         defer { if archiving[session.stableID] == call { archiving[session.stableID] = nil } }
         do {
@@ -1425,7 +1529,13 @@ final class BotWorkspace: Identifiable {
             return // it never was archived
         }
         do {
-            let updated = try await client.setSessionFlags(id: session.id, archived: false)
+            var updated = session
+            updated.archived = false
+            if let (backend, profile) = editClient(for: session) {
+                try await backend.editSession(storedSessionID: session.id, profile: profile, fields: ["archived": .bool(false)])
+            } else {
+                updated = try await client.setSessionFlags(id: session.id, archived: false)
+            }
             // A list read between Undo and here (the gateway still had it archived) took the row.
             if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
                 allSessions[index] = updated
@@ -1444,7 +1554,11 @@ final class BotWorkspace: Identifiable {
             return
         }
         guard let client else { return }
-        try await client.deleteSession(id: session.id)
+        if let (backend, profile) = editClient(for: session) {
+            try await backend.deleteSession(storedSessionID: session.id, profile: profile)
+        } else {
+            try await client.deleteSession(id: session.id)
+        }
         allSessions.removeAll { $0.stableID == session.stableID }
         // Its widgets' sort, filter and step go with the chat (`docs/widgets.md` §4).
         if let shown = conversations[session.stableID]?.widgetFacts.shown { widgets.forgetViews(shown) }
@@ -1469,6 +1583,9 @@ final class BotWorkspace: Identifiable {
         row.title = title
         row.source = parent?.source ?? PreviewBridge.sessionSource
         row.preview = parent?.preview
+        row.profile = parent?.profile
+        row.keyProfile = parent?.keyProfile
+        row.gitRepoRoot = parent?.gitRepoRoot
         if !allSessions.contains(where: { $0.stableID == row.stableID }) {
             allSessions.insert(row, at: 0)
         }
@@ -1480,16 +1597,38 @@ final class BotWorkspace: Identifiable {
     /// Branches a conversation and opens the branch.
     func fork(_ session: HermesSession) async throws {
         guard let client else { return }
-        let branch = try await client.forkSession(id: session.id)
-        var row = branch
+        var row: HermesSession
+        if let roster, roster.isConnected, session.keyProfile != nil {
+            // Another profile's chat forks over the dashboard (`session.branch`): the gateway's
+            // own fork only knows its profile. The stored id goes with the row's profile, and
+            // Hermes resolves the chat under it (`docs/inbox.md` §9).
+            var params: [String: JSONValue] = [
+                "session_id": .string(conversations[session.stableID]?.runtimeSessionID ?? session.id),
+                "idempotency_key": .string(UUID().uuidString),
+                "omit_messages": .bool(true),
+            ]
+            if let profile = session.profile { params["profile"] = .string(profile) }
+            let branch = try await roster.request("session.branch", params)
+            guard let stored = branch["stored_session_id"]?.stringValue else {
+                throw HermesError.invalidResponse("session.branch")
+            }
+            row = HermesSession(id: stored)
+            row.title = branch["title"]?.stringValue
+            row.profile = session.profile
+            row.keyProfile = session.keyProfile
+            row.gitRepoRoot = session.gitRepoRoot
+        } else {
+            row = try await client.forkSession(id: session.id)
+        }
         // Hermes' answer has the copied messages' activity; the row's time is theirs (`RowTime`).
         row.lastActive = row.lastActive ?? session.lastActive
         row.preview = row.preview ?? session.preview
+        row.source = row.source ?? session.source
         allSessions.insert(row, at: 0)
         if let index = allSessions.firstIndex(where: { $0.stableID == session.stableID }) {
             allSessions[index].endReason = "branched"
         }
-        selection = .session(branch.stableID)
+        selection = .session(row.stableID)
     }
 
     private func replace(_ session: HermesSession, with updated: HermesSession) {
@@ -1498,6 +1637,11 @@ final class BotWorkspace: Identifiable {
         merged.lastActive = allSessions[index].lastActive
         merged.preview = allSessions[index].preview
         merged.lineageRootID = allSessions[index].lineageRootID
+        // The gateway's API rows carry no profile; the list's tagging stays (`docs/inbox.md` §9).
+        merged.profile = updated.profile ?? allSessions[index].profile
+        merged.keyProfile = updated.keyProfile ?? allSessions[index].keyProfile
+        merged.gitRepoRoot = updated.gitRepoRoot ?? allSessions[index].gitRepoRoot
+        merged.isDefaultProfile = updated.isDefaultProfile ?? allSessions[index].isDefaultProfile
         allSessions[index] = merged
     }
 

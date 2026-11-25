@@ -18,6 +18,19 @@ struct InboxFilterMenuContent: View {
                 }
             }
         }
+        // Every profile's chats in one list (`docs/inbox.md` §9): pick whose chats to see.
+        if workspace.listsEveryProfile {
+            Section("Profile") {
+                Toggle(isOn: profile(nil)) {
+                    Text("All Profiles")
+                }
+                ForEach(ProfileRows.profiles(in: workspace.allSessions, home: workspace.bot.profileName), id: \.self) { name in
+                    Toggle(isOn: profile(name)) {
+                        Text(name)
+                    }
+                }
+            }
+        }
         Section("Only") {
             Toggle(isOn: $workspace.inboxScope.unreadOnly) {
                 Text("Unread")
@@ -41,6 +54,15 @@ struct InboxFilterMenuContent: View {
                     workspace.inboxScope = .standard
                 }
             }
+        }
+    }
+
+    /// One profile picked at a time; picking the one already picked goes back to all.
+    private func profile(_ name: String?) -> Binding<Bool> {
+        Binding {
+            workspace.inboxScope.profile == name
+        } set: { picked in
+            workspace.inboxScope.profile = picked ? name : nil
         }
     }
 

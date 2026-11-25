@@ -16,6 +16,13 @@ public struct SettledPage: Equatable, Sendable {
         let archived = page.sessions.filter(\.archived)
         self.init(sessions: archived, total: page.total ?? archived.count)
     }
+
+    public init(profiles page: ProfileSessionsPage, limit: Int, offset: Int) {
+        // As with the dashboard's own list: a back-filled pin is not settled.
+        let archived = page.sessions.filter(\.archived)
+        let total = page.total ?? (page.hasMore(offset: offset, limit: limit) ? offset + archived.count + 1 : offset + archived.count)
+        self.init(sessions: archived, total: total)
+    }
 }
 
 /// The inbox's Settled region (`docs/inbox.md` §2a): Hermes' archived chats, most recently active

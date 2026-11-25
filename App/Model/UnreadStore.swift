@@ -258,9 +258,16 @@ final class UnreadStore {
     }
 
     private func countChat(_ session: HermesSession, since: Date) async throws -> Cache.Count? {
-        guard let client = workspace?.client, let active = session.lastActive else { return nil }
-        let transcript = try await client.transcript(sessionID: session.id, limit: 100)
-        let tally = await Self.tally(transcript.messages, hidesSilence: false, after: since)
+        guard let active = session.lastActive else { return nil }
+        let messages: [SessionMessage]
+        if let profile = session.keyProfile, let backend = workspace?.roster?.boardClient {
+            // Another profile's chat: its rows come from its profile's dashboard (`docs/inbox.md` §9).
+            messages = try await backend.transcript(storedSessionID: session.id, profile: profile, limit: 100).messages
+        } else {
+            guard let client = workspace?.client else { return nil }
+            messages = try await client.transcript(sessionID: session.id, limit: 100).messages
+        }
+        let tally = await Self.tally(messages, hidesSilence: false, after: since)
         workspace?.activity.lastTurn(of: session.stableID, failed: tally.failedTurn)
         noteLastLine(session.stableID, tally.lastLine, asOf: active)
         return Cache.Count(value: tally.count, lastActive: active.timeIntervalSince1970, since: since.timeIntervalSince1970)
@@ -391,7 +398,16 @@ final class UnreadStore {
     /// rows, once per activity, a few at a time.
     func needsLastLine(_ session: HermesSession) {
         // A waiting chat's row says what it waits for; Hermes may not have the chat yet.
-        guard let client = workspace?.client, workspace?.waitingChat(forKey: session.stableID) == nil else { return }
+        guard workspace?.waitingChat(forKey: session.stableID) == nil else { return }
+        if let profile = session.keyProfile {
+            guard let backend = workspace?.roster?.boardClient else { return }
+            readLine(session.stableID, activity: session.lastActive) {
+                let transcript = try await backend.transcript(storedSessionID: session.id, profile: profile, limit: 8)
+                return LastLine.of(TranscriptBuilder.build(transcript.messages))
+            }
+            return
+        }
+        guard let client = workspace?.client else { return }
         readLine(session.stableID, activity: session.lastActive) {
             let transcript = try await client.transcript(sessionID: session.id, limit: 8)
             return LastLine.of(TranscriptBuilder.build(transcript.messages))
@@ -662,6 +678,23 @@ final class UnreadStore {
         }
         guard let workspace else { return }
         let through = session.lastActive ?? .now
+        if let profile = session.keyProfile {
+            // Another profile's chat: only its profile's dashboard keeps its mark
+            // (`docs/inbox.md` §9); the gateway's API server knows its own profile alone.
+            do {
+                guard let backend = workspace.roster?.boardClient else { return }
+                if unread {
+                    try await backend.markUnread(storedSessionID: session.id, profile: profile)
+                } else {
+                    try await backend.markRead(storedSessionID: session.id, profile: profile)
+                    readSent(key, through: through)
+                }
+            } catch {
+                ConnectionLog.logger.notice("inbox: couldn't share a read mark: \(String(describing: type(of: error)), privacy: .public)")
+                if !unread { readFailed(key, through: through) }
+            }
+            return
+        }
         do {
             guard let client = workspace.client else { return }
             _ = try await client.setSessionFlags(id: session.id, unread: unread)
@@ -767,6 +800,25 @@ final class UnreadStore {
         #endif
     }
 
+    /// The list holds this profile's chats alone again (Bot Mode went away): another profile's
+    /// rows leave with their badges, lines and reads (`docs/inbox.md` §9). Marks kept on the
+    /// device stay; they're read again when the profiles come back.
+    func forgetProfiled() {
+        let prefix = ProfileRowKey.prefix
+        cache.counts = cache.counts.filter { !$0.key.hasPrefix(prefix) }
+        cache.marks = cache.marks.filter { !$0.key.hasPrefix(prefix) }
+        cache.watermarks = cache.watermarks.filter { !$0.key.hasPrefix(prefix) }
+        cache.seen = cache.seen.filter { !$0.key.hasPrefix(prefix) }
+        cache.scroll = cache.scroll.filter { !$0.key.hasPrefix(prefix) }
+        for key in book.entries.keys where key.hasPrefix(prefix) { book.forget(key) }
+        lastLines = lastLines.filter { !$0.key.hasPrefix(prefix) }
+        pending = pending.filter { !$0.key.hasPrefix(prefix) }
+        for key in outbox.entries.keys where key.hasPrefix(prefix) { outbox.drop(key) }
+        saveOutbox()
+        scheduleSave()
+        update()
+    }
+
     func tearDown() {
         disconnected()
         recheck.cancel()
@@ -794,13 +846,16 @@ final class UnreadStore {
     }
 
     /// Hermes' marks for the newest chats (the dashboard's rows), and the chat list itself when
-    /// something moved.
+    /// something moved. While the list holds every profile's chats, their marks come from all of
+    /// them (`docs/inbox.md` §9).
     private func fetchMarks(now: Bool) {
         guard let workspace, let backend = workspace.roster?.boardClient, recheck.isDue("chats", now: now) else { return }
         if now { refreshListSoon() }
+        let everyProfile = workspace.listsEveryProfile
+        let home = workspace.bot.profileName
         Task { [weak self] in
             defer { self?.recheck.answered("chats") }
-            guard let rows = try? await backend.recentSessions(limit: 100, profile: workspace.bot.profileName) else { return }
+            guard let rows = try? await Self.markRows(backend, everyProfile: everyProfile, home: home) else { return }
             self?.adopt(rows)
         }
     }
@@ -810,8 +865,22 @@ final class UnreadStore {
     /// slept would go back on the icon (`docs/notifications.md` §2 Badge).
     func catchUpMarks() async {
         guard let workspace, let backend = workspace.roster?.boardClient,
-              let rows = try? await backend.recentSessions(limit: 100, profile: workspace.bot.profileName) else { return }
+              let rows = try? await Self.markRows(backend, everyProfile: workspace.listsEveryProfile, home: workspace.bot.profileName) else { return }
         adopt(rows)
+    }
+
+    /// The newest rows with marks: every profile's, tagged as the list tags them, or the gateway's
+    /// own profile's. A Hermes without the aggregate route falls back to that profile's rows.
+    private static func markRows(_ backend: BackendClient, everyProfile: Bool, home: String?) async throws -> [HermesSession] {
+        if everyProfile {
+            do {
+                let page = try await backend.profileSessions(archived: .exclude, limit: 100, offset: 0)
+                return ProfileRows.tagged(page.sessions, home: home)
+            } catch {
+                guard BackendClient.isMissingRoute(error) else { throw error }
+            }
+        }
+        return try await backend.recentSessions(limit: 100, profile: home)
     }
 
     private func adopt(_ rows: [HermesSession]) {

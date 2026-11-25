@@ -44,6 +44,7 @@ extension InboxScope.Change {
         case .unread: String(localized: "Unread")
         case .needsYou: String(localized: "Needs You")
         case .showsEmpty: String(localized: "Empty Chats")
+        case .profile(let name): name
         }
     }
 }
@@ -124,7 +125,7 @@ extension BotWorkspace {
     /// sent in it here: a new chat has no stored messages until its first lands.
     private func holds(_ session: HermesSession, live: Set<String>) -> Bool {
         let key = session.stableID
-        return inboxScope.holds(session, keep: live.contains(key) || lastSentAt[key] != nil)
+        return inboxScope.holds(session, keep: live.contains(key) || lastSentAt[key] != nil, home: bot.profileName)
     }
 
     /// A chat's time on its row and in the order (`RowTime`, `docs/inbox.md` §2): its last line's
@@ -184,7 +185,7 @@ extension BotWorkspace {
     /// whatever Hermes answers; a failure leaves it settled.
     func unsettleBeforeSend(_ key: String) {
         guard isSettled(key) else { return }
-        let session = settled.session(forKey: key) ?? session(forKey: key) ?? HermesSession(id: key)
+        let session = settled.session(forKey: key) ?? session(forKey: key) ?? HermesSession.placeholder(forKey: key)
         Task { try? await unarchive(session) }
     }
 
@@ -217,7 +218,7 @@ extension BotWorkspace {
     }
 
     /// Only chats still listed keep a time; the rest go when the list is next saved.
-    private func publishReturns() {
+    func publishReturns() {
         let listed = Set(allSessions.map(\.stableID))
         if hasFetchedSessions { returnTracker.prune(keeping: listed) }
         let times = returnTracker.times
