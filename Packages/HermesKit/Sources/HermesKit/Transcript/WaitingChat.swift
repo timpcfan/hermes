@@ -21,13 +21,17 @@ public struct WaitingChat: Codable, Sendable, Hashable, Identifiable {
     public var effort: ReasoningEffort?
     /// The project it was started in (Run In), if any.
     public var projectID: String?
+    /// The profile the chat was started in, when it isn't the gateway's own (`docs/inbox.md` §9):
+    /// its row and stored keys take the profile's namespace, as the list's rows do.
+    public var profile: String?
 
     public static let keyPrefix = "waiting-"
 
     public var id: String { key }
 
     public init(title: String, sentAt: Date = .now, model: ModelSelection? = nil, effort: ReasoningEffort? = nil,
-                projectID: String? = nil, key: String = WaitingChat.keyPrefix + UUID().uuidString.lowercased(),
+                projectID: String? = nil, profile: String? = nil,
+                key: String = WaitingChat.keyPrefix + UUID().uuidString.lowercased(),
                 requestedID: String? = nil) {
         self.key = key
         self.title = Self.line(title)
@@ -36,6 +40,7 @@ public struct WaitingChat: Codable, Sendable, Hashable, Identifiable {
         self.model = model
         self.effort = effort
         self.projectID = projectID
+        self.profile = profile
     }
 
     /// A key of a chat that only exists on this device.
@@ -59,7 +64,12 @@ public struct WaitingChat: Codable, Sendable, Hashable, Identifiable {
 
     /// Where its message (and anything queued behind it) is kept: under the chat once Hermes made
     /// it, else under its own key.
-    public var outboxKey: String { sessionID ?? key }
+    public var outboxKey: String { storedKey ?? key }
+
+    /// The chat's key once Hermes made it, under its profile (`ProfileRowKey`).
+    private var storedKey: String? {
+        sessionID.map { ProfileRowKey.key(profile: profile, lineageID: $0) }
+    }
 
     /// What a relaunch does with it.
     public enum Resume: Equatable, Sendable {
@@ -86,12 +96,14 @@ public struct WaitingChat: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// The key its row and chat go by: the chat's once Hermes made it, else its own.
-    public var rowKey: String { sessionID ?? key }
+    public var rowKey: String { storedKey ?? key }
 
     /// Its row in the chat list until the list has the chat itself.
     public var row: HermesSession {
-        var row = HermesSession(id: rowKey, startedAt: sentAt, lastActive: sentAt, preview: title, messageCount: 1)
+        var row = HermesSession(id: sessionID ?? key, startedAt: sentAt, lastActive: sentAt, preview: title, messageCount: 1)
         row.title = title
+        row.profile = profile
+        row.keyProfile = profile
         return row
     }
 
@@ -105,8 +117,8 @@ public struct WaitingChat: Codable, Sendable, Hashable, Identifiable {
     /// whose chat Hermes now lists has arrived (Hermes stores a new chat with its first message).
     public static func remaining(_ chats: [WaitingChat], gatewayListed: Set<String>) -> [WaitingChat] {
         chats.filter { chat in
-            guard chat.mayHaveArrived, let sessionID = chat.sessionID else { return true }
-            return !gatewayListed.contains(sessionID)
+            guard chat.mayHaveArrived, chat.sessionID != nil else { return true }
+            return !gatewayListed.contains(chat.rowKey)
         }
     }
 

@@ -873,11 +873,14 @@ final class PushCenter {
         var chatKeys: [String: String] = [:]
         for session in workspace.sessions {
             chatKeys[session.stableID] = session.stableID
-            chatKeys[session.id] = session.stableID
+            // Two profiles can hold the same id: only the gateway's own row claims the bare id,
+            // and another profile's notice finds its row by the profiled key instead.
+            if session.keyProfile == nil { chatKeys[session.id] = session.stableID }
         }
         return NoticeRouting(
             botChats: shared.botChats(gateway: workspace.id).merging(workspace.roster?.botChats ?? [:]) { $1 },
-            chatKeys: chatKeys
+            chatKeys: chatKeys,
+            home: workspace.listsEveryProfile ? (workspace.bot.profileName ?? "default") : nil
         )
     }
 

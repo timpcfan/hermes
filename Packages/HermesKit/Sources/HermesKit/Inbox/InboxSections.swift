@@ -111,3 +111,38 @@ public enum InboxNext {
         return index > 0 ? main[index - 1] : nil
     }
 }
+
+/// The inbox's regions as last built, and what they were built from (`BotWorkspace.inboxSections`).
+/// An equal key serves the built regions again, so the list is rebuilt only when one of these
+/// changed — never because a row was selected (`docs/inbox.md` §9).
+public struct InboxSectionsCache<Row> {
+    public struct Key: Equatable {
+        public var sessions: Int
+        public var activity: InboxActivity
+        public var returns: [String: Date]
+        public var lines: Int
+        public var scope: InboxScope
+        /// What the filter reads besides the list (the unread badges under Unread).
+        public var filterInputs: Int
+        public var waiting: [String]
+
+        public init(sessions: Int, activity: InboxActivity, returns: [String: Date], lines: Int,
+                    scope: InboxScope, filterInputs: Int, waiting: [String]) {
+            self.sessions = sessions
+            self.activity = activity
+            self.returns = returns
+            self.lines = lines
+            self.scope = scope
+            self.filterInputs = filterInputs
+            self.waiting = waiting
+        }
+    }
+
+    public let key: Key
+    public let sections: InboxSections<Row>
+
+    public init(key: Key, sections: InboxSections<Row>) {
+        self.key = key
+        self.sections = sections
+    }
+}

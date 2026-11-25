@@ -55,8 +55,12 @@ def install(backend_globals, gateway_module):
 
     def resume(params):
         stored = params.get("session_id") or ""
+        profile = (params.get("profile") or "default").strip() or "default"
         with G.LOCK:
             known = stored in G.SESSIONS
+        # A shared id: the profile names whose chat resumes (the collision the row keys keep apart).
+        if known and profile != "default":
+            return original["session.resume"](params)
         return resume_chat(params) if known else original["session.resume"](params)
 
     def submit(params):
@@ -69,7 +73,7 @@ def install(backend_globals, gateway_module):
             return original["prompt.submit"](params)
         return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")), B["submitted_kind"](params))
 
-    B["CHATS_HOOKS"].update({"add_message": G.add_message, "finish": finish})
+    B["CHATS_HOOKS"].update({"add_message": chat_add_message, "finish": finish})
     methods["session.create"] = create
     methods["session.resume"] = resume
     methods["prompt.submit"] = submit
@@ -95,8 +99,46 @@ def install(backend_globals, gateway_module):
     methods["tools.configure"] = lambda params: {"changed": params.get("names") or [], "action": params.get("action")}
 
 
+def store_of(stored):
+    """The store a chat's rows live in: the backend's for another profile's chat, the gateway
+    mock's for the default profile's (`docs/inbox.md` §9). One session database in Hermes; two
+    dicts here, so every read and write picks by the row, not by which protocol asked. The gateway
+    store wins a shared id: the default profile's chats live there, and another profile may keep a
+    chat under the same id (the collision the app's row keys keep apart)."""
+    with G.LOCK:
+        if stored in G.SESSIONS:
+            return "gateway"
+    with B["LOCK"]:
+        session = B["STORED"].get(stored)
+    if session is not None and session.get("profile") != "default":
+        return "backend"
+    return "gateway"
+
+
+def chat_add_message(stored, role, content, **extra):
+    if store_of(stored) == "backend":
+        # Both stores mint the next user row's display_kind from the prompt's own.
+        if role == "user" and "display_kind" not in extra and (kind := B["TURN_KINDS"].pop(stored, None)):
+            extra["display_kind"] = kind
+        return B["add_message"](stored, role, content, **extra)
+    return G.add_message(stored, role, content, **extra)
+
+
+def chat_messages(stored):
+    if store_of(stored) == "backend":
+        with B["LOCK"]:
+            return list(B["STORED"].get(stored, {}).get("messages", []))
+    with G.LOCK:
+        return list(G.MESSAGES.get(stored, []))
+
+
 def new_chat_runtime(stored):
-    sid = B["new_runtime"](stored, "default")
+    # The stored row's own profile: a chat created in another profile runs there too
+    # (`docs/inbox.md` §9), not in the default one. A shared id is the gateway chat's.
+    with G.LOCK:
+        home = stored in G.SESSIONS
+    profile = "default" if home else B["STORED"].get(stored, {}).get("profile") or "default"
+    sid = B["new_runtime"](stored, profile)
     B["RUNTIME"][sid]["kind"] = "chat"
     return sid
 
@@ -105,6 +147,12 @@ def session_model(stored):
     """The session's model and provider as Hermes's `_session_info` reports them: the live agent's,
     which `config.set` persists to the row (`agent_factory._persist_live_session_runtime`). The
     provider is the row's billing provider, which the API server's rows don't show."""
+    if store_of(stored) == "backend":
+        with B["LOCK"]:
+            row = B["STORED"].get(stored) or {}
+            profile = B["PROFILES"].get(row.get("profile") or "default") or {}
+            return {"model": row.get("model") or profile.get("model") or G.MODEL_OPTIONS["model"],
+                    "provider": row.get("_provider") or profile.get("provider") or G.MODEL_OPTIONS["provider"]}
     with G.LOCK:
         row = G.SESSIONS.get(stored) or {}
         return {"model": row.get("model") or G.MODEL_OPTIONS["model"],
@@ -125,17 +173,17 @@ def create_chat(params):
 
 def resume_chat(params):
     stored = params["session_id"]
+    profile = (params.get("profile") or "default").strip() or "default"
     with B["LOCK"]:
         # A runtime Hermes let go (a reap, a restart) isn't resumed: the chat gets a fresh one, and
         # the rows its queue kept for prompts that never ran are retired, as in a Bot's chat.
-        sid = next((k for k, r in B["RUNTIME"].items() if r["stored"] == stored and not r.get("dead")), None)
+        sid = next((k for k, r in B["RUNTIME"].items()
+                    if r["stored"] == stored and r["profile"] == profile and not r.get("dead")), None)
         if sid is None:
-            with G.LOCK:
-                B["retire_undrained_queue_rows"](G.MESSAGES.get(stored, []))
+            B["retire_undrained_queue_rows"](chat_messages(stored))
             sid = new_chat_runtime(stored)
         runtime = B["RUNTIME"][sid]
-    with G.LOCK:
-        count = len(G.MESSAGES.get(stored, []))
+    count = len(chat_messages(stored))
     return {"session_id": sid, "resumed": stored, "message_count": count, "messages": [], "messages_omitted": True,
             "info": {**session_model(stored), "running": runtime["running"]},
             **B["live_turn"](runtime), "running": runtime["running"], "session_key": stored,
@@ -150,14 +198,18 @@ def turn_elsewhere(stored, text, reply, seconds, display_kind="internal_notifica
     if display_metadata:
         extra["display_metadata"] = display_metadata
     with G.LOCK:
-        if stored not in G.SESSIONS:
-            return False
+        known = stored in G.SESSIONS
+    if not known:
+        with B["LOCK"]:
+            known = stored in B["STORED"]
+    if not known:
+        return False
     with B["LOCK"]:
         sid = next((k for k, r in B["RUNTIME"].items()
                     if r["stored"] == stored and not r.get("dead") and not r["running"]), None)
     if sid is None:
-        G.add_message(stored, "user", text, **extra)
-        G.add_message(stored, "assistant", reply, finish_reason="stop")
+        chat_add_message(stored, "user", text, **extra)
+        chat_add_message(stored, "assistant", reply, finish_reason="stop")
         return True
 
     def run():
@@ -165,7 +217,7 @@ def turn_elsewhere(stored, text, reply, seconds, display_kind="internal_notifica
             runtime = B["RUNTIME"][sid]
             runtime.update(running=True, interrupt=False, turn_started=time.time())
             runtime["inflight"] = {"user": text, "assistant": "", "streaming": True, "display_kind": display_kind}
-        G.add_message(stored, "user", text, **extra)
+        chat_add_message(stored, "user", text, **extra)
         emit(sid, "session.info", {"running": True})
         emit(sid, "message.start", {})
         deadline = time.time() + max(0.0, seconds - 2)
@@ -189,7 +241,8 @@ def submit_chat(sid, runtime, text, queued=False, display_kind=None):
     if busy:
         return B["busy_submit"](sid, text, queued)
     if display_kind:
-        G.TURN_KINDS[runtime["stored"]] = runtime["submit_kind"] = display_kind
+        kinds = B["TURN_KINDS"] if store_of(runtime["stored"]) == "backend" else G.TURN_KINDS
+        kinds[runtime["stored"]] = runtime["submit_kind"] = display_kind
     B["start_turn"](sid, text, run_chat_turn)
     return {"status": "streaming"}
 
@@ -217,13 +270,22 @@ def switch_model(sid, value):
         stored = runtime and runtime["stored"]
     if not stored or not model:
         return
-    with G.LOCK:
-        row = G.SESSIONS.get(stored)
-        if row is None:
-            return
-        row["model"] = model
-        if provider:
-            row["_provider"] = provider
+    if store_of(stored) == "backend":
+        with B["LOCK"]:
+            row = B["STORED"].get(stored)
+            if row is None:
+                return
+            row["model"] = model
+            if provider:
+                row["_provider"] = provider
+    else:
+        with G.LOCK:
+            row = G.SESSIONS.get(stored)
+            if row is None:
+                return
+            row["model"] = model
+            if provider:
+                row["_provider"] = provider
     info = session_model(stored)
     print(f"[mock-hermes] {stored} model set to {info['model']} via {info['provider']}", flush=True)
     with B["LOCK"]:
@@ -471,16 +533,49 @@ def run_dev_server(sid):
     emit(sid, "terminal.close", {"process_id": pid})
 
 
+BRANCHED = {}  # idempotency_key -> (answer, at): a retried branch gets the same chat back
+
+
 def session_branch(params):
-    """A new chat with the first `count` visible rows (user / assistant with text)."""
+    """A new chat with the first `count` visible rows (user / assistant with text). The parent
+    is a runtime id or a stored one; a stored id in another profile branches inside that profile
+    (`docs/inbox.md` §9), with the rows read from the backend's store."""
     sid = params.get("session_id") or ""
+    profile = params.get("profile") or None
+    key = params.get("idempotency_key") or None
+    with B["LOCK"]:
+        now = time.time()
+        for old in [k for k, (_, at) in BRANCHED.items() if now - at > 300]:
+            BRANCHED.pop(old, None)
+        if key in BRANCHED:
+            answer, _ = BRANCHED[key]
+            BRANCHED[key] = (answer, now)
+            return answer
     runtime = B["RUNTIME"].get(sid)
-    if runtime is None:
-        raise B["RPCError"](4001, "session not found")
-    parent = runtime["stored"]
-    with G.LOCK:
-        rows = [dict(r) for r in G.MESSAGES.get(parent, []) if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
-        title = (G.SESSIONS.get(parent) or {}).get("title") or "Branch"
+    if runtime is not None:
+        parent, home = runtime["stored"], runtime["profile"]
+    else:
+        # A stored id: the profile names whose chat it is (two profiles can share an id).
+        with B["LOCK"]:
+            session = B["STORED"].get(sid)
+        if session is not None and (profile is None or session["profile"] == profile):
+            parent, home = sid, session["profile"]
+        elif profile in (None, "default"):
+            with G.LOCK:
+                if sid not in G.SESSIONS:
+                    raise B["RPCError"](4001, "session not found")
+            parent, home = sid, "default"
+        else:
+            raise B["RPCError"](4001, "session not found")
+    if home == "default":
+        with G.LOCK:
+            rows = [dict(r) for r in G.MESSAGES.get(parent, []) if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
+            title = (G.SESSIONS.get(parent) or {}).get("title") or "Branch"
+    else:
+        with B["LOCK"]:
+            session = B["STORED"][parent]
+            rows = [dict(r) for r in session["messages"] if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
+            title = session.get("title") or "Branch"
     count = params.get("count")
     if isinstance(count, (int, float)) and count > 0:
         rows = rows[:int(count)]
@@ -488,13 +583,24 @@ def session_branch(params):
         raise B["RPCError"](4008, "nothing to branch — send a message first")
     stored = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     now = time.time()
-    with G.LOCK:
-        G.session_row(stored, f"{title} (branch)", "hermes_app", now, now, "")
-    for r in rows:
-        G.add_message(stored, r["role"], r["content"])
-    new_sid = new_chat_runtime(stored)
-    return {"session_id": new_sid, "stored_session_id": stored, "title": f"{title} (branch)", "parent": parent,
-            "message_count": len(rows), "messages_omitted": True}
+    if home == "default":
+        with G.LOCK:
+            G.session_row(stored, f"{title} (branch)", "hermes_app", now, now, "")
+        for r in rows:
+            G.add_message(stored, r["role"], r["content"])
+        new_sid = new_chat_runtime(stored)
+    else:
+        B["add_session"](home, f"{title} (branch)", source="hermes_app", started=now, sid=stored)
+        for r in rows:
+            B["add_message"](stored, r["role"], r["content"])
+        new_sid = B["new_runtime"](stored, home)
+        B["RUNTIME"][new_sid]["kind"] = "chat"
+    answer = {"session_id": new_sid, "stored_session_id": stored, "title": f"{title} (branch)", "parent": parent,
+              "message_count": len(rows), "messages_omitted": True}
+    if key:
+        with B["LOCK"]:
+            BRANCHED[key] = (answer, time.time())
+    return answer
 
 
 # ── Requests (docs/quick-actions.md) ─────────────────────────────────────────
@@ -927,7 +1033,7 @@ def take_steers(sid):
     stored = B["RUNTIME"][sid]["stored"]
 
     def store(row):
-        G.add_message(stored, "user", row["content"], display_kind="steer", display_content=row["display_content"])
+        chat_add_message(stored, "user", row["content"], display_kind="steer", display_content=row["display_content"])
         B["RUNTIME"][sid].setdefault("read_steers", []).append(row["display_content"])
 
     B["deliver_steers"](sid, store)
@@ -960,7 +1066,7 @@ def stream(sid, text, chunk=7, delay=0.022):
 def tool(sid, stored, name, args, seconds, *, context, result, result_text=None, extra=None, risk=None):
     B["check_redirect"](sid)
     call = f"call_{uuid.uuid4().hex[:8]}"
-    G.add_message(stored, "assistant", "", finish_reason="tool_calls",
+    chat_add_message(stored, "assistant", "", finish_reason="tool_calls",
                   tool_calls=[{"id": call, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}])
     emit(sid, "tool.start", {"tool_id": call, "name": name, "context": context, "args": args})
     B["RUNTIME"][sid]["tool_running"] = True
@@ -969,7 +1075,7 @@ def tool(sid, stored, name, args, seconds, *, context, result, result_text=None,
         time.sleep(0.1)
         waited += 0.1
     B["RUNTIME"][sid]["tool_running"] = False
-    G.add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
+    chat_add_message(stored, "tool", result, tool_call_id=call, tool_name=name)
     payload = {"tool_id": call, "name": name, "args": args, "duration_s": round(waited, 2), "result": result,
                "summary": None}
     if result_text:
@@ -1013,9 +1119,9 @@ def finish(sid, stored, text, *, status="complete", error=None, recoverable=None
             # Hermes queues transcript writes while its database is busy: the reply lands after the turn ends.
             # The row keeps the message's own time (hermes_state_messages.append_message `timestamp`).
             ended = time.time()
-            threading.Timer(late, lambda: G.add_message(stored, "assistant", text, finish_reason="stop", timestamp=ended)).start()
+            threading.Timer(late, lambda: chat_add_message(stored, "assistant", text, finish_reason="stop", timestamp=ended)).start()
         else:
-            G.add_message(stored, "assistant", text, finish_reason="stop")
+            chat_add_message(stored, "assistant", text, finish_reason="stop")
     payload = {"text": text, "status": status, "usage": {**USAGE, **(usage_override or {})}}
     if error:
         payload["error"] = error
@@ -1035,13 +1141,22 @@ def finish(sid, stored, text, *, status="complete", error=None, recoverable=None
 
 def title_later(sid, stored, text):
     def apply():
-        with G.LOCK:
-            session = G.SESSIONS.get(stored)
-            if not session or session["title"]:
-                return
-            lines = [l for l in text.strip().split("\n") if l.strip() and not l.startswith("[")]
-            session["title"] = (lines[0] if lines else text.strip())[:40].rstrip(".?!").capitalize()
-            title = session["title"]
+        if store_of(stored) == "backend":
+            with B["LOCK"]:
+                session = B["STORED"].get(stored)
+                if not session or session["title"]:
+                    return
+                lines = [l for l in text.strip().split("\n") if l.strip() and not l.startswith("[")]
+                session["title"] = (lines[0] if lines else text.strip())[:40].rstrip(".?!").capitalize()
+                title = session["title"]
+        else:
+            with G.LOCK:
+                session = G.SESSIONS.get(stored)
+                if not session or session["title"]:
+                    return
+                lines = [l for l in text.strip().split("\n") if l.strip() and not l.startswith("[")]
+                session["title"] = (lines[0] if lines else text.strip())[:40].rstrip(".?!").capitalize()
+                title = session["title"]
         emit(sid, "session.title", {"title": title})
     threading.Timer(1.2, apply).start()
 
@@ -1094,7 +1209,7 @@ def run_chat_turn(sid, text):
     stored = B["RUNTIME"][sid]["stored"]
     # The model each turn runs on, for checking which device's pick it carried.
     print(f"[mock-hermes] turn in {stored} runs on {session_model(stored)['model']}", flush=True)
-    B["begin_turn"](sid, stored, text, G.add_message)
+    B["begin_turn"](sid, stored, text, chat_add_message)
     title_later(sid, stored, text)
     lower = text.lower()
     B["mock_warnings"](sid, text)
@@ -1164,7 +1279,7 @@ def run_chat_turn(sid, text):
         finish(sid, stored, answer, usage_override={"context_percent": 86.0, "context_used": 172000} if "full" in lower else None)
         if "react" in lower:
             with G.LOCK:
-                user_rows = [r for r in G.MESSAGES.get(stored, []) if r["role"] == "user"]
+                user_rows = [r for r in chat_messages(stored) if r["role"] == "user"]
             if user_rows:
                 emit(sid, "message.reaction", {"row_id": user_rows[-1]["id"], "role": "user", "reactions": [{"emoji": "👍", "author": "hermes"}]})
         if "review" in lower:

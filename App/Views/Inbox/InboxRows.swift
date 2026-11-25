@@ -25,6 +25,10 @@ struct ChatInboxRow: View {
         let lastLine = unread.lastLines[key]
         let strong = badge.isUnread || (line?.isLive ?? false)
         let date = workspace.rowTime(session, isLive: line?.isLive == true)
+        // Every profile's chats in one list: each row says whose it is (`docs/inbox.md` §9).
+        let mark = workspace.listsEveryProfile
+            ? ProfileRows.badge(profile: ProfileRows.profileName(of: session, home: workspace.bot.profileName), project: session.projectName)
+            : nil
         InboxRowLayout(
             title: session.displayTitle,
             date: date,
@@ -33,7 +37,8 @@ struct ChatInboxRow: View {
             muted: muted,
             pinned: session.pinned,
             badge: badge,
-            needsYou: line?.needsYou ?? false
+            needsYou: line?.needsYou ?? false,
+            mark: mark
         ) {
             if let waiting {
                 RowPreview(prefix: nil, text: waiting, bright: false)
@@ -50,12 +55,14 @@ struct ChatInboxRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.spoken(title: session.displayTitle, badge: badge, muted: muted, pinned: session.pinned, line: line,
-                                        date: date, preview: waiting ?? lastLine?.text ?? session.listPreview))
+                                        date: date, preview: waiting ?? lastLine?.text ?? session.listPreview, mark: mark))
     }
 
-    /// "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs" (`docs/inbox.md` §6).
-    static func spoken(title: String, badge: UnreadBadge, muted: Bool, pinned: Bool, line: ActivityLine?, date: Date?, preview: String?) -> String {
+    /// "Release notes for 1.3, money, 3 unread, 14:21, 23 merged PRs" (`docs/inbox.md` §6).
+    static func spoken(title: String, badge: UnreadBadge, muted: Bool, pinned: Bool, line: ActivityLine?, date: Date?, preview: String?,
+                       mark: String? = nil) -> String {
         var parts = [title]
+        if let mark { parts.append(mark) }
         if muted { parts.append(String(localized: "muted")) }
         switch badge {
         case .count(let count): parts.append(count == 1 ? String(localized: "1 unread") : String(localized: "\(UnreadCounter.label(count)) unread"))
@@ -209,6 +216,9 @@ struct InboxRowLayout<Line: View>: View {
     let badge: UnreadBadge
     let needsYou: Bool
     var mentioned = false
+    /// The row's profile (and project) mark, while the list holds every profile's chats
+    /// (`docs/inbox.md` §9).
+    var mark: String?
     @ViewBuilder let line: Line
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -259,16 +269,35 @@ struct InboxRowLayout<Line: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var hasMeta: Bool { routine || muted || pinned || date != nil }
+    private var hasMeta: Bool { routine || muted || pinned || mark != nil || date != nil }
 
     @ViewBuilder
     private var meta: some View {
         if routine { RowMark("clock") }
         if muted { RowMark("bell.slash.fill") }
         if pinned { RowMark("pin.fill") }
+        if let mark { RowProfileMark(text: mark) }
         if let date {
             InboxTimeText(date: date, emphasized: emphasizeTime ?? strong)
         }
+    }
+}
+
+/// A chat's profile mark ("money", or "money · hermesapp" when it ran in a repository), beside its
+/// time (`docs/inbox.md` §9). Quiet as the time it sits by; the title keeps the room.
+struct RowProfileMark: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(InboxMetrics.timeFont)
+            .foregroundStyle(Theme.tertiaryText)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Theme.controlFill, in: Capsule())
+            .accessibilityHidden(true)
     }
 }
 

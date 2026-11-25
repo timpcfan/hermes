@@ -29,7 +29,9 @@ second.
    default; `BackendClient` for REST, `GatewaySocket` for the JSON-RPC WebSocket at `/api/ws`).
    This is Bot Mode: Bots, projects, the Board, memory, checkpoints, the Inspector, search, and
    every `session.*`, `prompt.*` and `command.*` call. While it's connected, normal chats run over
-   it too. It doesn't accept `API_SERVER_KEY`. The app signs in one of three ways
+   it too, the chat list holds every profile's chats (`GET /api/profiles/sessions`,
+   `docs/inbox.md` §9), and a notice's profile picks which profile's chat it opens
+   (`docs/notifications.md` §3). It doesn't accept `API_SERVER_KEY`. The app signs in one of three ways
    (`BackendLink.SignIn`):
 
    | Sign-in | How | REST | Socket |

@@ -67,6 +67,10 @@ struct SettledRow: View {
     var body: some View {
         let item = SidebarItem.session(session.stableID)
         let date = session.lastActive ?? session.startedAt
+        // Every profile's chats in one list: the row says whose it is (`docs/inbox.md` §9).
+        let mark = workspace.listsEveryProfile
+            ? ProfileRows.badge(profile: ProfileRows.profileName(of: session, home: workspace.bot.profileName), project: session.projectName)
+            : nil
         SidebarRow(isSelected: workspace.selection == item, height: InboxMetrics.slimRowHeight) {
             workspace.pick(item)
         } label: {
@@ -81,17 +85,20 @@ struct SettledRow: View {
                         .foregroundStyle(Theme.tertiaryText)
                         .accessibilityHidden(true)
                 }
+                if let mark { RowProfileMark(text: mark) }
                 Spacer(minLength: 8)
                 if let date { InboxTimeText(date: date) }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.spoken(session, date: date))
+        .accessibilityLabel(Self.spoken(session, date: date, mark: mark))
     }
 
-    /// "Router firmware update, settled, pinned, Yesterday".
-    static func spoken(_ session: HermesSession, date: Date?) -> String {
-        var parts = [session.displayTitle, String(localized: "settled")]
+    /// "Router firmware update, money, settled, pinned, Yesterday".
+    static func spoken(_ session: HermesSession, date: Date?, mark: String? = nil) -> String {
+        var parts = [session.displayTitle]
+        if let mark { parts.append(mark) }
+        parts.append(String(localized: "settled"))
         if session.pinned { parts.append(String(localized: "pinned")) }
         if let date { parts.append(InboxTimeText.spoken(date)) }
         return parts.joined(separator: ", ")

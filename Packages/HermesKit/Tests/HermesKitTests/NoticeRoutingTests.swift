@@ -86,4 +86,42 @@ struct NoticeRoutingTests {
         #expect(routing.destination(for: notice) == .tasks)
         #expect(NoticeRouting.chat(of: notice) == nil)
     }
+
+    /// The list holds every profile's chats (`docs/inbox.md` §9): two profiles share an id, one
+    /// researcher chat is listed under its profiled key, and the gateway serves the main profile.
+    private let everyProfile = NoticeRouting(
+        botChats: ["sess_researcher": "researcher"],
+        chatKeys: [
+            "api_1760_welcome": "api_1760_welcome",
+            "p:researcher:api_1760_welcome": "p:researcher:api_1760_welcome",
+            "p:writer:api_2200_notes": "p:writer:api_2200_notes",
+        ],
+        home: "default"
+    )
+
+    @Test("Two profiles sharing an id each open their own row")
+    func sharedIdAcrossProfiles() {
+        #expect(everyProfile.destination(for: reply("api_1760_welcome")) == .chat("api_1760_welcome"))
+        #expect(everyProfile.destination(for: reply("api_1760_welcome", profile: "default")) == .chat("api_1760_welcome"))
+        #expect(everyProfile.destination(for: reply("api_1760_welcome", profile: "researcher")) == .chat("p:researcher:api_1760_welcome"))
+    }
+
+    @Test("An unlisted chat opens under its profile's key, not the bare id")
+    func unlistedChatUnderItsProfile() {
+        #expect(everyProfile.destination(for: reply("sess_new", profile: "researcher")) == .chat("p:researcher:sess_new"))
+        // The gateway's own profile keeps the bare id, so its caches carry over.
+        #expect(everyProfile.destination(for: reply("sess_new", profile: "default")) == .chat("sess_new"))
+        #expect(everyProfile.destination(for: reply("sess_new")) == .chat("sess_new"))
+        // A Bot's own chat still opens the Bot.
+        #expect(everyProfile.destination(for: reply("sess_researcher", profile: "researcher")) == .bot("researcher"))
+    }
+
+    @Test("A gateway that serves a profile keeps that profile's chats bare")
+    func homeProfileKeepsBareKeys() {
+        let scoped = NoticeRouting(chatKeys: ["api_9_scoped": "api_9_scoped"], home: "work")
+        #expect(scoped.destination(for: reply("api_9_scoped", profile: "work")) == .chat("api_9_scoped"))
+        #expect(scoped.destination(for: reply("sess_new", profile: "work")) == .chat("sess_new"))
+        #expect(scoped.destination(for: reply("sess_new", profile: "researcher")) == .chat("p:researcher:sess_new"))
+        #expect(scoped.destination(for: reply("sess_new", profile: "default")) == .chat("p:default:sess_new"))
+    }
 }

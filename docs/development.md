@@ -607,11 +607,14 @@ a dashboard on an overloaded Mac does: a message sent meanwhile goes out before 
 archived on the mock gateway (`DELETE /api/sessions/<id>`, `PATCH … {archived: true}`) plays the
 plugin's `on_session_delete` (plugin 1.4.7: off every device's badge, with its badge and read pushes), and
 `GET /api/mock/push-state` shows what the push mock recorded (presence, reads, what each device was
-sent and cleared, badge records, the open requests and their count). Like plugin 1.4.8, the open
+sent and cleared, badge records, the open requests and their count, and `sent`: the last 40 sealed
+requests each device's token was relayed, which a check opens with the device's key to read a
+notice's fields, `profile` included). Like plugin 1.4.8, the open
 count leaves out a request past its deadline, one six hours old without one, and one whose turn a
 restart killed (`/api/mock/restart-gateway`), and an API server run's approval goes when it settles
-(answered, stopped or timed out). `POST /api/mock/push-reply {session_id, text, delay?}` sends a
-reply's notice as if its turn ran long; `delay` sends it that many seconds after the reply landed, as
+(answered, stopped or timed out). `POST /api/mock/push-reply {session_id, text, profile?, delay?}` sends a
+reply's notice as if its turn ran long (`profile` tags it as the plugin tags a reply from another
+profile's chat); `delay` sends it that many seconds after the reply landed, as
 a slow end of turn does, so a read on another device meanwhile shows that it notifies and counts
 nothing (plugin 1.4.6). A Bot's message in a group chat notifies 5 s after it lands, like the
 plugin's (with Bots set to All). `POST /api/mock/sync {sessions}` sends every registered device a `sync` push now, and
@@ -855,7 +858,13 @@ Discord, the terminal and an editor each; an empty chat; and three that look liv
 cycle: "Deploy hk3 nginx" works for 15 s, waits for an approval for 45 s, then finishes and rests;
 the pinned "Review my recent work" and "Migrate the board to Swift 6" keep working. The
 dashboard's list answers `archived=only|include|exclude` with `total` and back-fills pinned chats
-across the archived filter, as Hermes does. `--idle` leaves out the mock's standing test run ("Fix the reconnect
+across the archived filter, as Hermes does. `--cross-profile` seeds researcher, writer and ops
+chats (some in repositories, one settled per profile, one id shared with the gateway's own) and
+serves `GET /api/profiles/sessions`, the aggregated list (`docs/inbox.md` §9): every profile's
+rows merged by `last_active`, `archived=exclude|only`, pins back-filled per profile, and
+`PATCH`/`DELETE /api/sessions/{id}?profile=` and `session.branch` resolve a chat under its profile,
+a shared id included; without the flag the endpoint answers 404 as an older Hermes does.
+`--idle` leaves out the mock's standing test run ("Fix the reconnect
 after sleep"), so nothing runs on its own: the inbox without Working, or Working with just the
 `--inbox-gtd` pair.
 `VoiceOverFocusUITests` turns VoiceOver on inside the simulator, puts it on a row or a message, and only then

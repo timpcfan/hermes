@@ -304,16 +304,26 @@ public actor BackendClient {
     }
 
     private func setUnread(_ unread: Bool, storedSessionID: String, profile: String?) async throws {
+        try await editSession(storedSessionID: storedSessionID, profile: profile, fields: ["unread": .bool(unread)])
+    }
+
+    /// A sidebar edit of a stored session in any profile (`PATCH /api/sessions/{id}`: `title`,
+    /// `pinned`, `archived`, `unread`), as Hermes Desktop makes it: the session's current revision,
+    /// then an edit fenced on it. A turn landing in between moves the revision; that conflict is
+    /// retried once with a fresh one. A Hermes without fenced edits (no `mutation-snapshot` route,
+    /// like the one from 2026-10-16) takes the plain edit. The profile goes in the query and the
+    /// body: Hermes reads the body's, and its proxies route on the query's.
+    public func editSession(storedSessionID: String, profile: String?, fields: [String: JSONValue]) async throws {
         let id = Self.escape(storedSessionID)
         let profileQuery = Self.profileQuery(profile)
-        var plain: [String: JSONValue] = ["unread": .bool(unread)]
+        var plain = fields
         if let profile { plain["profile"] = .string(profile) }
         for attempt in 0..<2 {
             let data: Data
             do {
                 (data, _) = try await send(path: "api/sessions/\(id)/mutation-snapshot", query: profileQuery)
             } catch Failure.http(404, let detail?) where Self.isUnroutedPath(detail) {
-                _ = try await send(path: "api/sessions/\(id)", method: "PATCH", body: .object(plain))
+                _ = try await send(path: "api/sessions/\(id)", method: "PATCH", query: profileQuery, body: .object(plain))
                 return
             }
             let snapshot = try JSONValue.decode(data)
@@ -323,12 +333,48 @@ public actor BackendClient {
             body["expected_revision"] = .number(revision)
             if let generation = snapshot["runtime_generation"]?.doubleValue { body["expected_generation"] = .number(generation) }
             do {
-                _ = try await send(path: "api/sessions/\(id)", method: "PATCH", body: .object(body))
+                _ = try await send(path: "api/sessions/\(id)", method: "PATCH", query: profileQuery, body: .object(body))
                 return
             } catch Failure.http(409, let detail?) where ["revision_conflict", "stale_generation"].contains(detail) && attempt == 0 {
                 continue
             }
         }
+    }
+
+    /// Deletes a stored session in any profile (`DELETE /api/sessions/{id}?profile=`).
+    public func deleteSession(storedSessionID: String, profile: String?) async throws {
+        _ = try await send(path: "api/sessions/\(Self.escape(storedSessionID))", method: "DELETE", query: Self.profileQuery(profile))
+    }
+
+    /// Whether to leave a sidebar edit's archive filter: every chat, or only the settled ones.
+    public enum ArchivedRows: String, Sendable {
+        case exclude, only
+    }
+
+    /// A page of every profile's chats, or one profile's with `profile`, newest activity first,
+    /// each row tagged with its profile (`GET /api/profiles/sessions`, `docs/inbox.md` §9). A Hermes
+    /// without the route answers 404 (`isMissingRoute`): the caller lists the gateway's own instead.
+    /// `limit` and `offset` page the merged list; Hermes reads each profile's newest `limit + offset`
+    /// before merging, so the request over-fetches (its own cap, 200 per profile) and skips only the
+    /// merged rows before this page.
+    public func profileSessions(profile: String? = nil, archived: ArchivedRows, limit: Int, offset: Int) async throws -> ProfileSessionsPage {
+        let limit = min(200, max(1, limit))
+        let offset = max(0, offset)
+        let query = [
+            URLQueryItem(name: "profile", value: profile ?? "all"), URLQueryItem(name: "order", value: "recent"),
+            URLQueryItem(name: "archived", value: archived.rawValue),
+            URLQueryItem(name: "limit", value: String(min(400, limit + offset))),
+            URLQueryItem(name: "offset", value: String(offset)),
+        ]
+        let (data, _) = try await send(path: "api/profiles/sessions", query: query)
+        return try JSONDecoder().decode(ProfileSessionsPage.self, from: data)
+    }
+
+    /// A 404 that says every profile's list isn't there (an older Hermes), not that it failed.
+    public static func isMissingRoute(_ error: any Error) -> Bool {
+        if case Failure.http(404, let detail)? = error as? Failure { return detail.map(isUnroutedPath) ?? true }
+        if case Failure.http(405, _)? = error as? Failure { return true }
+        return false
     }
 
     /// The newest chats with Hermes' read marks (`GET /api/sessions?order=recent`, the

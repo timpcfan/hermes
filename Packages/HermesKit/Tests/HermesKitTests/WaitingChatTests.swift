@@ -72,6 +72,40 @@ struct WaitingChatTests {
         #expect(decoded.resume == .lookFor(sessionID: "api_1_00000000"))
     }
 
+    @Test func aChatInAnotherProfileKeepsItsKeysUnderThatProfile() {
+        var waiting = WaitingChat(title: "Plan", sentAt: sent, profile: "researcher", key: "waiting-1")
+        // Before Hermes makes it, only its own device key exists: no profile to namespace yet.
+        #expect(waiting.outboxKey == "waiting-1")
+        #expect(waiting.rowKey == "waiting-1")
+        waiting.left(in: "api_1_00000000")
+        #expect(waiting.outboxKey == "p:researcher:api_1_00000000")
+        #expect(waiting.rowKey == "p:researcher:api_1_00000000")
+        #expect(waiting.row.stableID == "p:researcher:api_1_00000000")
+        #expect(waiting.row.profile == "researcher")
+        #expect(waiting.row.id == "api_1_00000000")
+    }
+
+    @Test func twoProfilesSharingAnIdStayIndependent() {
+        var mine = WaitingChat(title: "Mine", sentAt: sent, key: "waiting-a")
+        var theirs = WaitingChat(title: "Theirs", sentAt: sent, profile: "researcher", key: "waiting-b")
+        mine.left(in: "api_1_00000000")
+        theirs.left(in: "api_1_00000000")
+        #expect(mine.rowKey != theirs.rowKey)
+        // The list has only the gateway's own chat: the other profile's row still shows.
+        #expect(WaitingChat.rows([mine, theirs], listed: ["api_1_00000000"]).map(\.stableID) == ["p:researcher:api_1_00000000"])
+        // And it hasn't arrived just because the same id is listed in the home profile.
+        #expect(WaitingChat.remaining([mine, theirs], gatewayListed: ["api_1_00000000"]) == [theirs])
+        #expect(WaitingChat.remaining([mine, theirs], gatewayListed: ["api_1_00000000", "p:researcher:api_1_00000000"]).isEmpty)
+    }
+
+    @Test func itsProfileIsKeptAcrossALaunch() throws {
+        var waiting = WaitingChat(title: "Plan", sentAt: sent, profile: "researcher", key: "waiting-1")
+        waiting.left(in: "api_1_00000000")
+        let decoded = try JSONDecoder().decode(WaitingChat.self, from: JSONEncoder().encode(waiting))
+        #expect(decoded == waiting)
+        #expect(decoded.rowKey == "p:researcher:api_1_00000000")
+    }
+
     @Test func itsIdIsShapedLikeHermessOwn() {
         let id = WaitingChat.newSessionID(at: sent)
         #expect(id.wholeMatch(of: /api_1792000000_[0-9a-f]{8}/) != nil)

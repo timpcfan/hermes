@@ -29,9 +29,23 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
     /// Hermes' read mark (`last_read_at`), shared by every device; nil when this gateway's rows
     /// don't carry one (`docs/inbox.md` §1).
     public var readMark: ReadMark?
+    /// The profile Hermes says the row belongs to: only every profile's list
+    /// (`GET /api/profiles/sessions`) tags rows with it (`docs/inbox.md` §9).
+    public var profile: String?
+    /// The row is the main profile's (`is_default_profile`), on every profile's list.
+    public var isDefaultProfile: Bool?
+    /// The git repository the chat ran in (`git_repo_root`), when it ran in one.
+    public var gitRepoRoot: String?
+    /// The profile the row is keyed under when it isn't the gateway's own (`ProfileRowKey`): set by
+    /// the app as it takes in every profile's list, nil for the gateway's own chats, whose keys
+    /// stay as they always were.
+    public var keyProfile: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, source, model, title, preview, pinned, archived
+        case id, source, model, title, preview, pinned, archived, profile
+        case isDefaultProfile = "is_default_profile"
+        case gitRepoRoot = "git_repo_root"
+        case keyProfile = "_key_profile"
         case lastReadAt = "last_read_at"
         case startedAt = "started_at"
         case endedAt = "ended_at"
@@ -85,6 +99,10 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         pinned = (try? c.decodeIfPresent(Bool.self, forKey: .pinned)) ?? false
         archived = (try? c.decodeIfPresent(Bool.self, forKey: .archived)) ?? false
         isInternalChild = (try? c.decodeIfPresent(Bool.self, forKey: .isInternalChild)) ?? false
+        profile = (try? c.decodeIfPresent(String.self, forKey: .profile)).flatMap { $0?.isEmpty == false ? $0 : nil }
+        isDefaultProfile = try? c.decodeIfPresent(Bool.self, forKey: .isDefaultProfile)
+        gitRepoRoot = (try? c.decodeIfPresent(String.self, forKey: .gitRepoRoot)).flatMap { $0?.isEmpty == false ? $0 : nil }
+        keyProfile = try? c.decodeIfPresent(String.self, forKey: .keyProfile)
         // Present and null means never tracked (read); absent means not served at all.
         if c.contains(.lastReadAt) {
             readMark = ReadMark(lastReadAt: try? c.decodeIfPresent(Double.self, forKey: .lastReadAt))
@@ -114,6 +132,10 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         try c.encode(pinned, forKey: .pinned)
         try c.encode(archived, forKey: .archived)
         try c.encode(isInternalChild, forKey: .isInternalChild)
+        try c.encodeIfPresent(profile, forKey: .profile)
+        try c.encodeIfPresent(isDefaultProfile, forKey: .isDefaultProfile)
+        try c.encodeIfPresent(gitRepoRoot, forKey: .gitRepoRoot)
+        try c.encodeIfPresent(keyProfile, forKey: .keyProfile)
         switch readMark {
         case nil: break
         case .untracked: try c.encodeNil(forKey: .lastReadAt)
@@ -158,8 +180,30 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         lastActive ?? startedAt ?? .distantPast
     }
 
-    /// Stable identity across compression rotations (the live id changes, the root does not).
-    public var stableID: String { lineageRootID ?? id }
+    /// Hermes' identity across compression rotations (the live id changes, the root does not).
+    public var lineageID: String { lineageRootID ?? id }
+
+    /// The row's key in the app: its lineage id, under its profile when it isn't the gateway's own
+    /// (`ProfileRowKey`). The chat list, the open chat, unread marks, the transcript cache and
+    /// notices all key chats by it, so two profiles' chats with one id never share a row.
+    public var stableID: String { ProfileRowKey.key(profile: keyProfile, lineageID: lineageID) }
+
+    /// The repository's folder name for the row's project mark (`git_repo_root`'s last part).
+    public var projectName: String? {
+        guard let root = gitRepoRoot?.trimmingCharacters(in: .whitespaces), !root.isEmpty else { return nil }
+        let name = root.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init) ?? ""
+        return name.isEmpty ? nil : name
+    }
+
+    /// A chat known only by its row key (a restored selection, a notice): the session it names,
+    /// under its profile.
+    public static func placeholder(forKey key: String) -> HermesSession {
+        let parsed = ProfileRowKey.parse(key)
+        var session = HermesSession(id: parsed.lineageID)
+        session.keyProfile = parsed.profile
+        session.profile = parsed.profile
+        return session
+    }
 
     /// The session was started from this app or another API client.
     public var isFromAPI: Bool { source == nil || source == "api_server" }

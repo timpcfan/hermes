@@ -2260,7 +2260,8 @@ def method_session_resume(params):
             session = STORED[add_session(profile, "Untitled", source="desktop", sid=stored)]
         if session is None or session["profile"] != profile:
             raise RPCError(4007, "session not found")
-        sid = next((k for k, r in RUNTIME.items() if r["stored"] == stored and not r.get("dead")), None)
+        sid = next((k for k, r in RUNTIME.items()
+                    if r["stored"] == stored and r["profile"] == profile and not r.get("dead")), None)
         if sid is None:
             retire_undrained_queue_rows(session["messages"])
             sid = new_runtime(stored, profile)
@@ -2808,7 +2809,10 @@ class Handler(BaseHTTPRequestHandler):
             # fenced edit must name (`runtime_revision`).
             sid = unquote(match.group(1))
             profile = (query.get("profile", ["default"])[0] or "default")
-            chat = gateway_chat(sid, profile) if STORED.get(sid) is None else None
+            # Two profiles can keep a chat under the same id: the store's row only answers for its
+            # own profile, and the gateway's rows only exist in the default profile.
+            stored = STORED.get(sid)
+            chat = gateway_chat(sid, profile) if stored is None or stored["profile"] != profile else None
             if chat is not None:
                 if match.group(2):
                     if CONFIG.get("plain_edits"):
@@ -2891,7 +2895,8 @@ class Handler(BaseHTTPRequestHandler):
         profile = (body.get("profile") or "default").strip() or "default"
         # Like web_routers/sessions.py: flags echo back with the title.
         flags = {key: bool(body[key]) for key in ("archived", "hidden", "pinned", "unread") if key in body}
-        chat = gateway_chat(sid, profile) if STORED.get(sid) is None else None
+        stored = STORED.get(sid)
+        chat = gateway_chat(sid, profile) if stored is None or stored["profile"] != profile else None
         if chat is not None:
             if fenced and int(body["expected_revision"]) != chat.get("_revision", 0):
                 return self.send_json(409, {"detail": "revision_conflict"})
@@ -2915,8 +2920,9 @@ class Handler(BaseHTTPRequestHandler):
             session["revision"] = session.get("revision", 0) + 1
             if "unread" in body:
                 session["last_read_at"] = 0.0 if body["unread"] else time.time()
-            if "title" in body:
-                session["title"] = body["title"]
+            for key in ("title", "archived", "hidden", "pinned"):
+                if key in body:
+                    session[key] = body[key]
             return self.send_json(200, {"ok": True, "title": session.get("title"), **flags})
 
     def do_POST(self):
@@ -3332,6 +3338,9 @@ def main():
     parser.add_argument("--inbox-gtd", action="store_true",
                         help="the inbox's regions: settled chats, every source, and a deploy that works, then waits "
                              "for an approval, then finishes, on a 2-minute cycle: inbox.py")
+    parser.add_argument("--cross-profile", action="store_true",
+                        help="every profile's chats in one list (/api/profiles/sessions): chats in other profiles, "
+                             "one sharing its id with a gateway chat, read marks and project roots: inbox.py")
     parser.add_argument("--idle", action="store_true",
                         help="nothing runs on its own (no demo test run in Fix the reconnect after sleep), so the "
                              "inbox has no Working region unless a scenario starts one")
@@ -3420,7 +3429,7 @@ def main():
         spec = importlib.util.spec_from_file_location("mock_inbox", here / "inbox.py")
         inbox = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(inbox)
-        inbox.install(globals(), gateway, demo=args.inbox_demo, gtd=args.inbox_gtd)
+        inbox.install(globals(), gateway, demo=args.inbox_demo, gtd=args.inbox_gtd, cross_profile=args.cross_profile)
         spec = importlib.util.spec_from_file_location("mock_helpers", here / "helpers.py")
         helpers = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helpers)

@@ -58,6 +58,12 @@ public struct LastLineBook: Codable, Sendable, Equatable {
         if entries.count > Self.capacity { trim() }
     }
 
+    /// A row leaves the list for good (another profile's chat when Bot Mode goes away): its line
+    /// goes with it.
+    public mutating func forget(_ key: String) {
+        entries[key] = nil
+    }
+
     private mutating func trim() {
         let kept = entries.sorted { $0.value.asOf > $1.value.asOf }.prefix(Self.capacity)
         entries = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })

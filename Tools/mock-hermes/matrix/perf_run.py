@@ -317,20 +317,26 @@ def outside_cores(before, after, wall, ours):
 
 
 class Mock:
-    def __init__(self, out, turns):
+    def __init__(self, out, turns, many_chats=0, cross_profile=False):
         self.out, self.turns, self.process = out, turns, None
+        # A/B at list size: --many-chats N seeds N ordinary chats, --cross-profile the other
+        # profiles' rows. Both builds meet the same mock, so only the app's own work differs.
+        self.many_chats, self.cross_profile = many_chats, cross_profile
 
     def start(self, name, turns=None):
         for port in (BACKEND, GATEWAY):
             if subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"], capture_output=True).stdout:
                 raise SystemExit(f"port {port} is taken: set HERMES_PERF_PORTS=<backend>,<gateway>")
         self.log = open(os.path.join(self.out, f"{name}.mock.log"), "w")
-        self.process = subprocess.Popen(
-            [sys.executable, "-I", os.path.join(REPO, "Tools/mock-hermes/backend.py"), "--port", str(BACKEND),
-             "--gateway-port", str(GATEWAY), "--gateway-key", KEY, "--push-relay", "none", "--app-plugins", "current",
-             "--quiet-world",
-             "--long-chat", "--long-chat-turns", str(turns or self.turns), "--long-chat-rich"],
-            stdout=self.log, stderr=subprocess.STDOUT)
+        command = [sys.executable, "-I", os.path.join(REPO, "Tools/mock-hermes/backend.py"), "--port", str(BACKEND),
+                   "--gateway-port", str(GATEWAY), "--gateway-key", KEY, "--push-relay", "none", "--app-plugins", "current",
+                   "--quiet-world",
+                   "--long-chat", "--long-chat-turns", str(turns or self.turns), "--long-chat-rich"]
+        if self.many_chats:
+            command += ["--many-chats", str(self.many_chats)]
+        if self.cross_profile:
+            command += ["--cross-profile"]
+        self.process = subprocess.Popen(command, stdout=self.log, stderr=subprocess.STDOUT)
         for _ in range(150):
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{GATEWAY}/health", timeout=1)
@@ -590,6 +596,10 @@ def main():
     parser.add_argument("--only", default=",".join(DEFAULT_SCENARIOS), help="scenarios, comma-separated")
     parser.add_argument("--budgets", default=os.path.join(HERE, "perf_budgets.json"))
     parser.add_argument("--long-chat-turns", type=int, default=300)
+    parser.add_argument("--many-chats", type=int, default=0, metavar="N",
+                        help="seed N ordinary chats in the mock, to measure at list size")
+    parser.add_argument("--cross-profile", action="store_true",
+                        help="also seed the other profiles' chats (--cross-profile), for the aggregated list")
     parser.add_argument("--no-warmup", action="store_true", help="skip each build's unmeasured first launch")
     parser.add_argument("--shots", action="store_true",
                         help="a screenshot in each scenario's first run, to see what it measured (costs that run a little)")
@@ -619,7 +629,7 @@ def main():
     builds = {"a": build_ref(args.ref, platform, args.out) if args.ref else {"app": os.path.abspath(args.app)}}
     if args.ref_b or args.app_b:
         builds["b"] = build_ref(args.ref_b, platform, args.out) if args.ref_b else {"app": os.path.abspath(args.app_b)}
-    mock = Mock(args.out, args.long_chat_turns)
+    mock = Mock(args.out, args.long_chat_turns, many_chats=args.many_chats, cross_profile=args.cross_profile)
     began = time.time()
     report = {"started": datetime.datetime.now().isoformat(timespec="seconds"), "platform": platform,
               "device": device.describe(), "builds": builds, "rounds": args.rounds, "scenarios": {}}

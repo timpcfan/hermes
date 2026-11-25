@@ -483,20 +483,24 @@ Rules:
   calls `request.answer {id, result: {answers}}`; a question with several parts gets the answer for
   the first and the rest in the app.
 - **Reply…** on a reply or a message sends a new message: a chat's as a new run on the API server
-  (`POST /v1/runs`), a Bot Chat's with `session.resume` in the Bot's profile and `prompt.submit`, a
-  room's with `groups.send`. Which of the first two is decided by the chat, as a tap is: a chat
-  that isn't a Bot's own runs on the gateway even when its notice carries a profile, so it needs no
-  Bot Mode. On a card that needs you it comments on the card and moves it back to Ready
+  (`POST /v1/runs`), a Bot Chat's (or, when the list holds every profile's chats, another profile's
+  chat's) with `session.resume` in that profile and `prompt.submit`, a room's with `groups.send`.
+  Which route is decided by the chat, as a tap is: a chat that isn't a Bot's own and isn't another
+  profile's runs on the gateway even when its notice carries a profile, so it needs no Bot Mode.
+  On a card that needs you it comments on the card and moves it back to Ready
   ([board.md](board.md)).
 - A tap or **Open** shows the chat, Bot Chat, room, Tasks, the card or Tidying (`NoticeRouting`,
-  for pushes and the Mac's own notifications alike). The chat a notice names decides, never its
-  profile: a Bot's own chat (the roster's, or the copy shared with the extension) opens the Bot,
-  and any other chat opens that chat, by its place in the list or, when the list doesn't hold it
-  yet, by its id. The plugin tags a reply with the profile that ran it, so a gateway that runs
-  under a profile tags every chat it has, and nothing tells the app which profile that is when
-  its address isn't a `/p/<name>` one. A Bot's reply that names no chat opens the Bot. A tap that
-  launches the app waits up to 5 s for the gateway's Bots and chats (not the copies on the
-  device) before it decides.
+  for pushes and the Mac's own notifications alike). The chat a notice names decides. A Bot's own
+  chat (the roster's, or the copy shared with the extension) opens the Bot. When the list holds
+  every profile's chats ([inbox.md](inbox.md) §9), the notice's profile picks the row: the chat
+  opens by its `(profile, id)` key, so two profiles sharing an id never open each other's chat,
+  and a chat the list doesn't hold yet opens under its profile's key (`p:<profile>:<id>`), which
+  the inbox can place and read. Otherwise the profile is not consulted: the plugin tags a reply
+  with the profile that ran it, so a gateway that runs under a profile tags every chat it has,
+  and nothing tells the app which profile that is when its address isn't a `/p/<name>` one; any
+  other chat opens by its place in the list or, when the list doesn't hold it yet, by its id.
+  A Bot's reply that names no chat opens the Bot. A tap that launches the app waits up to 5 s for
+  the gateway's Bots and chats (not the copies on the device) before it decides.
 - A reply or message it opens is fetched at once (`ConversationModel.notificationOpened`), not
   when the roster next notices the chat moved: on a busy Mac that waited for the socket, then
   `profiles.list`, then the whole page. Until the newest row is Hermes's, stored no earlier than
