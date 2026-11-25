@@ -855,7 +855,13 @@ Discord, the terminal and an editor each; an empty chat; and three that look liv
 cycle: "Deploy hk3 nginx" works for 15 s, waits for an approval for 45 s, then finishes and rests;
 the pinned "Review my recent work" and "Migrate the board to Swift 6" keep working. The
 dashboard's list answers `archived=only|include|exclude` with `total` and back-fills pinned chats
-across the archived filter, as Hermes does. `--idle` leaves out the mock's standing test run ("Fix the reconnect
+across the archived filter, as Hermes does. `--cross-profile` seeds researcher, writer and ops
+chats (some in repositories, one settled per profile, one id shared with the gateway's own) and
+serves `GET /api/profiles/sessions`, the aggregated list (`docs/inbox.md` §9): every profile's
+rows merged by `last_active`, `archived=exclude|only`, pins back-filled per profile, and
+`PATCH`/`DELETE /api/sessions/{id}?profile=` and `session.branch` resolve a chat under its profile,
+a shared id included; without the flag the endpoint answers 404 as an older Hermes does.
+`--idle` leaves out the mock's standing test run ("Fix the reconnect
 after sleep"), so nothing runs on its own: the inbox without Working, or Working with just the
 `--inbox-gtd` pair.
 `VoiceOverFocusUITests` turns VoiceOver on inside the simulator, puts it on a row or a message, and only then

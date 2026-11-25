@@ -232,7 +232,9 @@ instead of each chat's line. The first frame still lists 40 rows (`ChatListSnaps
 Settled come after them, and older pages load at the very end, below Settled.
 
 **Settled's rows** come from the Dashboard backend only: `GET /api/sessions?archived=only&order=recent`
-with `limit`/`offset`, which answers `total` (`BackendClient.archivedSessions`, `SettledChats`).
+with `limit`/`offset`, which answers `total` (`BackendClient.archivedSessions`, `SettledChats`);
+while the list holds every profile's chats, from `GET /api/profiles/sessions?archived=only` under
+the Profile filter's choice (§9).
 Folded, the app asks for the count alone (`limit=1`, after each list refresh) and keeps no rows;
 open, pages carry a generation, so a refresh and a page on its way can't interleave
 (`SettledList`). Hermes back-fills pinned chats into every page across the archived filter (its
@@ -449,9 +451,15 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   on the Mac in the source list's titlebar and as View ▸ Filter. A filter that differs from the
   standard one fills the button and puts "Filtered: No Telegram · Unread ✕" at the top of the
   list; ✕ shows everything again. Older pages load while the end of the list is on screen, unless
-  Unread or Needs You narrows it. Settled isn't filtered: its count is Hermes'. Search finds every
+  Unread or Needs You narrows it. Settled isn't narrowed by them: its count is Hermes' (the
+  Profile filter does hold it, §9). Search finds every
   chat whatever the filter, scheduled runs only under its Tasks filter ([search.md](search.md) §1).
   Upstream's Show and Only (`InboxShow`) stay in HermesKit for its other readers.
+- **Profile** (this fork, while the list holds every profile's chats, §9): All Profiles, or one
+  profile from the rows, the gateway's own first. It holds every region, Settled included; Main
+  filters on the device (`InboxScope.holds`), Settled asks the backend for that profile's page
+  (`SettledChats`). The choice is kept with the filter and waits while Bot Mode is away
+  (`InboxScope.withoutProfile`).
 - **Empty lists** (`CaughtUpState`): Unread or Needs You with nothing left shows "You're all caught
   up" or "Nothing needs you"; sources that hold no chat, once every page is in, "No chats from
   these sources". A gateway with no chats at all shows "No chats yet" instead.
@@ -498,6 +506,16 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
     again (`UnreadStore.catchUpMarks`), so a chat read on another device while it slept stays off.
     Set with `UNUserNotificationCenter.setBadgeCount` and `NSApp.dockTile.badgeLabel`.
 
+### Paging
+
+The list loads 40 rows first, then a page at a time while the end is on screen
+(`BotWorkspace.listPaging`, `ChatListPaging`). A refresh starts a new generation: a page asked for
+before it lands on nothing, so its rows, read against the old list, can't come back after the fresh
+ones. Every profile's list (§9) pages the same way, through the merged order: Hermes reads each
+profile's newest rows and merges them, so the app asks for `limit + offset` per profile
+(`BackendClient.profileSessions` over-fetches, capped at 400) and pages by the merged offset.
+Settled pages on its own (`SettledList`, §2a), with the same generation rule.
+
 ## 6. Accessibility
 
 - Rows read "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs"; live "…, Hermes: Running
@@ -532,7 +550,7 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 
 Against the mock (`Tools/mock-hermes/backend.py --gateway-port 18642`, `inbox.py`; add
 `--inbox-demo` for a chat that keeps writing and one waiting on an approval, `--inbox-gtd` for the
-inbox's regions) and a real Hermes:
+inbox's regions, `--cross-profile` for every profile's chats, §9) and a real Hermes:
 
 - A reply that lands while you're away makes the row semibold with a count equal to the replies
   after `last_read_at` (seeded: Release prep 3, Morning briefing 1, Stand-up summary the dot).
@@ -608,9 +626,58 @@ inbox's regions) and a real Hermes:
   `SidewaysScrollTests` (which Mac scrolls reply), `InboxSectionsTests` and `InboxReturnsTests`
   (regions, their order, returns and their grace), `SettledListTests` (Settled's paging and the
   back-fill filter), `InboxScopeTests` (sources, empty chats, the state filters, the stored
-  filter).
+  filter), `ProfileRowsTests` (row keys, colliding ids, tagging, badges, the page and its paging,
+  Settled across profiles, read marks, the scope's profile filter).
+- Every profile's chats (`backend.py --cross-profile`, §9): rows from researcher, writer and ops
+  beside the gateway's own, each with its profile badge and its repository's name where it ran in
+  one; the shared id shows as two rows. Profile → writer holds only writer's rows in every region,
+  Settled included; All Profiles brings the rest back. Rename, pin, settle and delete a writer row:
+  the calls carry `profile=writer` and the other profile's row with the same id stays. Quit Bot
+  Mode: the list is the gateway's own again, no badges, no Profile filter, and reconnecting brings
+  them back.
 
 ## 8. Setup
 
 Read marks shared between devices and Bots' unread need Bot Mode ([setup.md](setup.md) §4.1);
 unread that arrives while the app is closed needs notifications and the push plugin (§4.13).
+
+## 9. Every profile's chats (this fork)
+
+While Bot Mode is connected, the list holds every profile's chats, not only the gateway's own
+(`BotWorkspace.listsEveryProfile`): one gateway record, one list, whichever profile a chat ran in.
+
+- **The list** comes from the backend: `GET /api/profiles/sessions?profile=all&order=recent`
+  with `archived=exclude|only`, `limit`/`offset` (`BackendClient.profileSessions`). Hermes reads
+  each profile's newest rows, merges them by `last_active` and pages the merged order (§5 Paging);
+  each profile's pins are back-filled across the archived filter, so the app keeps rows by their
+  own `archived`, as with the gateway's own list (§2a). Rows carry `profile`, `is_default_profile`
+  and `git_repo_root`. The regions, read marks and Working are as everywhere else: Working still
+  reads `LiveActivity`'s sets, never a row's `is_active`.
+- **Row keys** (`ProfileRowKey`): the gateway's own chats keep their lineage id, so what this
+  device kept for them (unread marks, cached transcripts, drafts) carries over untouched; another
+  profile's take `p:<profile>:<lineage id>`, so two profiles' chats with one id never share a row.
+  The list, the selection, the open chats, unread, the transcript cache and notices all key chats
+  by `HermesSession.stableID`. A chat known only by its key (a restored selection, a notice) opens
+  as `HermesSession.placeholder(forKey:)`.
+- **Badges**: every row says whose it is, by the time (`RowProfileMark`): "money", or
+  "paimon · hermesapp" when it ran in a repository (`git_repo_root`'s folder name,
+  `HermesSession.projectName`; none when it ran in no repository). VoiceOver reads the mark with
+  the row.
+- **The filter** has Profile (§5): All Profiles by default, one profile at a time, held in
+  `InboxScope.profile` and applied to every region, Settled included (its pages ask the backend
+  for that profile).
+- **Row actions** go to the backend under the row's profile while Bot Mode is connected:
+  rename, pin, settle and delete as `PATCH`/`DELETE /api/sessions/{id}?profile=<name>`
+  (`BackendClient.editSession` with its mutation snapshot, one retry on a conflict;
+  `deleteSession`). Branching another profile's chat is `session.branch` with its stored id,
+  `profile` and an idempotency key, so a retry lands one branch (`BotWorkspace.fork`).
+- **Reading**: an aggregated row's badge reads Hermes' `last_read_at` like any row (§1); marking
+  read goes through the same mutation-snapshot call under the row's profile.
+- **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it
+  always was: no badges, no Profile filter (the kept choice waits, `InboxScope.withoutProfile`),
+  and the device's marks for other profiles' rows are dropped (`UnreadStore.forgetProfiled`). A
+  Hermes without the endpoint answers 404; the app falls back the same way, silently, and doesn't
+  ask again while that connection lives (`profilesRouteMissing`).
+- **The mock**: `backend.py --cross-profile` seeds researcher, writer and ops chats (some in
+  repositories, one settled per profile, one id shared with the gateway's own) and serves the
+  endpoint; without it the endpoint answers 404 as an older Hermes does.
