@@ -471,16 +471,49 @@ def run_dev_server(sid):
     emit(sid, "terminal.close", {"process_id": pid})
 
 
+BRANCHED = {}  # idempotency_key -> (answer, at): a retried branch gets the same chat back
+
+
 def session_branch(params):
-    """A new chat with the first `count` visible rows (user / assistant with text)."""
+    """A new chat with the first `count` visible rows (user / assistant with text). The parent
+    is a runtime id or a stored one; a stored id in another profile branches inside that profile
+    (`docs/inbox.md` §9), with the rows read from the backend's store."""
     sid = params.get("session_id") or ""
+    profile = params.get("profile") or None
+    key = params.get("idempotency_key") or None
+    with B["LOCK"]:
+        now = time.time()
+        for old in [k for k, (_, at) in BRANCHED.items() if now - at > 300]:
+            BRANCHED.pop(old, None)
+        if key in BRANCHED:
+            answer, _ = BRANCHED[key]
+            BRANCHED[key] = (answer, now)
+            return answer
     runtime = B["RUNTIME"].get(sid)
-    if runtime is None:
-        raise B["RPCError"](4001, "session not found")
-    parent = runtime["stored"]
-    with G.LOCK:
-        rows = [dict(r) for r in G.MESSAGES.get(parent, []) if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
-        title = (G.SESSIONS.get(parent) or {}).get("title") or "Branch"
+    if runtime is not None:
+        parent, home = runtime["stored"], runtime["profile"]
+    else:
+        # A stored id: the profile names whose chat it is (two profiles can share an id).
+        with B["LOCK"]:
+            session = B["STORED"].get(sid)
+        if session is not None and (profile is None or session["profile"] == profile):
+            parent, home = sid, session["profile"]
+        elif profile in (None, "default"):
+            with G.LOCK:
+                if sid not in G.SESSIONS:
+                    raise B["RPCError"](4001, "session not found")
+            parent, home = sid, "default"
+        else:
+            raise B["RPCError"](4001, "session not found")
+    if home == "default":
+        with G.LOCK:
+            rows = [dict(r) for r in G.MESSAGES.get(parent, []) if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
+            title = (G.SESSIONS.get(parent) or {}).get("title") or "Branch"
+    else:
+        with B["LOCK"]:
+            session = B["STORED"][parent]
+            rows = [dict(r) for r in session["messages"] if r["role"] in ("user", "assistant") and (r.get("content") or "").strip()]
+            title = session.get("title") or "Branch"
     count = params.get("count")
     if isinstance(count, (int, float)) and count > 0:
         rows = rows[:int(count)]
@@ -488,13 +521,24 @@ def session_branch(params):
         raise B["RPCError"](4008, "nothing to branch — send a message first")
     stored = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     now = time.time()
-    with G.LOCK:
-        G.session_row(stored, f"{title} (branch)", "hermes_app", now, now, "")
-    for r in rows:
-        G.add_message(stored, r["role"], r["content"])
-    new_sid = new_chat_runtime(stored)
-    return {"session_id": new_sid, "stored_session_id": stored, "title": f"{title} (branch)", "parent": parent,
-            "message_count": len(rows), "messages_omitted": True}
+    if home == "default":
+        with G.LOCK:
+            G.session_row(stored, f"{title} (branch)", "hermes_app", now, now, "")
+        for r in rows:
+            G.add_message(stored, r["role"], r["content"])
+        new_sid = new_chat_runtime(stored)
+    else:
+        B["add_session"](home, f"{title} (branch)", source="hermes_app", started=now, sid=stored)
+        for r in rows:
+            B["add_message"](stored, r["role"], r["content"])
+        new_sid = B["new_runtime"](stored, home)
+        B["RUNTIME"][new_sid]["kind"] = "chat"
+    answer = {"session_id": new_sid, "stored_session_id": stored, "title": f"{title} (branch)", "parent": parent,
+              "message_count": len(rows), "messages_omitted": True}
+    if key:
+        with B["LOCK"]:
+            BRANCHED[key] = (answer, time.time())
+    return answer
 
 
 # ── Requests (docs/quick-actions.md) ─────────────────────────────────────────
