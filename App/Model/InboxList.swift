@@ -285,22 +285,9 @@ extension BotWorkspace {
     }
 }
 
-/// The inbox's regions as last built, and what they were built from (`BotWorkspace.inboxSections`).
-struct InboxSectionsCache {
-    struct Key: Equatable {
-        var sessions: Int
-        var activity: InboxActivity
-        var returns: [String: Date]
-        var lines: Int
-        var scope: InboxScope
-        /// What the filter reads besides the list (the unread badges under Unread).
-        var filterInputs: Int
-        var waiting: [String]
-    }
-
-    let key: Key
-    let sections: InboxSections<HermesSession>
-}
+/// The workspace's regions cache: the shape and its rule live in HermesKit
+/// (`InboxSectionsCache`), where they are tested.
+typealias InboxSectionsCache = HermesKit.InboxSectionsCache<HermesSession>
 
 extension SidebarItem {
     /// A project's home, its Board or All Projects: screens this build doesn't have
