@@ -484,6 +484,9 @@ final class BotWorkspace: Identifiable {
 
     private(set) var preferredModel: ModelSelection?
     private(set) var preferredEffort: ReasoningEffort?
+    /// The profile the last new chat started in on this device (`docs/inbox.md` §9), nil for the
+    /// gateway's own: each fresh draft starts there until the person picks another.
+    private(set) var preferredNewChatProfile: String?
 
     @ObservationIgnored private var conversations: [String: ConversationModel] = [:]
     /// Chats with the person's own turn running (`ownTurnChanged`, `ownTurnCutOff`).
@@ -517,6 +520,7 @@ final class BotWorkspace: Identifiable {
             preferredModel = try? JSONDecoder().decode(ModelSelection.self, from: data)
         }
         preferredEffort = defaults.string(forKey: "effort.\(bot.id.uuidString)").flatMap(ReasoningEffort.init(rawValue:))
+        preferredNewChatProfile = defaults.string(forKey: "newChatProfile.\(bot.id.uuidString)")
         draft = ConversationModel(workspace: self)
         projects = ProjectsModel(workspace: self)
         settled = SettledChats(workspace: self)
@@ -975,10 +979,14 @@ final class BotWorkspace: Identifiable {
                 conversations[resent.rowKey] = conversation
                 restored.append(resent)
                 sends.append((conversation, message))
-            case .lookFor(let sessionID):
-                let conversation = conversations[sessionID] ?? ConversationModel(workspace: self, session: HermesSession(id: sessionID))
+            case .lookFor:
+                // Under its profile's key (`docs/inbox.md` §9), so the chat reads the store the
+                // create ran in, not the gateway's own.
+                var row = HermesSession.placeholder(forKey: chat.rowKey)
+                row.profile = chat.profile ?? row.profile
+                let conversation = conversations[chat.rowKey] ?? ConversationModel(workspace: self, session: row)
                 conversation.restoreWaiting(chat)
-                conversations[sessionID] = conversation
+                conversations[chat.rowKey] = conversation
                 restored.append(chat)
                 conversation.loadIfNeeded()
             }
@@ -1065,6 +1073,18 @@ final class BotWorkspace: Identifiable {
             defaults.removeObject(forKey: "model.\(bot.id.uuidString)")
         }
         defaults.set(effort?.rawValue, forKey: "effort.\(bot.id.uuidString)")
+    }
+
+    /// A new chat's chosen profile, kept for the next one as the model choice is. Nil is the
+    /// gateway's own, so nothing is stored for it.
+    func rememberNewChatProfile(_ profile: String?) {
+        preferredNewChatProfile = profile
+        let key = "newChatProfile.\(bot.id.uuidString)"
+        if let profile, !profile.isEmpty, profile != bot.profileName {
+            UserDefaults.standard.set(profile, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     // MARK: - Connection

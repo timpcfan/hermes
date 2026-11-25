@@ -338,6 +338,14 @@ final class ConversationModel: Identifiable {
     /// `nil` means the gateway's configured default model.
     var model: ModelSelection?
     var reasoningEffort: ReasoningEffort?
+    /// The profile a new chat starts in (`docs/inbox.md` §9): nil follows the last choice this
+    /// device remembered for the gateway. Only a chat with no session of its own reads it.
+    var newChatProfile: String? {
+        didSet {
+            guard newChatProfile != oldValue, sessionID == nil else { return }
+            workspace?.rememberNewChatProfile(newChatProfile)
+        }
+    }
     /// Hermes asked before switching to an expensive model (`confirm_required`): the chat keeps its
     /// model until the person confirms.
     var modelConfirmation: ModelConfirmation?
@@ -700,6 +708,7 @@ final class ConversationModel: Identifiable {
         self.stableKey = session?.stableID
         self.model = workspace.preferredModel
         self.reasoningEffort = workspace.preferredEffort
+        self.newChatProfile = workspace.preferredNewChatProfile
         if let key = session?.stableID {
             goal = UserDefaults.standard.string(forKey: "goal.\(key)")
             queue = FollowUpQueueStore.load(key: key)
@@ -716,6 +725,7 @@ final class ConversationModel: Identifiable {
         self.botName = nil
         self.model = waiting.model ?? workspace.preferredModel
         self.reasoningEffort = waiting.effort ?? workspace.preferredEffort
+        self.newChatProfile = waiting.profile
         self.waitingChat = waiting
         self.queue = queue
         self.keptFromRelaunch = true
@@ -934,11 +944,13 @@ final class ConversationModel: Identifiable {
     }
 
     /// The profile gateway calls are scoped to: the Bot, this row's own profile when the list
-    /// holds every profile's chats (`docs/inbox.md` §9), or the gateway's own. The row's key names
-    /// its profile, so this reads no list state: a refresh can't dirty what observes it.
+    /// holds every profile's chats (`docs/inbox.md` §9), a new chat's chosen profile, or the
+    /// gateway's own. The row's key names its profile, so this reads no list state: a refresh
+    /// can't dirty what observes it.
     private var gatewayProfile: String? {
         if let botName { return botName }
         if let stableKey, let profile = ProfileRowKey.parse(stableKey).profile { return profile }
+        if sessionID == nil, let profile = waitingChat?.profile ?? newChatProfile { return profile }
         return workspace?.bot.profileName
     }
     /// The profile whose config Turn On Checkpoints writes.
@@ -4622,7 +4634,7 @@ final class ConversationModel: Identifiable {
         outgoing = OutboxItem(message: message, sentAt: .now, knownNewestID: rawMessages.last?.id)
         if sessionID == nil, !isBotChat, waitingChat == nil {
             waitingChat = WaitingChat(title: message.line, model: model, effort: reasoningEffort,
-                                      projectID: nil, requestedID: newSessionID)
+                                      projectID: nil, profile: newChatProfile, requestedID: newSessionID)
         }
         deliveryWatch = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -4706,10 +4718,11 @@ final class ConversationModel: Identifiable {
         let before = chat.outboxKey
         chat.created(stored)
         waitingChat = chat
-        guard before != stored else { return }
+        let after = chat.outboxKey
+        guard before != after else { return }
         if !queue.isEmpty {
             FollowUpQueueStore.save([], key: before)
-            FollowUpQueueStore.save(queue, key: stored)
+            FollowUpQueueStore.save(queue, key: after)
         }
         if delivery == .waiting {
             FollowUpQueueStore.saveOutbox([], key: before)
@@ -5733,13 +5746,20 @@ extension ConversationModel {
         modelFollow.sent(model)
         roster.attach(self)
         sessionID = stored
-        stableKey = stored
+        // Another profile's new chat keeps its row under that profile (`docs/inbox.md` §9), so
+        // its keys, history reads and notices all name the profile the create ran in.
+        var row = HermesSession(id: stored)
+        if let profile = gatewayProfile, !ProfileRows.isHome(profile, home: workspace?.bot.profileName) {
+            row.profile = profile
+            row.keyProfile = profile
+        }
+        stableKey = row.stableID
         waitingChatCreated(stored)
-        if let workspace { inspectorStore?.restore(chatKey: stored, workspaceID: workspace.id) }
+        if let workspace { inspectorStore?.restore(chatKey: row.stableID, workspaceID: workspace.id) }
         if let info = LiveWorkspace(info: created["info"]) { liveWorkspace = info }
         sessionReported(created["info"])
         apply(.sessionChanged(stored))
-        workspace?.adopt(self, session: HermesSession(id: stored))
+        workspace?.adopt(self, session: row)
         return runtime
     }
 
