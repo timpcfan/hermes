@@ -680,6 +680,14 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   can't dirty what observes it). The turn itself, steering and approvals ride the runtime the
   resume minted, which Hermes already binds to that profile. Two profiles' chats with one id
   resume as two runtimes: the profile names whose chat opens.
+- **New Chat** picks its profile (`NewChatProfileButton` beside the model picker, only while the
+  chat has no session and the list holds every profile's chats): the roster's profiles with the
+  gateway's own first, the last choice remembered per gateway on this device
+  (`BotWorkspace.rememberNewChatProfile`). The create, the first prompt and the chat's history all
+  run in the chosen profile (`ConversationModel.newChatProfile` feeds `gatewayProfile` until
+  Hermes makes the chat), and the new row takes that profile's key and badge. A waiting first
+  message keeps its profile too, so a relaunch resumes under the same key. Bot Mode not connected,
+  New Chat is as it always was: the gateway's own profile, no picker.
 - **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it
   always was: no badges, no Profile filter (the kept choice waits, `InboxScope.withoutProfile`),
   and the device's marks for other profiles' rows are dropped (`UnreadStore.forgetProfiled`). A

@@ -637,7 +637,14 @@ struct ChatScreen: View {
         if let roster, let name = conversation.botName {
             BotChatTitle(roster: roster, botName: name, conversation: conversation)
         } else {
-            ModelPickerButton(conversation: conversation, workspace: workspace)
+            // One kind of view inside the stack (the Mac toolbar rule): the profile picker joins
+            // the model's only while this draft can still choose where it starts.
+            HStack(spacing: 4) {
+                ModelPickerButton(conversation: conversation, workspace: workspace)
+                if workspace.listsEveryProfile, conversation.sessionID == nil {
+                    NewChatProfileButton(conversation: conversation, workspace: workspace)
+                }
+            }
         }
     }
 
