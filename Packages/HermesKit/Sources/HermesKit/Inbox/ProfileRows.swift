@@ -84,8 +84,12 @@ public struct ProfileSessionsPage: Decodable, Sendable {
     public init(from decoder: any Decoder) throws {
         enum Keys: String, CodingKey { case sessions, data, total }
         let c = try decoder.container(keyedBy: Keys.self)
-        let rows = (try? c.decode([LossyElement<HermesSession>].self, forKey: .sessions))
-            ?? (try c.decode([LossyElement<HermesSession>].self, forKey: .data))
+        let rows: [LossyElement<HermesSession>]
+        if let given = try? c.decode([LossyElement<HermesSession>].self, forKey: .sessions) {
+            rows = given
+        } else {
+            rows = try c.decode([LossyElement<HermesSession>].self, forKey: .data)
+        }
         sessions = rows.compactMap(\.value)
         total = try? c.decodeIfPresent(Int.self, forKey: .total)
     }
