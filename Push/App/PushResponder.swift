@@ -225,8 +225,9 @@ enum PushResponder {
     /// Reply…: a new message in that chat (or room). The turn runs on the gateway; the reply
     /// notifies like any other. Where it goes is decided by the chat, as a tap is (`NoticeRouting`,
     /// `docs/notifications.md` §3): a Bot's own chat is answered in the Bot's profile on the backend,
-    /// any other chat as a run on the gateway, as the app sends there, even when the notice carries
-    /// the profile the gateway runs under.
+    /// and so is another profile's chat when the list holds them all; any other chat as a run on the
+    /// gateway, as the app sends there, even when the notice carries the profile the gateway runs
+    /// under.
     @MainActor
     static func reply(_ notice: PushNotice, with text: String, center: PushCenter) async throws {
         let (workspace, apiKey) = try gateway(for: notice, center: center)
@@ -240,8 +241,14 @@ enum PushResponder {
             return
         }
         guard let chat = notice.chatID else { throw Failure.unknownGateway }
-        if case .bot(let profile)? = center.routing(in: workspace).destination(for: notice) {
-            // A Bot Chat: its session lives in the Bot's profile, on the backend.
+        // A Bot's own chat, or another profile's chat when the list holds them all: its session
+        // lives in that profile, on the backend, so the reply resumes and submits there.
+        let backendProfile: String? = switch center.routing(in: workspace).destination(for: notice) {
+        case .bot(let profile)?: profile
+        case .chat(let key)?: ProfileRowKey.parse(key).profile
+        default: nil
+        }
+        if let profile = backendProfile {
             _ = try await withSocket(workspace) { request in
                 let resumed = try await request("session.resume", [
                     "session_id": .string(chat), "profile": .string(profile), "omit_messages": .bool(true),

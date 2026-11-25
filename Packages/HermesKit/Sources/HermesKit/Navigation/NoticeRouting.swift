@@ -2,9 +2,10 @@ import Foundation
 import HermesPush
 
 /// Where tapping a notice (a push on the iPhone and iPad, the Mac's own notification) takes you,
-/// `docs/notifications.md` §3. The chat a notice names decides, never its profile: a profile says
-/// which Hermes profile ran the turn, which for a gateway that itself runs under a profile is every
-/// chat it has, so only a chat known to be a Bot's own opens the Bot.
+/// `docs/notifications.md` §3. The chat a notice names decides; its profile picks between profiles
+/// only when the list holds them all (`NoticeRouting.home`). Otherwise a profile says which Hermes
+/// profile ran the turn, which for a gateway that itself runs under a profile is every chat it has,
+/// so only a chat known to be a Bot's own opens the Bot.
 public enum NoticeDestination: Equatable, Sendable {
     case card(String, board: String?, projectID: String?)
     /// A tidy's report, for the Bot that tidied (nil for the primary Bot).
@@ -24,10 +25,16 @@ public struct NoticeRouting: Sendable {
     public var botChats: [String: String]
     /// Every listed chat's id and stable id → its stable id.
     public var chatKeys: [String: String]
+    /// The profile the gateway's address serves (`BotConfiguration.profileName`), when the list
+    /// holds every profile's chats (`docs/inbox.md` §9): a notice's profile then names whose chat
+    /// it is, so an unlisted one opens under that profile's key. Nil keeps the old rule — the
+    /// notice's profile can't tell a Bot from the gateway's own.
+    public var home: String?
 
-    public init(botChats: [String: String] = [:], chatKeys: [String: String] = [:]) {
+    public init(botChats: [String: String] = [:], chatKeys: [String: String] = [:], home: String? = nil) {
         self.botChats = botChats
         self.chatKeys = chatKeys
+        self.home = home
     }
 
     /// The chat a notice opens by, when where it goes depends on the Bots and the chat list (a
@@ -52,6 +59,13 @@ public struct NoticeRouting: Sendable {
             return notice.profile.map(NoticeDestination.bot)
         }
         if let bot = botChats[chat] { return .bot(bot) }
+        if let home {
+            // The list holds every profile's chats, so the notice's profile names whose chat this
+            // is. Resolving by (profile, id) keeps two profiles sharing an id apart, and a chat the
+            // list doesn't hold yet opens under its profile's key, which the inbox can place.
+            let key = ProfileRowKey.key(storedID: chat, profile: notice.profile, home: home)
+            return .chat(chatKeys[key] ?? key)
+        }
         if let key = chatKeys[chat] { return .chat(key) }
         // A chat the list doesn't hold yet (started on another device since it loaded, or older than
         // its first page) opens by its id. Its profile doesn't make it a Bot's: on a gateway that runs

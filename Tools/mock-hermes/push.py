@@ -48,7 +48,7 @@ B: dict = {}          # backend.py's globals
 G = None              # server.py (the API server mock), when it runs too
 STATE = {"devices": {}, "presence": {}, "requests": {}, "resolved": [], "activities": {}, "turns": {}, "held": {},
          "sync": {}, "reads": {"chats": {}, "rooms": {}}, "delivered": {}, "cleared": {}, "badges": {},
-         "read_pushes": {}}
+         "read_pushes": {}, "sent": {}}
 SYNC_MIN_INTERVAL = 60  # the plugin's: iOS rations background pushes
 ROOM_MESSAGE_SETTLE = 5.0  # the plugin's: a Bot's streamed message notifies after this quiet time
 # The plugin's reading rules: reads listed in notices for six hours (the newest 12 of each), at most one read
@@ -119,10 +119,12 @@ def cmd_register(args):
 
 def cmd_unregister(args):
     with LOCK:
-        removed = STATE["devices"].pop(args["device_id"], None) is not None
+        removed = STATE["devices"].pop(args["device_id"], None)
         for key in ("delivered", "cleared", "badges", "read_pushes"):
             STATE[key].pop(args["device_id"], None)
-    return {"ok": True, "removed": removed}
+        if removed:
+            STATE["sent"].pop(removed["token"], None)
+    return {"ok": True, "removed": removed is not None}
 
 
 def cmd_preferences(args):
@@ -646,17 +648,26 @@ def deliver(notice, walked_away=(), news_at=None):
                                           + record.get("others", 0), 9999)
 
 
-def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away, news_at=None):
+def reply_or_request(session_id, turn_id, chat, text, seconds, walked_away, news_at=None, profile=None):
     """A reply, or, when it asks something with a widget, the widget request (the plugin's
-    ``on_session_end``): at once, Open only (docs/widgets.md §12)."""
+    ``on_session_end``): at once, Open only (docs/widgets.md §12). ``profile``: the profile that ran
+    the turn, when the caller knows it (a gateway run is always the default profile)."""
+    tag = profile_of(session_id) if profile is None else profile
     requests = notices.widget_requests(text)
     if requests:
         notice = notices.widget(payload=requests[0], session_id=session_id, chat=chat, gateway_name=GATEWAY["name"])
+        if tag:
+            notice.extra["profile"] = tag
         open_request(notice.request_id, {"kind": "widget", "session": session_id, "expires_at": notice.expires_at})
         deliver(notice, walked_away=walked_away)
         return
-    deliver(notices.reply(session_id=session_id, turn_id=turn_id, chat=chat, gateway_name=GATEWAY["name"],
-                          text=text, seconds=seconds), walked_away=walked_away, news_at=news_at)
+    notice = notices.reply(session_id=session_id, turn_id=turn_id, chat=chat, gateway_name=GATEWAY["name"],
+                           text=text, seconds=seconds)
+    # The plugin tags a reply with the profile that ran it (core._profile), so the app can open
+    # another profile's chat under its own key (docs/notifications.md §3). Default sends none.
+    if tag:
+        notice.extra["profile"] = tag
+    deliver(notice, walked_away=walked_away, news_at=news_at)
 
 
 def withdraw(ids):
@@ -734,6 +745,12 @@ def activity(session, state, *, event="update", alert=False):
 
 
 def relay(device, request):
+    # What went out, sealed as it was (the newest 40 a device, by its token): /api/mock/push-state
+    # reads it back, so a check can open the envelope with the device's key and see its fields.
+    with LOCK:
+        sent = STATE["sent"].setdefault(device["token"], [])
+        sent.append({"at": round(time.time(), 3), "request": request})
+        del sent[:-40]
     if RELAY["mode"] == "simctl":
         return simctl(device, request)
     return https_relay(request)
@@ -916,7 +933,7 @@ def install(backend_globals, gateway_module=None, relay_mode="simctl", gateway_n
         # Mock-only: what the push mock recorded for reading (docs/notifications.md §2, Reading).
         with LOCK:
             return 200, json.loads(json.dumps({**{key: STATE[key] for key in (
-                "presence", "reads", "delivered", "cleared", "badges", "read_pushes", "requests")}, "open": open_total()}))
+                "presence", "reads", "delivered", "cleared", "badges", "read_pushes", "requests", "sent")}, "open": open_total()}))
 
     def mock_read(query, body):
         # Mock-only: chats and rooms read on another device ({"chats", "rooms", "device_id"?}), as the app's
@@ -1166,8 +1183,10 @@ def install_api(gateway):
         seconds = time.time() - self._push_started
         if self.status in ("completed", "complete") and (self.output or "").strip():
             session = gateway.SESSIONS.get(self.session_id) or {}
+            # /v1/runs always runs in the gateway's own (default) profile, as the real plugin tags
+            # it: a researcher chat sharing this id must not borrow the notice (core._profile).
             reply_or_request(self.session_id, self.id, session.get("title") or "", self.output, seconds, self._push_watching,
-                             news_at=time.time())
+                             news_at=time.time(), profile="")
 
     original_init = run_class.__init__
 
