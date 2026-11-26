@@ -25,6 +25,7 @@ struct IOSChatList: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .background(Theme.canvas)
         .environment(\.defaultMinListRowHeight, 10)
         .environment(\.sidebarShowsSelection, false)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -36,7 +37,7 @@ struct IOSChatList: View {
         .task {
             isFirstFrame = false
         }
-        .modifier(ArchivedToast(workspace: workspace, bottomPadding: 78) { actionError = $0 })
+        .modifier(ArchivedToast(workspace: workspace, bottomPadding: 8) { actionError = $0 })
         .fullScreenCover(isPresented: $showsSearch) {
             IOSSearchPage(workspace: workspace)
         }
@@ -92,19 +93,12 @@ struct IOSChatList: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(status.line)
                 Spacer(minLength: 8)
-                Button {
+                Button("Search", systemImage: "magnifyingglass") {
                     showsSearch = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Theme.primaryText)
-                        .frame(width: 34, height: 34)
-                        .background(Theme.controlFill, in: Circle())
-                        .overlay { Circle().strokeBorder(Theme.hairline, lineWidth: 0.5) }
-                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Search")
+                .labelStyle(.iconOnly)
+                .buttonBorderShape(.circle)
+                .glassButton()
                 .accessibilityIdentifier("chat.search")
             }
             HStack(spacing: 8) {
@@ -135,8 +129,9 @@ struct IOSChatList: View {
             }
             .pickerStyle(.inline)
         } label: {
-            FilterPill(text: picked ?? String(localized: "All Profiles"))
+            filterLabel(picked ?? String(localized: "All Profiles"))
         }
+        .filterMenu()
         .accessibilityLabel("Profile")
         .accessibilityValue(picked ?? String(localized: "All Profiles"))
         .accessibilityIdentifier("chat.profileFilter")
@@ -161,11 +156,23 @@ struct IOSChatList: View {
                 }
             }
         } label: {
-            FilterPill(text: sourceLabel)
+            filterLabel(sourceLabel)
         }
+        .filterMenu()
         .accessibilityLabel("Sources")
         .accessibilityValue(sourceLabel)
         .accessibilityIdentifier("chat.sourceFilter")
+    }
+
+    /// A filter's current choice and the chevron that says it opens a menu.
+    private func filterLabel(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Text(text)
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+        }
     }
 
     private var sourceLabel: String {
@@ -434,27 +441,16 @@ struct IOSChatList: View {
     }
 }
 
-/// A filter's quiet capsule: its current choice and a chevron, as the design draws the two
-/// filters under the title (`mockup-v2.html`).
-struct FilterPill: View {
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(text)
-                .lineLimit(1)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Theme.tertiaryText)
-                .accessibilityHidden(true)
-        }
-        .font(.footnote)
-        .foregroundStyle(Theme.secondaryText)
-        .padding(.horizontal, 12)
-        .frame(height: 30)
-        .background(Theme.controlFill, in: Capsule())
-        .overlay { Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5) }
-        .contentShape(Capsule())
+extension View {
+    /// The two filters under the title: the system's bordered capsule, in the quiet colour
+    /// (`docs/inbox.md` §10).
+    fileprivate func filterMenu() -> some View {
+        menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(Theme.secondaryText)
     }
 }
 

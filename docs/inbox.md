@@ -703,13 +703,16 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
 
 ## 10. The iPhone's Chat tab (this fork)
 
-At a compact width `MainView` shows `IOSMainView` instead of the split view: Chat, Bot and Settings
-tabs over a floating glass capsule, and a round compose button beside it. iPad and Mac keep the
-split view unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
+At a compact width `MainView` shows `IOSMainView` instead of the split view: the system's tab bar
+(`TabView` with Chats `bubble.left`, Bots `person.2` and Settings `gearshape`, no styling of its
+own), which shrinks while a list scrolls down (`tabBarMinimizeBehavior(.onScrollDown)`), and a
+round glass compose button over the bottom-right of the Chats and Bots lists, above the bar. iPad
+and Mac keep the split view unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
 result or a link opens the same chat here as there.
 
-- **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, a
-  round search button, then the Profile and Sources filters as capsules. The list below is the same
+- **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, the
+  search button (system glass, `magnifyingglass`), then the Profile and Sources filters as the
+  system's bordered menu buttons. The list below is the same
   `workspace.inboxSections` with Pinned, Main, Working and Settled (`§2a`), and the same
   `ChatListSnapshot` first frame and paging, so a long history costs no more here than in the
   sidebar.
@@ -732,12 +735,14 @@ result or a link opens the same chat here as there.
 - **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
   and Mute, the same context menu, and the same Rename, Delete and error alerts. A waiting chat
   offers only Delete. Settled rows keep Un-settle.
-- **Search** is the round button: a page with the same `workspace.searchText`, chips and
+- **Search** is the glass button: a page with the same `workspace.searchText`, chips and
   `SearchResultsSection` as the sidebar (`docs/search.md`). Picking a result opens its chat and
   closes the page.
-- **Compose** starts a new chat with the existing flow, profile picker included. The tab bar goes
-  away while a chat, Bot chat, group or Settings page is pushed; Back brings the list and the bar
-  back.
+- **Compose** (`IOSComposeButton`) starts a new chat with the existing flow, profile picker
+  included. It sits in the lists' bottom `safeAreaInset`, so it never covers the tab bar, shrunk or
+  not, and the last rows scroll clear of it; Settings has none. The tab bar goes away while a chat,
+  Bot chat or group is pushed (`toolbar(.hidden, for: .tabBar)`); Back brings the list and the bar
+  back. Each list keeps its own stack and scroll position across tab switches.
 - **Bot tab** (`IOSBotList`) is the existing All Bots roster (`BotRosterSections`) with no filters;
   its compose button offers New Bot and New Group Chat. **Settings** reuses `SettingsView` without
   its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools; the
