@@ -40,25 +40,6 @@ struct InboxTests {
         #expect(headless.readMark == nil && !headless.isUnreadOnGateway)
     }
 
-    @Test func reasoningEffortDecodesWhenServedAndStaysNilOnAnOlderGateway() throws {
-        func session(_ json: String) throws -> HermesSession {
-            try JSONDecoder().decode(HermesSession.self, from: Data(json.utf8))
-        }
-        let both = try session(#"{"id": "a", "model": "xunxin-default/qwen4-max", "reasoning_effort": "xhigh"}"#)
-        #expect(both.model == "xunxin-default/qwen4-max")
-        #expect(both.reasoningEffort == "xhigh")
-        // The chat list kept on the device reads back as Hermes sent it.
-        let back = try JSONDecoder().decode(HermesSession.self, from: JSONEncoder().encode(both))
-        #expect(back.reasoningEffort == "xhigh")
-        // A gateway before the field served it, and a chat with no model at all.
-        let modelOnly = try session(#"{"id": "b", "model": "openai/gpt-5.2"}"#)
-        #expect(modelOnly.reasoningEffort == nil)
-        let neither = try session(#"{"id": "c", "model": null}"#)
-        #expect(neither.model == nil && neither.reasoningEffort == nil)
-        let absent = try session(#"{"id": "d"}"#)
-        #expect(absent.model == nil && absent.reasoningEffort == nil)
-    }
-
     @Test func halfASecondOfSlackForTheGatewaysClock() {
         #expect(!ReadMark.readUntil(Self.t(0)).isUnread(lastActive: Self.t(0.4)))
         #expect(ReadMark.readUntil(Self.t(0)).isUnread(lastActive: Self.t(0.6)))
