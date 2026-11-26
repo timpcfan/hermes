@@ -21,17 +21,20 @@ struct IOSMainView: View {
     /// two tabs never draw the same selection.
     @State private var chatPath: [DetailRoute] = []
     @State private var botPath: [DetailRoute] = []
-    /// The compose circle on the Bot tab asked whether to make a Bot or a group chat.
+    /// The plus on the Bot tab opened its popover: New Bot or New Group Chat.
     @State private var isChoosingNew = false
+    /// What the popover was asked for, made once it has gone: the root presents the sheet for it,
+    /// and can't while the popover is still up.
+    @State private var pickedNew: IOSNewBotChoice?
+    /// The window's width: the popover's rows wrap rather than run wider than the screen.
+    @State private var windowWidth: CGFloat = 0
 
     private var showsDetail: Bool { !chatPath.isEmpty || !botPath.isEmpty }
 
     var body: some View {
         tabs
             .tabBarMinimizeBehavior(.onScrollDown)
-            .confirmationDialog("New", isPresented: $isChoosingNew, titleVisibility: .hidden) {
-                IOSComposeButton.newBotActions(workspace)
-            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
             .onChange(of: workspace.navigation.pushes) { pushSelection() }
             .onChange(of: workspace.navigation.pops) { popToRoot() }
             .onChange(of: showsDetail) { _, shows in
@@ -59,19 +62,23 @@ struct IOSMainView: View {
 
     /// From iOS 27 the compose button is the bar's own prominent tab: the system draws it as a
     /// separate glass circle beside the tabs, on the same line, and shrinks and hides it with the
-    /// bar. It stays on every tab, because taking it away moves the whole bar. iOS 26 has no
-    /// prominent tab, so there the button floats over the lists instead (`stack`).
+    /// bar. It stays on every tab, because taking it away moves the whole bar. On the Bot tab it
+    /// is a plus, and its popover hangs from it. iOS 26 has no prominent tab, so there the button
+    /// floats over the lists instead (`stack`).
     @ViewBuilder private var tabs: some View {
         if #available(iOS 27.0, *) {
             TabView(selection: pickingCompose) {
                 chatsTab
                 botsTab
                 settingsTab
-                Tab(composeTitle, systemImage: "square.and.pencil", value: IOSMainTab.compose, role: .prominent) {
+                Tab(composeTitle, systemImage: composeSymbol, value: IOSMainTab.compose, role: .prominent) {
                     // Never shown: picking the circle acts instead (`pickingCompose`).
                     Color.clear
                 }
                 .disabled(tab == .bots && workspace.roster?.isConnected != true)
+                // The arrow on the popover's bottom edge, pointing down at the circle, so the
+                // popover sits right above it (`top` put it below, where there is no room).
+                .popover(isPresented: $isChoosingNew, arrowEdge: .bottom) { newBotMenu }
             }
         } else {
             TabView(selection: $tab) {
@@ -106,6 +113,34 @@ struct IOSMainView: View {
         tab == .bots ? "New" : "New Chat"
     }
 
+    /// A plus where the circle makes a Bot or a group chat, a pencil where it makes a chat.
+    private var composeSymbol: String {
+        tab == .bots ? "plus" : "square.and.pencil"
+    }
+
+    /// New Bot and New Group Chat in a popover pointing at the plus. The panel, its arrow and
+    /// where it sits are the system's; only the rows are laid out here. A pick closes the popover
+    /// and is made once it has gone (`pickedNew`).
+    private var newBotMenu: some View {
+        // 20 pt clear of each side of the window, more than the system keeps a popover from the
+        // edge, so at the largest text sizes the titles wrap inside the panel.
+        IOSMenuRows(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity) {
+            IOSComposeButton.newBotActions(workspace) { choice in
+                pickedNew = choice
+                isChoosingNew = false
+            }
+        }
+        .labelStyle(IOSMenuRowLabelStyle())
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .presentationCompactAdaptation(.popover)
+        .onDisappear {
+            guard let choice = pickedNew else { return }
+            pickedNew = nil
+            IOSComposeButton.start(choice, in: workspace)
+        }
+    }
+
     /// The tab selection, except that picking the compose circle acts and leaves the tab as it was.
     /// The action waits a turn: run inside the selection change, the screen it pushes hides and
     /// shows the bar while the bar is still settling, and the bar comes back centred and unlabelled.
@@ -122,7 +157,7 @@ struct IOSMainView: View {
     }
 
     /// The compose circle: a new chat on Chats and Settings (which moves to Chats to show it), and
-    /// on Bots the choice of a new Bot or group chat.
+    /// on Bots the popover with New Bot and New Group Chat.
     private func compose() {
         if tab == .bots {
             isChoosingNew = true
@@ -222,7 +257,7 @@ struct IOSComposeButton: View {
             .accessibilityIdentifier("tab.compose")
         case .bots:
             Menu {
-                Self.newBotActions(workspace)
+                Self.newBotActions(workspace) { Self.start($0, in: workspace) }
             } label: {
                 Label("New", systemImage: "plus")
                     .labelStyle(.iconOnly)
@@ -245,16 +280,77 @@ struct IOSComposeButton: View {
         workspace.startNewChat()
     }
 
-    /// New Bot and New Group Chat: the Bot tab's menu here, and its choice under the compose circle.
-    @ViewBuilder static func newBotActions(_ workspace: BotWorkspace) -> some View {
+    /// New Bot and New Group Chat, offered and enabled as everywhere else: the Bot tab's menu
+    /// here, and from iOS 27 the popover over its plus. `pick` gets the choice.
+    @ViewBuilder static func newBotActions(_ workspace: BotWorkspace, pick: @escaping (IOSNewBotChoice) -> Void) -> some View {
         if let roster = workspace.roster {
-            Button("New Bot", systemImage: "plus") { roster.isCreatingBot = true }
+            Button("New Bot", systemImage: "plus") { pick(.bot) }
                 .disabled(!roster.isConnected)
             if roster.groupRooms.isAvailable {
-                Button("New Group Chat", systemImage: "person.3") { roster.isCreatingGroup = true }
+                Button("New Group Chat", systemImage: "person.3") { pick(.group) }
                     .disabled(!roster.isConnected || roster.visibleBots.count < 2)
             }
         }
+    }
+
+    /// Opens the sheet for a choice; the root presents both (`BotSheets`).
+    static func start(_ choice: IOSNewBotChoice, in workspace: BotWorkspace) {
+        switch choice {
+        case .bot: workspace.roster?.isCreatingBot = true
+        case .group: workspace.roster?.isCreatingGroup = true
+        }
+    }
+}
+
+/// What the Bot tab's compose makes.
+enum IOSNewBotChoice {
+    case bot, group
+}
+
+/// A row of the Bot tab's popover: the symbol in a column of its own, so the titles line up,
+/// then the title, at least as tall as a menu row. It lays out the row only; the panel behind it
+/// is the system popover's.
+struct IOSMenuRowLabelStyle: LabelStyle {
+    /// As wide as the widest symbol (`person.3`) at every text size, so none reaches the title.
+    @ScaledMetric(relativeTo: .body) private var symbolWidth = 32.0
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.icon
+                .frame(width: symbolWidth)
+            configuration.title
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(.rect)
+    }
+}
+
+/// The Bot tab popover's rows, one under another, all as wide as the widest one wants but never
+/// wider than `maxWidth`. The popover takes its size from them, so it hugs the rows, and at the
+/// largest text sizes the titles wrap instead of running off the screen. Every row is as wide as
+/// the panel, so all of it can be tapped.
+nonisolated struct IOSMenuRows: Layout {
+    var maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = width(offered: proposal, subviews)
+        let height = subviews.reduce(0) { $0 + $1.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for subview in subviews {
+            let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+            subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height
+        }
+    }
+
+    private func width(offered proposal: ProposedViewSize, _ subviews: Subviews) -> CGFloat {
+        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        return min(widest, maxWidth, proposal.width ?? .infinity)
     }
 }
 #endif
