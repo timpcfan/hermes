@@ -62,6 +62,106 @@ struct ChatHeaderTitle: View {
     }
 }
 
+/// The composer's model-and-reasoning chip (`docs/composer.md` §1, `docs/sessions-and-models.md`
+/// §4): the model the next turn sends with, its reasoning as whole signal bars, and the picker
+/// behind them. While a turn runs the send-mode chip takes the words' place, so the chip keeps
+/// only its signal.
+struct ComposerModelChip: View {
+    @Bindable var conversation: ConversationModel
+    let workspace: BotWorkspace
+    /// A turn runs and the send-mode chip shows beside it (`ComposerChipModel.layout`).
+    let isCondensed: Bool
+
+    @State private var isPresented = false
+    @Environment(\.composerChipSizing) private var composerSizing
+
+    private var model: ComposerChipModel.Model { conversation.chipModel }
+    private var layout: ComposerChipModel.Layout { ComposerChipModel.layout(showsModeChip: isCondensed) }
+    private var support: ModelReasoningSupport { conversation.chipReasoningSupport }
+    private var signal: ReasoningSignal {
+        ReasoningSignal(effort: conversation.reasoningEffort, supported: support.isSupported)
+    }
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            ChipLabel(
+                title: layout == .full ? model.name : nil,
+                icon: support.isSupported ? AnyView(reasoningIcon) : nil,
+                isActive: conversation.reasoningEffort != nil && support.isSupported
+            )
+        }
+        .buttonStyle(.plain)
+        // After the process chip, the first to give up room so the microphone and Send stay put.
+        .layoutPriority(-0.5)
+        .help("Model and reasoning")
+        .accessibilityLabel(Text("Model: \(model.name)"))
+        .accessibilityValue(Text(reasoningValue))
+        .accessibilityHint(Text("Choose the model and how hard Hermes thinks"))
+        .accessibilityShowsLargeContentViewer {
+            Label(model.name, systemImage: "cellularbars")
+        }
+        #if os(macOS)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            ModelPickerView(conversation: conversation, workspace: workspace) { isPresented = false }
+        }
+        #else
+        .sheet(isPresented: $isPresented) {
+            ModelPickerView(conversation: conversation, workspace: workspace) { isPresented = false }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        #endif
+        // Its own profile's list (`docs/inbox.md` §9), read again when a new chat changes profile.
+        .task(id: conversation.modelProfile ?? "") {
+            await workspace.loadModelOptions(for: conversation.modelProfile)
+        }
+    }
+
+    /// The bars at the chip's size: whole bars lit in `.color` mode, the platform's Auto mark for
+    /// Auto, and nothing for a model that doesn't reason.
+    @ViewBuilder private var reasoningIcon: some View {
+        switch signal {
+        case .auto:
+            Image(systemName: "a.circle")
+                .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
+                .foregroundStyle(Theme.primaryText)
+        case .bars:
+            Image(systemName: "cellularbars", variableValue: signal.variableValue)
+                .symbolVariableValueMode(.color)
+                .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
+                .foregroundStyle(Theme.primaryText)
+        case .unavailable:
+            EmptyView()
+        }
+    }
+
+    private var reasoningValue: String {
+        guard support.isSupported else { return String(localized: "Not available") }
+        return conversation.reasoningEffort.map(ReasoningNames.title(for:)) ?? String(localized: "Auto")
+    }
+}
+
+extension ConversationModel {
+    /// The model the composer's chip names, in the order the top bar used (`docs/composer.md` §1):
+    /// this device's pick, the chat row's report, the profile's default, the gateway's name.
+    var chipModel: ComposerChipModel.Model {
+        ComposerChipModel.model(
+            picked: model,
+            reported: stableKey.flatMap { workspace?.session(forKey: $0)?.model },
+            profileDefault: modelOptions?.model,
+            defaultProvider: modelOptions?.provider,
+            gatewayName: workspace?.bot.name ?? gatewayName
+        )
+    }
+
+    /// What the gateway says about reasoning for the chip's model.
+    var chipReasoningSupport: ModelReasoningSupport {
+        modelOptions?.reasoningSupport(for: chipModel.id, provider: chipModel.provider) ?? .unknown
+    }
+}
+
 struct ModelPickerView: View {
     @Bindable var conversation: ConversationModel
     let workspace: BotWorkspace
@@ -337,7 +437,16 @@ struct ModelPickerView: View {
             #else
             .listStyle(.insetGrouped)
             #endif
+            // The reasoning controls stay under the list while it scrolls (`docs/composer.md` §1).
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ReasoningSheetBar(conversation: conversation)
+            }
+            #if os(iOS)
+            // Under the title, not at the bottom: the reasoning controls own the bottom edge.
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search models")
+            #else
             .searchable(text: $query, prompt: "Search models")
+            #endif
             .navigationTitle("Model")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -430,4 +539,138 @@ struct ModelPickerView: View {
         .disabled(isDisabled)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
+}
+
+/// The iPhone's reasoning controls, pinned under the model list (`docs/composer.md` §1): Auto,
+/// and the seven-tick ladder for the next turn. Picking a level leaves the sheet open.
+private struct ReasoningSheetBar: View {
+    @Bindable var conversation: ConversationModel
+
+    /// The last level picked here, so turning Auto off returns to it rather than a default.
+    @State private var lastLevel: ReasoningEffort = .medium
+
+    private static let levels = ReasoningEffort.allCases
+    /// The slider's thumb is a capsule 35 pt wide (measured on iOS 26), so its centre travels
+    /// the track inset by half that at each end; the marks sit under those centres.
+    private static let thumbWidth: CGFloat = 35
+
+    private var support: ModelReasoningSupport { conversation.chipReasoningSupport }
+    private var isAuto: Bool { conversation.reasoningEffort == nil }
+    private var currentLevel: ReasoningEffort { conversation.reasoningEffort ?? lastLevel }
+
+    private var auto: Binding<Bool> {
+        Binding(
+            get: { conversation.reasoningEffort == nil },
+            set: { on in conversation.reasoningEffort = on ? nil : lastLevel }
+        )
+    }
+
+    /// The slider's seven steps, Off…Max, as the ladder's order.
+    private var index: Binding<Double> {
+        Binding(
+            get: { Double(Self.levels.firstIndex(of: conversation.reasoningEffort ?? lastLevel) ?? 3) },
+            set: { value in
+                var position = min(max(Int(value.rounded()), 0), Self.levels.count - 1)
+                // A model that can't turn reasoning off stops at Minimal.
+                if position == 0, !support.canDisable { position = 1 }
+                let level = Self.levels[position]
+                lastLevel = level
+                conversation.reasoningEffort = level
+            }
+        )
+    }
+
+    /// The ladder's seven stops, under the track at the positions the thumb takes: its centre
+    /// stops half a thumb short of each end of the track.
+    private var tickMarks: some View {
+        GeometryReader { proxy in
+            let inset = Self.thumbWidth / 2
+            let span = max(proxy.size.width - inset * 2, 1)
+            ForEach(0..<Self.levels.count, id: \.self) { step in
+                Capsule()
+                    .fill(Theme.tertiaryText)
+                    .frame(width: 2, height: 5)
+                    .position(
+                        x: inset + span * CGFloat(step) / CGFloat(Self.levels.count - 1),
+                        y: 2.5
+                    )
+            }
+        }
+        .frame(height: 5)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Reasoning")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                if !isAuto, support.isSupported {
+                    Text(ReasoningNames.title(for: currentLevel))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                Spacer()
+                Text("Auto")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+                Toggle("Auto", isOn: auto)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .tint(Theme.ink)
+                    .disabled(!support.isSupported)
+            }
+            // Seven stops, Off…Max; Off is where a model that can't turn reasoning off stops
+            // (`index` clamps it). The marks under the track are drawn here: this SDK's stepped
+            // slider leaves them out (its `ticks:` labels don't show on iOS either).
+            Slider(value: index, in: 0...Double(Self.levels.count - 1), step: 1) {
+                Text("Reasoning")
+            }
+            .tint(Theme.ink)
+            .disabled(isAuto || !support.isSupported)
+            .accessibilityLabel(Text("Reasoning effort"))
+            .accessibilityValue(Text(reasoningValue))
+            tickMarks
+            HStack {
+                Text("Off")
+                Spacer()
+                Text("Max")
+            }
+            .font(.caption2)
+            .foregroundStyle(Theme.tertiaryText)
+            .padding(.top, -4)
+            if let note = reasoningNote(support) {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+        }
+        .onAppear {
+            if let level = conversation.reasoningEffort { lastLevel = level }
+        }
+        .onChange(of: conversation.reasoningEffort) { _, level in
+            if let level { lastLevel = level }
+        }
+    }
+
+    private var reasoningValue: String {
+        guard support.isSupported else { return String(localized: "Not available") }
+        return isAuto ? String(localized: "Auto") : ReasoningNames.title(for: currentLevel)
+    }
+}
+
+/// Why the reasoning controls can't be used, when they can't.
+private func reasoningNote(_ support: ModelReasoningSupport) -> String? {
+    if !support.isSupported { return String(localized: "This model doesn't reason.") }
+    if !support.canDisable { return String(localized: "This model can't turn reasoning off.") }
+    return nil
 }

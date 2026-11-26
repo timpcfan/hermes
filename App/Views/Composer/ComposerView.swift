@@ -583,28 +583,30 @@ struct ComposerView: View {
     static let rowAppears = AnyTransition.opacity.animation(.easeOut(duration: 0.22))
 
 
-    /// Think (or the send mode), the process chip and the project chip: in the controls row, or
-    /// from AX1 in a compact width on their own row (`inRow`), where none truncates and the project
-    /// chip stays beside the send mode (`composerTypeAX5Busy`).
+    /// The model-and-reasoning chip, the send mode, the process chip and the project chip: in the
+    /// controls row, or from AX1 in a compact width on their own row (`inRow`), where none
+    /// truncates and the project chip stays beside the send mode (`composerTypeAX5Busy`).
     @ViewBuilder private func chips(inRow: Bool) -> some View {
         let spacing = inRow ? ComposerSizing.chipRowSpacing : ComposerSizing.controlSpacing
-        // Think and the send mode share one place and cross-fade. Neither comes or goes, so
-        // no leaving copy can linger where the chip was while the composer changes height.
-        ZStack(alignment: .leading) {
-            if !conversation.isBotChat {
-                EffortMenu(conversation: conversation, workspace: workspace)
-                    .modifier(ChipSlot(isShown: !showsModeChip && !answersQuestion))
+        HStack(spacing: spacing) {
+            // While a turn runs the model chip keeps only its signal and the send mode appears
+            // beside it (`docs/follow-ups.md` §2).
+            if !conversation.isBotChat, !answersQuestion {
+                ComposerModelChip(conversation: conversation, workspace: workspace, isCondensed: showsModeChip)
             }
-            FollowUpModeChip(conversation: conversation, focused: focused)
-                .modifier(ChipSlot(isShown: showsModeChip))
-                // The first time the person types while Hermes works (`SteerTip.typedWhileWorking`).
-                .hermesTip(SteerTip(), arrowEdge: .bottom)
+            if showsModeChip {
+                FollowUpModeChip(conversation: conversation, focused: focused)
+                    .transition(.opacity.animation(.smooth(duration: 0.2)))
+                    // The first time the person types while Hermes works (`SteerTip.typedWhileWorking`).
+                    .hermesTip(SteerTip(), arrowEdge: .bottom)
+            }
         }
-        // A Bot Chat and the answer composer have no Think: the slot takes no room until the
+        // A Bot Chat and the answer composer have no model chip: the slot takes no room until the
         // send mode shows in it, so what follows (the process chip) sits next to +.
         .frame(width: collapsesChipSlot ? 0 : nil, alignment: .leading)
         .padding(.trailing, collapsesChipSlot ? -spacing : 0)
         .animation(.smooth(duration: 0.2), value: collapsesChipSlot)
+        .animation(.smooth(duration: 0.2), value: showsModeChip)
         .composerChip()
         // What runs in the background (`processChip`): the first to shrink, so it never
         // pushes the buttons at the end.
@@ -1468,57 +1470,6 @@ private struct FileChips: View {
                 .background(Theme.surface, in: Capsule())
                 .overlay(Capsule().strokeBorder(Theme.hairline))
             }
-        }
-    }
-}
-
-// MARK: - Reasoning effort
-
-private struct EffortMenu: View {
-    @Bindable var conversation: ConversationModel
-    let workspace: BotWorkspace
-
-    private static let levels: [ReasoningEffort] = [.off, .minimal, .low, .medium, .high, .xhigh, .max]
-
-    var body: some View {
-        Menu {
-            Picker("Reasoning", selection: $conversation.reasoningEffort) {
-                Text("Auto").tag(nil as ReasoningEffort?)
-                Divider()
-                ForEach(Self.levels) { level in
-                    Text(Self.title(for: level)).tag(Optional(level))
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            ChipLabel(title: title, symbol: symbol, isActive: conversation.reasoningEffort != nil)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .help("Reasoning effort")
-        .accessibilityLabel("Reasoning effort")
-        .accessibilityValue(conversation.reasoningEffort.map(Self.title(for:)) ?? String(localized: "Auto"))
-        .accessibilityShowsLargeContentViewer {
-            Label(title, systemImage: symbol)
-        }
-    }
-
-    private var title: String {
-        conversation.reasoningEffort.map { String(localized: "Think: \(Self.title(for: $0))") } ?? String(localized: "Think")
-    }
-
-    private var symbol: String { conversation.reasoningEffort == nil ? "lightbulb" : "lightbulb.fill" }
-
-    static func title(for level: ReasoningEffort) -> String {
-        switch level {
-        case .off: String(localized: "Off")
-        case .minimal: String(localized: "Minimal")
-        case .low: String(localized: "Low")
-        case .medium: String(localized: "Medium")
-        case .high: String(localized: "High")
-        case .xhigh: String(localized: "Extra High")
-        case .max: String(localized: "Max")
         }
     }
 }
