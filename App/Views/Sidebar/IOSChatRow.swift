@@ -99,18 +99,17 @@ struct IOSChatRow: View {
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
-            // The model and effort finish the same line (`docs/inbox.md` §10): one run of small
-            // print — source · profile · project · model · effort — never a line of its own.
+                .truncationMode(.tail)
+            // The model and effort close the same line (`docs/inbox.md` §10): the profile reads
+            // from the left edge, the model sits flush right.
             if let modelLine {
-                Text("·")
-                    .font(.caption)
-                    .foregroundStyle(Theme.tertiaryText)
-                    .accessibilityHidden(true)
+                Spacer(minLength: 8)
                 Text(modelLine)
                     .font(.caption)
                     .foregroundStyle(Theme.tertiaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(1)
                     .accessibilityHidden(true)
             }
         }
