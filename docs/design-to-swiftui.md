@@ -190,8 +190,9 @@ code field. The Mac reads the pasteboard when asked.
 - iPhone's Chat tab carries its own header instead of a large title (`IOSChatList.header`):
   "Hermes" in 28 pt bold, the connection dot and the gateway's name beside it, and a round search
   button trailing. The name is one line and truncates; the old gateway menu (`server.rack`) is
-  gone from the compact iPhone, and switching, adding or pairing a gateway lives in Settings →
-  Hermes Gateways. VoiceOver reads the dot and the name as one element, the whole status line
+  gone from the compact iPhone. Settings → Hermes Gateways adds and edits gateways, but this
+  layout has no entry for switching the active gateway or for Pair a Device yet (DELIVERY);
+  VoiceOver reads the dot and the name as one element, the whole status line
   (`ConnectionStatus.line`). Under it sit the two filter pills, Profile and Sources.
 - The iPad sidebar footer (`ConnectionStatusLabel`, at the accessibility sizes the whole line
   wraps: `screens/ipad/navigation-ax5.elyx`) and the Mac source list footer keep their connection
@@ -253,7 +254,7 @@ Mac is the window's unified toolbar.
 | Routines, … menu (Bot Chat) | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` | `BotChatViews` |
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |
 | Chats / Bots switch and counts | The Chat and Bot tabs | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `IOSTabBar`; `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
-| Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The Chat tab's header names the gateway; its gateway, adding and pairing live in Settings → Hermes Gateways | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `IOSChatList.header`; `GatewayMenuContent` (`SidebarView`), `SettingsList`; `BotSwitcher` |
+| Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The Chat tab's header names the gateway; Add Gateway and Edit Gateways live in Settings → Hermes Gateways. Switching and Pair a Device have no entry in this layout (DELIVERY) | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `IOSChatList.header`; `GatewayMenuContent` (`SidebarView`), `SettingsList`; `BotSwitcher` |
 | Connection status | The dot and the gateway's name beside the Chat tab's title | The sidebar footer | The source list footer | `navChats` | `IOSChatList.header` (`ConnectionStatus`); `SidebarFooter` |
 | Settings | The Settings tab | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `IOSTabBar`; `SettingsView`; `SidebarFooter` |
 | Default list (this fork: the inbox) | Pinned, then Main (idle, finished, failed, waiting on you, returned to the top), then Working while something runs, then Settled folded with its count (`docs/inbox.md` §2a) | The same | The same | `navChats`, `macNavWindow` (adapted to t3code's sidebar, no design frame) | `InboxSections`, `BotWorkspace.inboxSections`; `SidebarView.sessionSections`, `InboxRegionHeader` |
