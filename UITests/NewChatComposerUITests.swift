@@ -290,7 +290,9 @@ final class NewChatComposerUITests: XCTestCase {
             try await Task.sleep(for: .milliseconds(500))
         }
         XCTAssertTrue(messages.contains { $0["role"] as? String == "assistant" })
-        _ = try await request("api/mock/close-sessions", method: "POST")
+        XCTAssertTrue(app.buttons["Stop"].waitForNonExistence(timeout: 30), "the first turn must finish before its runtime can be reclaimed")
+        let reclaimed = try await request("api/mock/close-sessions", method: "POST")
+        XCTAssertGreaterThan(reclaimed["closed"] as? Int ?? 0, 0, "the mock must actually reclaim a runtime")
         let field = try composerField(in: app)
         field.tap()
         field.typeText(second)

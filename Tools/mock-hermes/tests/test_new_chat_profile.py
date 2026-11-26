@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ def declaration(source, signature):
 
 
 class NewChatProfileTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("xcrun"), "requires the macOS Swift toolchain")
     def test_creation_keeps_the_requested_profile(self):
         source = (ROOT / "App/Model/ConversationModel.swift").read_text()
         rows = (ROOT / "Packages/HermesKit/Sources/HermesKit/Inbox/ProfileRows.swift").read_text()
