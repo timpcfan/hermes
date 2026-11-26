@@ -247,9 +247,12 @@ struct IOSChatList: View {
             }
         }
         if isWhole { settledRegion }
+        // The next page loads from a row at the very end that draws nothing, as in the sidebar, so
+        // no loading rows stand below Settled (`docs/inbox.md` §5 Paging).
         if isWhole, workspace.hasMoreSessions, !workspace.inboxScope.narrowsMain {
-            SkeletonRows(count: 2)
-                .padding(.vertical, 8)
+            Color.clear
+                .frame(height: 1)
+                .accessibilityHidden(true)
                 .modifier(SidebarRowInsets())
                 .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
