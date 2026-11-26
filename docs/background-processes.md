@@ -9,7 +9,7 @@ A process lives in three places, and never piles up under the chat:
 1. **In the turn that started it:** one step on the steps rail (`processStep`). It shows a plain
    name, the live state (running, finished, failed, stopped), the command and its latest line. It
    keeps its place in the history, so new messages arrive below it like any others.
-2. **In the composer:** one chip after Think (`processChip`) while anything runs, has just
+2. **In the composer:** one chip after the model chip (`processChip`) while anything runs, has just
    finished, or has failed. It opens the Terminal.
 3. **In the Inspector's Terminal tab:** the chat's processes (`processRow`), with their output
    (`processLog`) and Stop. iPhone shows it in the Inspector sheet; iPad and Mac in the panel.
@@ -131,8 +131,8 @@ turn ends ([chat.md](chat.md) §2).
 
 ## 5. The composer chip (`processChip`)
 
-In the controls row after Think (or after the send-mode chip while a turn runs), part of the
-composer's glass. In a Bot Chat, which has no Think, it sits next to +.
+In the controls row after the model chip (or after the send-mode chip while a turn runs), part
+of the composer's glass. In a Bot Chat, which has no model chip, it sits next to +.
 
 | Situation | Chip |
 |---|---|

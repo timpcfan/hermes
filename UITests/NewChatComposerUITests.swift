@@ -175,7 +175,15 @@ final class NewChatComposerUITests: XCTestCase {
     @MainActor
     func testANewChatAfterAModelChangeOrTurningShowsTheComposer() throws {
         addTeardownBlock { @MainActor in XCUIDevice.shared.orientation = .portrait }
-        let app = launch(["-HERMES_SEND", "hello there"])
+        let app = launch(["-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
+        // A new chat starts in the profile this device chose last, which another test may have
+        // left on Research Buddy, whose one model leaves nothing to change to: start this one in
+        // the gateway's own profile, whose list has many.
+        XCTAssertTrue(newChat(in: app, profile: "default"), "New Chat didn't offer the profiles; start the mock with --cross-profile")
+        let field = try composerField(in: app)
+        field.tap()
+        field.typeText("hello there")
+        app.buttons["Send"].firstMatch.tap()
         try waitForSent("hello there", in: app)
         try openModelSheet(in: app)
         let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model: '")).firstMatch
@@ -185,7 +193,9 @@ final class NewChatComposerUITests: XCTestCase {
             format: "NOT (label BEGINSWITH 'Model') AND NOT (label CONTAINS %@) AND NOT (label BEGINSWITH 'Gateway default') AND NOT (label IN {'Done', 'Refresh models', 'Add Key…', 'Sheet Grabber'}) AND NOT (label BEGINSWITH 'Show all')", current))
             .allElementsBoundByIndex.first { $0.isHittable && !$0.isSelected && $0.frame.minY > 150 && $0.frame.height >= 36 }
         XCTAssertNotNil(other, "no other model to choose")
-        other?.tap()
+        // Near a row's top, not its activation point: the reasoning controls pinned under the
+        // list cover the lower half of the last rows, and a centre tap would land on them.
+        other?.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         closeModelSheet(in: app)
         try expect(timeout: 10, "the model didn't change (still \(before))") { picker.label != before }
         attach("model-changed")
@@ -245,15 +255,20 @@ final class NewChatComposerUITests: XCTestCase {
     func testANewChatsChosenProfileSurvivesAReclaimedRuntime() async throws {
         let first = "Profile routing first \(UUID().uuidString)"
         let second = "Profile routing second \(UUID().uuidString)"
-        let app = launch(["-HERMES_DRAFT", first, "-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
+        let app = launch(["-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
         defer { app.terminate() }
-        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Profile: '")).firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: 30), "start the mock with --cross-profile")
-        picker.tap()
-        let research = app.buttons["Research Buddy"].firstMatch
-        XCTAssertTrue(research.waitForExistence(timeout: 10))
-        research.tap()
-        XCTAssertTrue(app.buttons["Profile: Research Buddy"].waitForExistence(timeout: 10))
+        // New Chat asks for its profile before the chat exists (docs/inbox.md §9), and the chat
+        // keeps that profile for good.
+        XCTAssertTrue(newChat(in: app, profile: "researcher"), "New Chat didn't offer the profiles; start the mock with --cross-profile")
+        XCTAssertTrue(chatHeader(in: app).waitForExistence(timeout: 15), "the chat didn't open")
+        // The profile arrives with the chat's own routing, a moment after the bar draws it home;
+        // it is named as the chat list names it, the profile's own name.
+        try expect(timeout: 15, "the chat didn't start in researcher") {
+            chatHeader(in: app).label.contains("researcher")
+        }
+        let firstField = try composerField(in: app)
+        firstField.tap()
+        firstField.typeText(first)
         app.buttons["Send"].firstMatch.tap()
 
         let bundle = Bundle(for: NewChatComposerUITests.self)
@@ -272,11 +287,23 @@ final class NewChatComposerUITests: XCTestCase {
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
             return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         }
+        // A row's preview follows the newest message, so the chat is found by what was sent in it,
+        // among the newest chats in that profile.
         var stored: String?
         for _ in 0..<60 {
             let list = try await request("api/profiles/sessions?limit=200")
-            let rows = list["sessions"] as? [[String: Any]] ?? []
-            stored = rows.first { ($0["preview"] as? String)?.contains(first) == true }?["id"] as? String
+            let rows = (list["sessions"] as? [[String: Any]] ?? [])
+                .filter { $0["profile"] as? String == "researcher" }
+                .sorted { ($0["started_at"] as? Double ?? 0) > ($1["started_at"] as? Double ?? 0) }
+            for row in rows.prefix(4) {
+                guard let candidate = row["id"] as? String else { continue }
+                let transcript = try await request("api/sessions/\(candidate)/messages?profile=researcher")
+                let messages = transcript["messages"] as? [[String: Any]] ?? []
+                if messages.contains(where: { $0["role"] as? String == "user" && ($0["content"] as? String)?.contains(first) == true }) {
+                    stored = candidate
+                    break
+                }
+            }
             if stored != nil { break }
             try await Task.sleep(for: .milliseconds(500))
         }
@@ -319,7 +346,10 @@ final class NewChatComposerUITests: XCTestCase {
         // prominent tab, which the bar reports by its title.
         let floating = app.buttons["tab.compose"].firstMatch
         let prominent = app.tabBars.buttons["New Chat"].firstMatch
-        XCTAssertTrue(floating.waitForExistence(timeout: 60) || prominent.waitForExistence(timeout: 5), "no compose button")
+        // Wait for either: iOS 26's round button, or iOS 27's prominent tab.
+        let deadline = Date.now.addingTimeInterval(60)
+        while Date.now < deadline, !floating.exists, !prominent.exists { Thread.sleep(forTimeInterval: 0.5) }
+        XCTAssertTrue(floating.exists || prominent.exists, "no compose button")
         let compose = floating.exists ? floating : prominent
         // The menu needs the roster's profiles, read once Bot Mode connects.
         let researcher = app.buttons["newChat.profile.researcher"].firstMatch
@@ -338,8 +368,12 @@ final class NewChatComposerUITests: XCTestCase {
         attach("new-chat-profile-menu")
         researcher.tap()
 
-        // The chat starts in Research Buddy, titled with that profile's default model.
-        XCTAssertTrue(app.buttons["Profile: Research Buddy"].waitForExistence(timeout: 15), "the chat didn't start in Research Buddy")
+        // The chat starts in Research Buddy (the "researcher" profile), its top bar naming that
+        // profile, and its composer's chip naming that profile's default model.
+        XCTAssertTrue(chatHeader(in: app).waitForExistence(timeout: 15), "the chat didn't open")
+        try expect(timeout: 15, "the chat didn't start in researcher") {
+            chatHeader(in: app).label.contains("researcher")
+        }
         let model = app.buttons["Model: Hermes 4 70B"].firstMatch
         XCTAssertTrue(model.waitForExistence(timeout: 20), "the title didn't show Research Buddy's default model")
         model.tap()
@@ -458,6 +492,13 @@ final class NewChatComposerUITests: XCTestCase {
         attach(name)
     }
 
+    /// The top bar's title and, under it, the profile (`ChatHeaderTitle`): one element, not a
+    /// control.
+    @MainActor
+    private func chatHeader(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["chatHeaderTitle"].firstMatch
+    }
+
     @MainActor
     private func composerField(in app: XCUIApplication) throws -> XCUIElement {
         let view = app.textViews.firstMatch
@@ -479,6 +520,10 @@ final class NewChatComposerUITests: XCTestCase {
         let button = app.buttons["New chat"].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 15), "no New chat in the toolbar")
         button.tap()
+        // With profiles, the pencil asks which one the chat runs in first; this one goes in the
+        // gateway's own.
+        let own = app.buttons["newChat.profile.default"].firstMatch
+        if own.waitForExistence(timeout: 2) { own.tap() }
         Thread.sleep(forTimeInterval: 1)
     }
 
@@ -511,6 +556,40 @@ final class NewChatComposerUITests: XCTestCase {
             compose.tap()
         }
         Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// New Chat from the list, choosing `profile` from its menu (`docs/inbox.md` §9): the round
+    /// button on iOS 26, the bar's prominent tab from iOS 27. The menu needs the roster's profiles,
+    /// read once Bot Mode connects, so it retries until they arrive.
+    @MainActor
+    private func newChat(in app: XCUIApplication, profile: String) -> Bool {
+        let floating = app.buttons["tab.compose"].firstMatch
+        let prominent = app.tabBars.buttons["New Chat"].firstMatch
+        // A chat opened over the list (the app reopens what it showed last): New Chat is behind it.
+        if !floating.exists, !prominent.exists, app.textViews.firstMatch.exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+        let deadline = Date.now.addingTimeInterval(60)
+        while Date.now < deadline, !floating.exists, !prominent.exists { Thread.sleep(forTimeInterval: 0.5) }
+        let row = app.buttons["newChat.profile.\(profile)"].firstMatch
+        for _ in 0..<20 {
+            if floating.exists {
+                floating.tap()
+            } else if prominent.exists {
+                prominent.tap()
+            } else {
+                return false
+            }
+            if row.waitForExistence(timeout: 3) {
+                row.tap()
+                return true
+            }
+            // Without the menu the tap opened a plain new chat: back to the list and try again.
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if back.exists { back.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
     }
 
     /// Opens the first chat with a message in it, from wherever the list is.

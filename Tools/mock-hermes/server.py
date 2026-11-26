@@ -1699,7 +1699,10 @@ MODEL_OPTIONS = {
         {"slug": "openrouter", "name": "OpenRouter", "is_current": True, "is_user_defined": False, "authenticated": True,
          "models": ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6", "openai/gpt-5", "x-ai/grok-4.5", "google/gemini-3-pro", "deepseek/deepseek-v4", "qwen/qwen3-coder", "moonshotai/kimi-k2"],
          "featured_models": ["anthropic/claude-sonnet-4.6", "openai/gpt-5", "x-ai/grok-4.5", "google/gemini-3-pro"], "total_models": 8,
-         "capabilities": {"openai/gpt-5": {"fast": True, "reasoning": True}},
+         # Both shapes the composer's reasoning control has to draw: gpt-5 always reasons (Off
+         # isn't offered), qwen3-coder not at all (the control is disabled with the reason).
+         "capabilities": {"openai/gpt-5": {"fast": True, "reasoning": True, "can_disable_reasoning": False},
+                          "qwen/qwen3-coder": {"reasoning": False}},
          "pricing": {"anthropic/claude-sonnet-4.6": {"input": "$3.00", "output": "$15.00", "cache": None, "free": False}}},
         {"slug": "nous", "name": "Nous Portal", "is_current": False, "is_user_defined": False, "authenticated": True,
          "models": ["Hermes-4-405B", "Hermes-4-70B"], "featured_models": [], "total_models": 2},

@@ -177,13 +177,14 @@ code field. The Mac reads the pasteboard when asked.
   destructive role.
 - Alerts: `.alert` and `.confirmationDialog`. "Always Allow" always goes through a confirmation
   ("Always allow commands like this?").
-- Popovers on iPad and Mac (the model picker, the Inspector's + menu, file and skill previews):
-  `.popover`; on iPhone the model picker becomes a sheet. The slash menu is glass above the
-  composer, not a popover.
+- Popovers on the Mac (the model picker, the Inspector's + menu, file and skill previews):
+  `.popover`; on iPhone and iPad the model picker is a sheet, with the reasoning controls pinned
+  under the list. The slash menu is glass above the composer, not a popover.
 
 ## 6. Toolbars and navigation
 
-- Chat toolbar: the centred model picker (a Bot Chat shows the Bot's title instead) and a
+- Chat toolbar: the chat's title and its profile, centred on the Mac and leading on iPhone and
+  iPad, not a control (a Bot Chat shows the Bot's title instead) and a
   trailing New Chat (a Bot Chat has Routines and a … menu). iPad and Mac add the Inspector button
   ([inspector.md](inspector.md)). Leading is the system's: the back button of a pushed chat on
   iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there.

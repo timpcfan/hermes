@@ -41,7 +41,7 @@ struct ProcessStateGlyph: View {
 
 /// The composer's chip for the chat's background processes (`processChip`, §5): what runs, what
 /// just finished (4 s), what failed (until the Terminal showed it). Part of the composer's glass,
-/// after Think. Tap: the Terminal. Long-press: Stop for each running process, and Show Terminal.
+/// after the model chip. Tap: the Terminal. Long-press: Stop for each running process, and Show Terminal.
 struct ProcessChipView: View {
     let conversation: ConversationModel
 

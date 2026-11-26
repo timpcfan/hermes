@@ -33,8 +33,8 @@ design's component names, used in code comments.
   (`steer`, `interrupt` for Redirect, `queue` for Send Next), so other clients behave the same.
   While the app has no choice of its own, opening Settings adopts a gateway's value from
   `config.get {key: "busy"}`, unless it is Hermes' default, `interrupt`.
-- **Per message.** The mode chip (`modeChip`) takes Think's place while a turn runs and the field
-  has text or an attachment (not while dictating, in command mode, or while steering a helper). It
+- **Per message.** The mode chip (`modeChip`) appears beside the model chip, which keeps only its
+  reasoning glyph, while a turn runs and the field has text or an attachment (not while dictating, in command mode, or while steering a helper). It
   shows the mode Send will use. Tapping it puts the keyboard away and opens the mode menu
   (`modeMenu`): each mode with its one-line detail, and a footer naming the default and where to
   change it. The pick applies to this message only; the chip goes back to the default after

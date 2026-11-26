@@ -226,11 +226,15 @@ struct SkeletonRows: View {
     }
 }
 
-/// A capsule chip (`controls/chips.elyx` `chip` / `chipActive`): the composer's Think control
-/// and filters. Inactive is outlined; active fills with the raised surface.
+/// A capsule chip (`controls/chips.elyx` `chip` / `chipActive`): the composer's model-and-reasoning
+/// control and filters. Inactive is outlined; active fills with the raised surface.
 struct ChipLabel: View {
-    let title: String
+    /// The chip's words; nil or empty for one that shows only its glyph (the composer's model chip
+    /// while a turn runs).
+    var title: String?
     var symbol: String?
+    /// A glyph drawn as it is (the model chip's signal bars); `symbol` when nil.
+    var icon: AnyView?
     var isActive = false
     var showsChevron = false
 
@@ -239,15 +243,19 @@ struct ChipLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if let symbol {
+            if let icon {
+                icon
+            } else if let symbol {
                 Image(systemName: symbol)
                     .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
                     .foregroundStyle(isActive ? Theme.primaryText : Theme.secondaryText)
             }
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.primaryText)
-                .lineLimit(1)
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.primaryText)
+                    .lineLimit(1)
+            }
             if showsChevron {
                 Image(systemName: "chevron.down")
                     .font(.system(size: composerSizing?.chipChevronSize ?? 9, weight: .semibold))

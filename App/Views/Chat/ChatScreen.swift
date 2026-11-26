@@ -444,8 +444,10 @@ struct ChatScreen: View {
         if let roster, let name = conversation.botName {
             return roster.bot(named: name)?.title ?? name
         }
-        guard let key = conversation.stableKey, let session = workspace.session(forKey: key) else { return "" }
-        return session.displayTitle
+        // The same name the top bar shows (`ChatHeaderTitle`), so the window title and the bar
+        // never disagree about where the person is.
+        let session = conversation.stableKey.flatMap { workspace.session(forKey: $0) }
+        return ChatHeader.title(of: session, fallback: String(localized: "New chat"))
     }
 
     // MARK: Content
@@ -598,7 +600,7 @@ struct ChatScreen: View {
     /// toolbar and lay it out again, much of the switch on the Mac (`docs/chat.md` §4).
     ///
     /// On the Mac an item is also replaced, and the toolbar laid out again, whenever the views in
-    /// it change kind: a title that is the model picker in one chat and the Bot's title in the
+    /// it change kind: a title that is the chat's name in one chat and the Bot's title in the
     /// next, or ··· in place of New Chat. So there each item keeps one kind of view. The title
     /// switches inside a stack, which is a single view whatever it holds, and Routines, New Chat
     /// and ··· are always there, each hidden where it doesn't belong.
@@ -654,14 +656,9 @@ struct ChatScreen: View {
         if let roster, let name = conversation.botName {
             BotChatTitle(roster: roster, botName: name, conversation: conversation)
         } else {
-            // One kind of view inside the stack (the Mac toolbar rule): the profile picker joins
-            // the model's only while this draft can still choose where it starts.
-            HStack(spacing: 4) {
-                ModelPickerButton(conversation: conversation, workspace: workspace)
-                if workspace.listsEveryProfile, conversation.sessionID == nil {
-                    NewChatProfileButton(conversation: conversation, workspace: workspace)
-                }
-            }
+            // Where the person is (`docs/chat.md` §4): the chat's name and its profile. One kind of
+            // view inside the stack (the Mac toolbar rule).
+            ChatHeaderTitle(conversation: conversation, workspace: workspace)
         }
     }
 

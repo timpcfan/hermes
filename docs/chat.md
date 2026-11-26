@@ -1127,13 +1127,16 @@ Check with the mock: "video links".
   can name (Bots, files) only when it has an `@` in it, so the roster or the commands arriving as
   a chat opens don't redraw every reply.
 - **Switching chats keeps the toolbar.** A chat and a Bot's chat share one set of toolbar items
-  (the title or model picker, the Inspector, Routines, then ··· or New Chat), and only what's in
-  them changes; on the Mac, Routines is hidden outside a Bot's chat rather than left out. With a
+  (the title, the Inspector, Routines, then ··· or New Chat), and only what's in them changes; on
+  the Mac, Routines is hidden outside a Bot's chat rather than left out. With a
   set for each, a switch between the two rebuilt the window's whole toolbar and laid it out
   again, much of the switch's time on the Mac. The Mac also replaces an item whose views change
-  kind, so there each item keeps one: the title switches between the model picker and the Bot's
+  kind, so there each item keeps one: the title switches between the chat's title and the Bot's
   title inside one stack, and Routines, ··· and New Chat are always in the toolbar, each hidden
-  where it doesn't belong.
+  where it doesn't belong. The chat's title is its name and, under it, its profile
+  (`ChatHeaderTitle`): bold, one line, truncated at the tail, leading on iPhone and iPad and
+  centred on the Mac; it is not a control. The model and its reasoning are the composer's chip
+  ([composer.md](composer.md) §1).
 - **Haptics** (Settings → Haptics): a light tap when a message is sent, a success tap when a reply
   finishes, and a warning tap when an approval arrives; none per token.
 - **Sizes.** The transcript is at most 760 pt wide (`Theme.readableWidth`), centred on iPad and
