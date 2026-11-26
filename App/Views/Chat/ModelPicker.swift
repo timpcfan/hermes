@@ -96,7 +96,9 @@ struct ComposerModelChip: View {
         } label: {
             ChipLabel(
                 title: layout == .full ? model.name : nil,
-                icon: support.isSupported ? AnyView(reasoningIcon) : nil,
+                // A model that doesn't reason shows no bars beside its name; with the name gone
+                // while a turn runs, the bars stay, unlit, so the chip is never an empty capsule.
+                icon: support.isSupported || layout == .iconOnly ? AnyView(reasoningIcon) : nil,
                 isActive: conversation.reasoningEffort != nil && support.isSupported
             )
         }
@@ -128,7 +130,8 @@ struct ComposerModelChip: View {
     }
 
     /// The bars at the chip's size: whole bars lit in `.color` mode, the platform's Auto mark for
-    /// Auto, and nothing for a model that doesn't reason.
+    /// Auto, and unlit, dimmed bars for a model that doesn't reason (drawn only while a turn runs
+    /// and the chip has no name to show).
     @ViewBuilder private var reasoningIcon: some View {
         switch signal {
         case .auto:
@@ -141,7 +144,10 @@ struct ComposerModelChip: View {
                 .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
                 .foregroundStyle(Theme.primaryText)
         case .unavailable:
-            EmptyView()
+            Image(systemName: "cellularbars", variableValue: 0)
+                .symbolVariableValueMode(.color)
+                .font(.system(size: composerSizing?.chipGlyph(13) ?? 13, weight: .medium))
+                .foregroundStyle(Theme.tertiaryText)
         }
     }
 
