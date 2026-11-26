@@ -65,6 +65,7 @@ struct IOSChatRow: View {
                         .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .padding(.leading, Self.subtitleGutter)
                         .accessibilityHidden(true)
                 }
             }
@@ -103,6 +104,8 @@ struct IOSChatRow: View {
         HStack(spacing: 4) {
             Image(systemName: InboxSourceGroup(source: session.source).symbol)
                 .font(.system(size: InboxMetrics.glyphSize))
+                // A fixed gutter, so the model line below can start on the text's column.
+                .frame(width: Self.subtitleGlyphWidth, alignment: .center)
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(subtitle)
@@ -112,6 +115,11 @@ struct IOSChatRow: View {
                 .lineLimit(1)
         }
     }
+
+    /// The source glyph's column width; the model line indents past it to share the profile
+    /// text's left edge.
+    private static let subtitleGlyphWidth: CGFloat = 16
+    private static var subtitleGutter: CGFloat { subtitleGlyphWidth + 4 }
 
     /// When the running turn started, best first: the attached conversation's turn, the moment the
     /// message went out here, the first sight of the chat running this launch, then the session's
