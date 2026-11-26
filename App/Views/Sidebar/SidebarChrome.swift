@@ -125,7 +125,7 @@ struct SidebarRowDividerModifier: ViewModifier {
             .overlay(alignment: .bottom) {
                 if divider != .none {
                     Rectangle()
-                        .fill(divider == .section ? Theme.separator : Theme.hairline)
+                        .fill(divider == .section ? Theme.sectionSeparator : Theme.rowSeparator)
                         // One physical pixel, a thread at every scale.
                         .frame(height: 1 / max(displayScale, 1))
                         // The row's insets stay inside; the line runs the list's whole width.

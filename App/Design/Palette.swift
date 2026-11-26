@@ -136,6 +136,23 @@ nonisolated enum Palette {
         increasedContrastLight: Color(.sRGB, red: 0.2353, green: 0.2353, blue: 0.2627, opacity: 0.502),
         increasedContrastDark: Color(.sRGB, red: 0.4863, green: 0.4863, blue: 0.502)
     )
+    /// The line between list rows: the hairline's barely-there line read as nothing on the
+    /// canvas, so the row line sits at the system list separator's weight instead —
+    /// visible as a line, still quiet. Light and dark carry the same strength.
+    static let rowSeparator = Color(
+        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.18),
+        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.18),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.32),
+        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.32)
+    )
+    /// The line between regions: a step above the row line, so a break reads before its
+    /// spacing does.
+    static let sectionSeparator = Color(
+        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.26),
+        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.26),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.4),
+        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.4)
+    )
     /// Elevation shadow.
     static let shadow = Color(
         light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.1608),

@@ -38,6 +38,8 @@ nonisolated enum Theme {
     )
     static let hairline = Palette.hairline
     static let separator = Palette.separator
+    static let rowSeparator = Palette.rowSeparator
+    static let sectionSeparator = Palette.sectionSeparator
     static let primaryText = Palette.textPrimary
     // Both greys clear WCAG AA (4.5:1) on every surface, light and dark, and keep their order:
     // secondary stronger than tertiary.

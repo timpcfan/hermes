@@ -57,15 +57,14 @@ struct IOSChatRow: View {
                         .foregroundStyle(Theme.danger)
                         .lineLimit(1)
                 }
-                // The model and effort sit at the row's trailing corner, under everything else, so
-                // they never take the title's or the subtitle's room (`docs/inbox.md` §10).
+                // The model and effort share the profile line's column, under it (`docs/inbox.md`
+                // §10): one left edge for the row's small print, never a column of its own.
                 if let modelLine {
                     Text(modelLine)
                         .font(.caption)
                         .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityHidden(true)
                 }
             }
@@ -107,7 +106,8 @@ struct IOSChatRow: View {
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(subtitle)
-                .font(InboxMetrics.lineFont)
+                // The same small print as the model line below it: the two read as one column.
+                .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
         }

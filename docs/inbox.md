@@ -746,14 +746,15 @@ result or a link opens the same chat here as there.
 - **A row** (`IOSChatRow`): the profile's avatar at 44 pt on the left — its Bot's photo or drawn
   face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
   the unread dot on its corner. The sizes are the Bots tab's (`InboxMetrics`: `.body` title,
-  `.subheadline` line, 66 pt minimum row), so the two tabs read as one list. Then the title and pin,
+  66 pt minimum row), so the two tabs read as one list; the small print under the title is
+  `.caption`. Then the title and pin,
   at `.body` semibold and up to two lines: a long title wraps and the row grows, while the trailing
   status keeps its corner. Under it a line of source · profile · project (`ChatRowSubtitle`;
-  `git_repo_root`'s folder name, absent outside a repository). The device is never named. When
-  Hermes serves a model or a `reasoning_effort` for the chat, its trailing corner ends with
-  "qwen4-max · xhigh" in `.caption` tertiary text (`ChatRowSubtitle.modelLine`): the provider
-  prefix goes, a long name is cut, a missing half leaves no stray "·", and with neither the line is
-  absent.
+  `git_repo_root`'s folder name, absent outside a repository) in `.caption`, the same small print as
+  the model line below it so the two read as one column. The device is never named. When Hermes
+  serves a model or a `reasoning_effort` for the chat, a second `.caption` tertiary line under the
+  profile line shows "qwen4-max · xhigh" (`ChatRowSubtitle.modelLine`): the provider prefix goes, a
+  long name is cut, a missing half leaves no stray "·", and with neither the line is absent.
 - **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
   mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
   green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
@@ -766,10 +767,10 @@ result or a link opens the same chat here as there.
   streaming reply doesn't restart the clock. Only a running row redraws each second
   (`TimelineView`).
 - **The list's lines** (`SidebarRowDivider`): every chat row has a one-physical-pixel
-  `Theme.hairline` under it, running the list's whole width. Pinned's last row and each region's
-  last row get a slightly stronger `Theme.separator` line with 6 pt of air above it when another
-  region follows (Pinned → Main, then Working and Settled, whose headers stay); the list's last
-  row has none. The group chats and Bots rows draw the same two lines (`showsRowDividers`): the
+  `Theme.rowSeparator` under it, running the list's whole width. Pinned's last row and each
+  region's last row get a stronger `Theme.sectionSeparator` line with 6 pt of air above it when
+  another region follows (Pinned → Main, then Working and Settled, whose headers stay); the list's
+  last row has none. The group chats and Bots rows draw the same two lines (`showsRowDividers`): the
   breaks sit where the group chats end, where the pinned Bots end, and before Hidden. The split
   view's sidebar (iPad and Mac) passes nothing and looks as before.
 - **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
