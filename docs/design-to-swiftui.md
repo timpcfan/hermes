@@ -210,7 +210,11 @@ code field. The Mac reads the pasteboard when asked.
   or backed by hand. The bar shrinks while a list scrolls down (`tabBarMinimizeBehavior(.onScrollDown)`)
   and hides under a pushed screen (`toolbar(.hidden, for: .tabBar)` on the detail). Chats and Bots
   each push the picked chat, Bot chat or group in their own `NavigationStack`; a push into one
-  clears the other, so only one tab ever holds a pushed screen. Settings keeps its own stack. A
+  clears the other, so only one tab ever holds a pushed screen. Settings keeps its own stack. From
+  iOS 27 the compose button is the bar's own prominent tab (`Tab(role: .prominent)`,
+  `square.and.pencil`): the system draws it as a separate glass circle beside the tabs, on the same
+  line, and shrinks and hides it with the bar. Picking it never opens a tab: Chats and Settings
+  start a new chat, Bots asks New Bot or New Group Chat. iOS 26 has no prominent tab, so there a
   round compose button (`IOSComposeButton`: system glass, circle border shape) sits over the
   bottom-right of the two lists, above the bar, in a `safeAreaInset` so the last rows scroll clear
   of it (`docs/inbox.md` §10). The Chat tab carries the chat list's header — "Hermes", the connection dot and
@@ -253,8 +257,8 @@ Mac is the window's unified toolbar.
 |---|---|---|---|---|---|
 | Open the chat list | The system back button of a pushed chat, and swipe back | The system sidebar toggle | The system toggle in the source list's titlebar, ⌃⌘S | `backButton`; `ipadNavSplit` bar; `macNavWindow` tools | `MainView` (`RootView`); `SidebarCommands` (`HermesApp`) |
 | Unread count outside the list | On the back button | No badge on the system toggle (as in Mail): the Chats / Bots switch and rows in the sidebar, and the app icon badge | Dock badge (unchanged) | `backButton`, `ipadNavPortrait` | `BackButtonCount` (`SidebarView`), from `UnreadStore.unreadElsewhere` |
-| New Chat | The round button over the Chat tab's list, above the tab bar, and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `IOSComposeButton`; `ChatScreen.sessionToolbar`; `HermesCommands` |
-| New Bot, New Group Chat | The round button's menu over the Bot tab's list | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `IOSComposeButton`; `SidebarView.navigationRows`; `HermesCommands` |
+| New Chat | The round compose button beside the tab bar (on iOS 26 over the Chat tab's list, above the bar), and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `IOSMainView.tabs`, `IOSComposeButton`; `ChatScreen.sessionToolbar`; `HermesCommands` |
+| New Bot, New Group Chat | The round compose button on the Bot tab asks which (on iOS 26 its menu over the list) | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `IOSMainView.tabs`, `IOSComposeButton.newBotActions`; `SidebarView.navigationRows`; `HermesCommands` |
 | Model picker (a Bot Chat shows its title) | Centered in the pushed chat's toolbar | Centered in the detail toolbar | Centered in the toolbar | `chatToolbarPushed`, `botToolbarPushed` | `ChatScreen.sessionToolbar`, `BotChatViews` |
 | Routines, … menu (Bot Chat) | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` | `BotChatViews` |
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |

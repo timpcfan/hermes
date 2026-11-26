@@ -706,8 +706,9 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
 At a compact width `MainView` shows `IOSMainView` instead of the split view: the system's tab bar
 (`TabView` with Chats `bubble.left`, Bots `person.2` and Settings `gearshape`, no styling of its
 own), which shrinks while a list scrolls down (`tabBarMinimizeBehavior(.onScrollDown)`), and a
-round glass compose button over the bottom-right of the Chats and Bots lists, above the bar. iPad
-and Mac keep the split view unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
+round glass compose button beside it on the same line (from iOS 27; on iOS 26 over the
+bottom-right of the Chats and Bots lists, above the bar). iPad and Mac keep the split view
+unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
 result or a link opens the same chat here as there.
 
 - **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, the
@@ -749,11 +750,18 @@ result or a link opens the same chat here as there.
 - **Search** is the glass button: a page with the same `workspace.searchText`, chips and
   `SearchResultsSection` as the sidebar (`docs/search.md`). Picking a result opens its chat and
   closes the page.
-- **Compose** (`IOSComposeButton`) starts a new chat with the existing flow, profile picker
-  included. It sits in the lists' bottom `safeAreaInset`, so it never covers the tab bar, shrunk or
-  not, and the last rows scroll clear of it; Settings has none. The tab bar goes away while a chat,
-  Bot chat or group is pushed (`toolbar(.hidden, for: .tabBar)`); Back brings the list and the bar
-  back. Each list keeps its own stack and scroll position across tab switches.
+- **Compose** starts a new chat with the existing flow, profile picker included. From iOS 27 it
+  is the tab bar's prominent tab (`Tab(role: .prominent)`, `square.and.pencil`): the system draws
+  it as a separate glass circle beside the tabs, on the same line, and shrinks it with them. It is
+  a tab only in form: picking it acts a turn later and the tab stays as it was (acting inside the
+  selection change left the bar centred and unlabelled after the pushed chat). On Chats and on
+  Settings (which moves to Chats) it starts a new chat; on Bots it asks New Bot or New Group Chat,
+  and it is dimmed there while Bot Mode isn't connected. It stays on Settings because taking it
+  away moves the whole bar. iOS 26 has no prominent tab, so there `IOSComposeButton` sits in the
+  lists' bottom `safeAreaInset`, never covering the bar, with the Bot tab's menu; Settings has
+  none. The tab bar goes away while a chat, Bot chat or group is pushed
+  (`toolbar(.hidden, for: .tabBar)`); Back brings the list and the bar back. Each list keeps its
+  own stack and scroll position across tab switches.
 - **Bot tab** (`IOSBotList`) is the existing All Bots roster (`BotRosterSections`) with no filters;
   its compose button offers New Bot and New Group Chat. **Settings** reuses `SettingsView` without
   its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools, each
