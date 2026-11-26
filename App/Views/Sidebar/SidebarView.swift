@@ -321,14 +321,28 @@ struct SidebarView: View {
         // The next page loads at the very end, so Working and Settled follow the chats listed so
         // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
         if isWhole, workspace.hasMoreSessions, !workspace.inboxScope.narrowsMain {
-            SkeletonRows(count: 2)
-                .padding(.vertical, 8)
+            pageLoader
                 .modifier(SidebarRowInsets())
                 // Keyed to the paging position: a page can bring too few rows the list shows to
                 // push these off screen (This App on a gateway used mostly from Telegram), and
                 // they would then wait for a scroll that can't come (`docs/inbox.md` §5).
                 .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
+    }
+
+    /// The row the next page loads from, below Settled (`docs/inbox.md` §5 Paging). On a Mac it
+    /// draws nothing: a refresh reads at most 200 chats, so on a longer list the loading rows came
+    /// back below Settled after each one and stood there like an empty state.
+    @ViewBuilder
+    private var pageLoader: some View {
+        #if os(macOS)
+        Color.clear
+            .frame(height: 1)
+            .accessibilityHidden(true)
+        #else
+        SkeletonRows(count: 2)
+            .padding(.vertical, 8)
+        #endif
     }
 
     /// Settled (`docs/inbox.md` §2a): folded by default, its header counting every settled chat.
