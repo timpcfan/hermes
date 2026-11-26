@@ -239,6 +239,76 @@ final class NewChatComposerUITests: XCTestCase {
         try expectComposer(in: app, "largest-text-list")
     }
 
+    /// The new chat remains in its chosen profile when its runtime has to be resumed.
+    /// Run the mock with --cross-profile so the profile picker is available.
+    @MainActor
+    func testANewChatsChosenProfileSurvivesAReclaimedRuntime() async throws {
+        let first = "Profile routing first \(UUID().uuidString)"
+        let second = "Profile routing second \(UUID().uuidString)"
+        let app = launch(["-HERMES_DRAFT", first, "-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
+        defer { app.terminate() }
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Profile: '")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 30), "start the mock with --cross-profile")
+        picker.tap()
+        let research = app.buttons["Research Buddy"].firstMatch
+        XCTAssertTrue(research.waitForExistence(timeout: 10))
+        research.tap()
+        XCTAssertTrue(app.buttons["Profile: Research Buddy"].waitForExistence(timeout: 10))
+        app.buttons["Send"].firstMatch.tap()
+
+        let bundle = Bundle(for: NewChatComposerUITests.self)
+        let address = bundle.object(forInfoDictionaryKey: "HermesMockBackend") as? String ?? "http://127.0.0.1:19119"
+        let backend = try XCTUnwrap(URL(string: address))
+        let (pageData, _) = try await URLSession.shared.data(from: backend)
+        let page = String(decoding: pageData, as: UTF8.self)
+        let start = try XCTUnwrap(page.range(of: "__HERMES_SESSION_TOKEN__=\"")?.upperBound)
+        let end = try XCTUnwrap(page[start...].firstIndex(of: "\""))
+        let token = String(page[start..<end])
+        func request(_ path: String, method: String = "GET") async throws -> [String: Any] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: path, relativeTo: backend)))
+            request.httpMethod = method
+            request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        var stored: String?
+        for _ in 0..<60 {
+            let list = try await request("api/profiles/sessions?limit=200")
+            let rows = list["sessions"] as? [[String: Any]] ?? []
+            stored = rows.first { ($0["preview"] as? String)?.contains(first) == true }?["id"] as? String
+            if stored != nil { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        let id = try XCTUnwrap(stored, "the first prompt was not stored")
+        // Wait for the first answer before reclaiming the runtime.
+        var messages: [[String: Any]] = []
+        for _ in 0..<60 {
+            let transcript = try await request("api/sessions/\(id)/messages?profile=researcher")
+            messages = transcript["messages"] as? [[String: Any]] ?? []
+            if messages.contains(where: { $0["role"] as? String == "assistant" }) { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        XCTAssertTrue(messages.contains { $0["role"] as? String == "assistant" })
+        XCTAssertTrue(app.buttons["Stop"].waitForNonExistence(timeout: 30), "the first turn must finish before its runtime can be reclaimed")
+        let reclaimed = try await request("api/mock/close-sessions", method: "POST")
+        XCTAssertGreaterThan(reclaimed["closed"] as? Int ?? 0, 0, "the mock must actually reclaim a runtime")
+        let field = try composerField(in: app)
+        field.tap()
+        field.typeText(second)
+        app.buttons["Send"].firstMatch.tap()
+        for _ in 0..<60 {
+            let transcript = try await request("api/sessions/\(id)/messages?profile=researcher")
+            messages = transcript["messages"] as? [[String: Any]] ?? []
+            if messages.contains(where: { ($0["content"] as? String)?.contains(second) == true }) { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        XCTAssertEqual(messages.filter { $0["role"] as? String == "user" && ($0["content"] as? String)?.contains(first) == true }.count, 1)
+        XCTAssertEqual(messages.filter { $0["role"] as? String == "user" && ($0["content"] as? String)?.contains(second) == true }.count, 1,
+                       "resuming must send the second prompt to the same profile and stored chat")
+        attach("chosen-profile-after-runtime-reclaimed")
+    }
+
     // MARK: Helpers
 
     /// The composer's field, typed into and on screen above the keyboard, and the composer's

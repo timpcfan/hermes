@@ -5723,13 +5723,14 @@ extension ConversationModel {
         if sessionID != nil {
             return try await attachForSend()
         }
+        let createdProfile = gatewayProfile
         var params: [String: JSONValue] = [
             // The desktop platform: Hermes gets its Inspector tools (`docs/inspector.md` §2).
             "source": .string(PreviewBridge.sessionSource),
             // The same on every try: a create whose answer was lost gets the same chat back.
             "idempotency_key": .string(newChatCreateKey),
         ]
-        if let profile = gatewayProfile { params["profile"] = .string(profile) }
+        if let profile = createdProfile { params["profile"] = .string(profile) }
         if let model {
             params["model"] = .string(model.model)
             params["provider"] = .string(model.provider)
@@ -5749,7 +5750,7 @@ extension ConversationModel {
         // Another profile's new chat keeps its row under that profile (`docs/inbox.md` §9), so
         // its keys, history reads and notices all name the profile the create ran in.
         var row = HermesSession(id: stored)
-        if let profile = gatewayProfile, !ProfileRows.isHome(profile, home: workspace?.bot.profileName) {
+        if let profile = createdProfile, !ProfileRows.isHome(profile, home: workspace?.bot.profileName) {
             row.profile = profile
             row.keyProfile = profile
         }

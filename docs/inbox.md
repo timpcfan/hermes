@@ -697,8 +697,11 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   gateway's own first, the last choice remembered per gateway on this device
   (`BotWorkspace.rememberNewChatProfile`). The create, the first prompt and the chat's history all
   run in the chosen profile (`ConversationModel.newChatProfile` feeds `gatewayProfile` until
-  Hermes makes the chat), and the new row takes that profile's key and badge. A waiting first
-  message keeps its profile too, so a relaunch resumes under the same key. Bot Mode not connected,
+  Hermes makes the chat), and the new row takes that profile's key and badge. The profile is
+  captured before `session.create` is sent and reused when its answer becomes a stored row;
+  neither assigning the session id nor changing the picker while the request is in flight can
+  change whose chat was created. A waiting first message keeps its profile too, so a relaunch
+  resumes under the same key. Bot Mode not connected,
   New Chat is as it always was: the gateway's own profile, no picker.
 - **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it
   always was: no badges, no Profile filter (the kept choice waits, `InboxScope.withoutProfile`),
@@ -707,7 +710,11 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   ask again while that connection lives (`profilesRouteMissing`).
 - **The mock**: `backend.py --cross-profile` seeds researcher, writer and ops chats (some in
   repositories, one settled per profile, one id shared with the gateway's own) and serves the
-  endpoint; without it the endpoint answers 404 as an older Hermes does.
+  endpoint; without it the endpoint answers 404 as an older Hermes does. The create transition
+  also has an executable regression check, which extracts the app's Swift method and runs it:
+  `python3 -m unittest discover -s Tools/mock-hermes/tests -p test_new_chat_profile.py -v`.
+  It covers both cross-profile directions, home-profile controls, the main profile, a picker
+  change during create, and a waiting first message restored before creation.
 
 ## 10. The iPhone's Chat tab (this fork)
 
