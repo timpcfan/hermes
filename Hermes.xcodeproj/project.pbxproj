@@ -304,6 +304,7 @@
 		D7B104DB46D5B2D360EED23E /* SetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64F1CA13067D78A8E375D18 /* SetupViews.swift */; };
 		D7D72F02DE8256F23E1D558B /* SlashCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */; };
 		D8C6962FD039AB25D4E10AA6 /* ClipPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC289A9F418A109A87A2C587 /* ClipPlayer.swift */; };
+		DA33F0326B0A740B2AFC6388 /* ComposeMenuPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0295B1CC3AE26B9AD71DA0 /* ComposeMenuPanel.swift */; };
 		DA5E96BF599013B2D1B8F4E8 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 0EF800A31CAF7FB36EEDB794 /* WebRTC */; };
 		DB6E02E7451788797E0723A6 /* BotRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7C3D8889E2F335D5966AF1 /* BotRoster.swift */; };
 		DC0B1F8A94EEAD121D450574 /* HermesMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 330FBC1003F4899C51BE0895 /* HermesMark.swift */; };
@@ -678,6 +679,7 @@
 		D8DCE68A5C048D3E37F570BD /* RouteWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteWatcher.swift; sourceTree = "<group>"; };
 		D9D2D5DCEF43257F63678086 /* ChangesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangesModel.swift; sourceTree = "<group>"; };
 		DB15EAEFAB7E7C3B22F6B3FF /* ReadRecheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadRecheck.swift; sourceTree = "<group>"; };
+		DC0295B1CC3AE26B9AD71DA0 /* ComposeMenuPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeMenuPanel.swift; sourceTree = "<group>"; };
 		DDCAA78C61AB4467E72E5E0F /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		DE480A0097C12F38535C11E8 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		DE747DB99EB241BB0E0625DC /* SlashCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCatalog.swift; sourceTree = "<group>"; };
@@ -1438,6 +1440,7 @@
 		E2A3397ADE991EC11CD5993C /* Sidebar */ = {
 			isa = PBXGroup;
 			children = (
+				DC0295B1CC3AE26B9AD71DA0 /* ComposeMenuPanel.swift */,
 				E7C3E92CFAE67E60ABC5D6B1 /* IOSBotList.swift */,
 				89F6307063CB440F0DB83253 /* IOSChatList.swift */,
 				3AB1797B38534062C2C3F38F /* IOSChatRow.swift */,
@@ -1846,6 +1849,7 @@
 				27DD7454BE98B6CA58EFAAF1 /* CollectionsWidgets.swift in Sources */,
 				001DBDA178379735F849569C /* CommandViews.swift in Sources */,
 				DD1A55FBE6CCB5FEA721E7C4 /* Components.swift in Sources */,
+				DA33F0326B0A740B2AFC6388 /* ComposeMenuPanel.swift in Sources */,
 				EE00BBB832C5017665D4C1B5 /* ComposerView.swift in Sources */,
 				068B76484A7240440B1A6B94 /* ConnectionLog.swift in Sources */,
 				2DC3776495C4F68E39D3297D /* ConnectionsComponents.swift in Sources */,
