@@ -743,11 +743,17 @@ result or a link opens the same chat here as there.
   "Filtered: …" line goes above the rows in this layout; "Show Everything" stays in the Sources
   menu while anything differs from the standard. A picked profile without chats says so ("No chats
   in scout"), not that the sources hold nothing.
-- **A row** (`IOSChatRow`): the profile's avatar at 34 pt on the left — its Bot's photo or drawn
+- **A row** (`IOSChatRow`): the profile's avatar at 44 pt on the left — its Bot's photo or drawn
   face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
-  the unread dot on its corner. Then the title and pin, and a second line of source · profile ·
-  project (`ChatRowSubtitle`; `git_repo_root`'s folder name, absent outside a repository). The
-  device is never named.
+  the unread dot on its corner. The sizes are the Bots tab's (`InboxMetrics`: `.body` title,
+  `.subheadline` line, 66 pt minimum row), so the two tabs read as one list. Then the title and pin,
+  at `.body` semibold and up to two lines: a long title wraps and the row grows, while the trailing
+  status keeps its corner. Under it a line of source · profile · project (`ChatRowSubtitle`;
+  `git_repo_root`'s folder name, absent outside a repository). The device is never named. When
+  Hermes serves a model or a `reasoning_effort` for the chat, its trailing corner ends with
+  "qwen4-max · xhigh" in `.caption` tertiary text (`ChatRowSubtitle.modelLine`): the provider
+  prefix goes, a long name is cut, a missing half leaves no stray "·", and with neither the line is
+  absent.
 - **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
   mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
   green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as

@@ -321,7 +321,7 @@ struct IOSChatList: View {
     }
 
     private func row(_ session: HermesSession) -> some View {
-        SidebarRow(isSelected: false, height: InboxMetrics.rowHeight) {
+        SidebarRow(isSelected: false, height: InboxMetrics.botRowHeight) {
             workspace.pick(.session(session.stableID))
         } label: {
             IOSChatRow(session: session, workspace: workspace)

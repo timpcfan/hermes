@@ -41,29 +41,47 @@ struct IOSChatRow: View {
     private var isMuted: Bool { workspace.unread.isMuted(key) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             ChatProfileAvatar(profile: profile, workspace: workspace, isUnread: isUnread)
-            VStack(alignment: .leading, spacing: 3) {
-                title
+            VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
+                HStack(alignment: .top, spacing: 8) {
+                    title
+                    Spacer(minLength: 0)
+                    ChatRowStatusBadge(state: state, startedAt: startedAt)
+                        .padding(.top, 1)
+                }
                 subtitleLine
                 if case .failed(let reason) = state {
                     Text(reason)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(Theme.danger)
                         .lineLimit(1)
                 }
+                // The model and effort sit at the row's trailing corner, under everything else, so
+                // they never take the title's or the subtitle's room (`docs/inbox.md` §10).
+                if let modelLine {
+                    Text(modelLine)
+                        .font(.caption)
+                        .foregroundStyle(Theme.tertiaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
             }
-            Spacer(minLength: 6)
-            ChatRowStatusBadge(state: state, startedAt: startedAt)
-                .padding(.top, 1)
         }
         .padding(.vertical, 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
     }
 
+    /// The chat's model and effort, when the gateway serves either.
+    private var modelLine: String? {
+        ChatRowSubtitle.modelLine(model: session.model, effort: session.reasoningEffort)
+    }
+
     private var title: some View {
-        HStack(spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
             if session.pinned {
                 Image(systemName: "pin.fill")
                     .font(.caption2)
@@ -71,22 +89,25 @@ struct IOSChatRow: View {
                     .accessibilityHidden(true)
             }
             Text(session.displayTitle)
-                .font(.subheadline.weight(.semibold))
+                // The Bots tab's title size (`InboxMetrics.unreadTitleFont`), up to two lines: a
+                // long title wraps instead of pushing the status on the right out of its corner.
+                .font(InboxMetrics.unreadTitleFont)
+                .fixedSize(horizontal: false, vertical: true)
                 // Running fades the title, as the design draws it: the status on the right is the
                 // thing to read while Hermes works.
                 .foregroundStyle(state == .running ? Theme.secondaryText : Theme.primaryText)
-                .lineLimit(1)
+                .lineLimit(2)
         }
     }
 
     private var subtitleLine: some View {
         HStack(spacing: 4) {
             Image(systemName: InboxSourceGroup(source: session.source).symbol)
-                .font(.system(size: 10))
+                .font(.system(size: InboxMetrics.glyphSize))
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(subtitle)
-                .font(.caption)
+                .font(InboxMetrics.lineFont)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
         }
@@ -105,6 +126,7 @@ struct IOSChatRow: View {
 
     private var spoken: String {
         var parts = [session.displayTitle, subtitle]
+        if let modelLine { parts.append(modelLine) }
         if isUnread { parts.append(String(localized: "unread")) }
         if session.pinned { parts.append(String(localized: "pinned")) }
         if isMuted { parts.append(String(localized: "muted")) }
@@ -135,7 +157,7 @@ struct ChatProfileAvatar: View {
     let profile: String
     let workspace: BotWorkspace
     let isUnread: Bool
-    var size: CGFloat = 34
+    var size: CGFloat = InboxMetrics.faceSize
 
     private var appearance: BotAppearance? {
         guard let roster = workspace.roster, let bot = roster.bot(named: profile) else { return nil }
@@ -214,7 +236,8 @@ struct ChatRowStatusBadge: View {
                 label(symbol: "exclamationmark.circle.fill", text: String(localized: "Failed"), color: Theme.danger)
             }
         }
-        .font(.caption.weight(.semibold))
+        // The Bots rows' time size, one weight up: the two tabs read as one list (`docs/inbox.md` §10).
+        .font(.footnote.weight(.semibold))
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityHidden(true)
     }
