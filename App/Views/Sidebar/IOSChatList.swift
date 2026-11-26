@@ -476,7 +476,8 @@ struct IOSSearchPage: View {
             .background(Theme.canvas)
             .environment(\.defaultMinListRowHeight, 10)
             .overlay {
-                if workspace.searchText.isEmpty {
+                // A query with no results says so; an empty field has nothing to report.
+                if !workspace.searchText.isEmpty, workspace.search.isEmpty {
                     SearchEmptyState(search: workspace.search)
                 }
             }
