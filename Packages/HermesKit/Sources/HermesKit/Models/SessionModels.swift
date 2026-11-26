@@ -7,9 +7,6 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
     /// Where the conversation started: `api_server`, `cli`, `telegram`, `discord`, … (open set).
     public var source: String?
     public var model: String?
-    /// The reasoning effort the chat last ran with (`reasoning_effort`, an open set of provider
-    /// levels such as `high` or `none`). Older gateways don't serve it, so it is often nil.
-    public var reasoningEffort: String?
     public var title: String?
     public var startedAt: Date?
     public var endedAt: Date?
@@ -46,7 +43,6 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, source, model, title, preview, pinned, archived, profile
-        case reasoningEffort = "reasoning_effort"
         case isDefaultProfile = "is_default_profile"
         case gitRepoRoot = "git_repo_root"
         case keyProfile = "_key_profile"
@@ -67,13 +63,11 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
 
     public init(
         id: String, source: String? = "api_server", model: String? = nil, title: String? = nil,
-        startedAt: Date? = .now, lastActive: Date? = .now, preview: String? = nil, messageCount: Int? = 0,
-        reasoningEffort: String? = nil
+        startedAt: Date? = .now, lastActive: Date? = .now, preview: String? = nil, messageCount: Int? = 0
     ) {
         self.id = id
         self.source = source
         self.model = model
-        self.reasoningEffort = reasoningEffort
         self.title = title
         self.startedAt = startedAt
         self.lastActive = lastActive
@@ -89,7 +83,6 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         id = try c.decode(String.self, forKey: .id)
         source = try? c.decodeIfPresent(String.self, forKey: .source)
         model = try? c.decodeIfPresent(String.self, forKey: .model)
-        reasoningEffort = try? c.decodeIfPresent(String.self, forKey: .reasoningEffort)
         title = try? c.decodeIfPresent(String.self, forKey: .title)
         startedAt = HermesDate.fromEpoch(try? c.decodeIfPresent(Double.self, forKey: .startedAt))
         endedAt = HermesDate.fromEpoch(try? c.decodeIfPresent(Double.self, forKey: .endedAt))
@@ -123,7 +116,6 @@ public struct HermesSession: Codable, Sendable, Hashable, Identifiable {
         try c.encode(id, forKey: .id)
         try c.encodeIfPresent(source, forKey: .source)
         try c.encodeIfPresent(model, forKey: .model)
-        try c.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(startedAt?.timeIntervalSince1970, forKey: .startedAt)
         try c.encodeIfPresent(endedAt?.timeIntervalSince1970, forKey: .endedAt)

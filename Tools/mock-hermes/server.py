@@ -147,8 +147,7 @@ def session_gone(ids, reason):
 JOBS = {}
 
 
-def session_row(sid, title, source, started, last, preview, model="anthropic/claude-sonnet-4.6",
-                reasoning_effort=None):
+def session_row(sid, title, source, started, last, preview, model="anthropic/claude-sonnet-4.6"):
     SESSIONS[sid] = {
         "id": sid, "source": source, "user_id": None, "model": model, "title": title,
         "started_at": started, "ended_at": None, "end_reason": None,
@@ -160,10 +159,6 @@ def session_row(sid, title, source, started, last, preview, model="anthropic/cla
         # = read until then. The API server's rows don't carry it; the dashboard's do (inbox.py).
         "_last_read_at": None,
     }
-    # Hermes serves `reasoning_effort` on the rows whose chat ran with one, and not at all on an
-    # older gateway or a chat that never chose: the app draws the line from whichever halves exist.
-    if reasoning_effort is not None:
-        SESSIONS[sid]["reasoning_effort"] = reasoning_effort
     MESSAGES[sid] = []
 
 
@@ -507,10 +502,10 @@ final class FeedModel {
 
 
 def seed():
-    # Rows with a model and a reasoning effort, a model alone, and neither, so the iPhone's row
-    # line (model · effort) is seen in every shape without a real gateway.
+    # Rows with a model and without one, so the iPhone's row line is seen in both shapes
+    # without a real gateway.
     session_row("api_1760_welcome", "Swift 6 migration plan", "api_server", NOW - 2 * HOUR, NOW - 25 * 60,
-                "Help me migrate my app to Swift 6", model="xunxin-default/qwen4-max", reasoning_effort="xhigh")
+                "Help me migrate my app to Swift 6", model="xunxin-default/qwen4-max")
     # A title long enough to take two lines in the iPhone's chat list.
     session_row("api_1760_long", "Refactor the authentication middleware before the next beta ships", "api_server",
                 NOW - 70 * 60, NOW - 45 * 60, "Walk the auth middleware and split it before the beta",
@@ -551,7 +546,7 @@ def seed():
     # Commands, skills, Bots and gateway files as plain text, the way the CLI sends them: the
     # app draws them as cards, chips and pills (docs/commands-and-references.md).
     session_row("cli_release_prep", "Release prep", "cli", NOW - 3 * HOUR, NOW - 40 * 60, "fix issue #123 and open a PR",
-                model=None, reasoning_effort="high")
+                model=None)
     t = NOW - 3 * HOUR
     add_message("cli_release_prep", "user", "/github-pr-workflow /test-driven-development fix issue #123 and open a PR", timestamp=t)
     add_message("cli_release_prep", "assistant", "Fixed the reconnect loop in `Sources/Sync/Reconnect.swift` with a failing test first, then opened **#124**.", timestamp=t + 40)
