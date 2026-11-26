@@ -67,7 +67,7 @@ struct IOSChatRow: View {
     /// The chat's model, when the gateway serves one. The reasoning level stays out of the row
     /// (`docs/inbox.md` §10): beside the profile it read as noise.
     private var modelLine: String? {
-        ChatRowSubtitle.modelLine(model: session.model, effort: nil)
+        ChatRowSubtitle.modelLine(model: session.model)
     }
 
     private var title: some View {
