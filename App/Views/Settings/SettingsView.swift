@@ -5,6 +5,10 @@ import SwiftUI
 /// (`settings`), on iPad a page sheet with a sidebar and the selected page beside it
 /// (`ipadSettings`). The Mac has its own window (`MacSettingsView`).
 struct SettingsView: View {
+    /// A sheet closes with Done. The iPhone tab keeps Settings on screen, so there it draws no
+    /// Done button (there is nothing to dismiss to).
+    var allowsDismiss = true
+
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -12,12 +16,12 @@ struct SettingsView: View {
     var body: some View {
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .pad, sizeClass == .regular {
-            SettingsSplitView()
+            SettingsSplitView(allowsDismiss: allowsDismiss)
         } else {
-            SettingsList()
+            SettingsList(allowsDismiss: allowsDismiss)
         }
         #else
-        SettingsList()
+        SettingsList(allowsDismiss: allowsDismiss)
         #endif
     }
 
@@ -32,6 +36,8 @@ struct SettingsView: View {
 /// iPhone (and an iPad window too narrow for two columns): every section in one list, pages
 /// pushed in (`settings`, `settingsScrolled`, `settingsAX5`).
 private struct SettingsList: View {
+    var allowsDismiss = true
+
     @Environment(AppModel.self) private var app
     @Environment(WindowRouter.self) private var router: WindowRouter?
     @Environment(\.dismiss) private var dismiss
@@ -112,8 +118,10 @@ private struct SettingsList: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    SettingsDoneButton { dismiss() }
+                if allowsDismiss {
+                    ToolbarItem(placement: .confirmationAction) {
+                        SettingsDoneButton { dismiss() }
+                    }
                 }
             }
             #endif
@@ -176,6 +184,8 @@ private struct HermesPages {
 /// sidebar, the selected page beside it. Both columns stay in portrait and at the largest sizes,
 /// where the sidebar widens. ↑ and ↓ move through the sidebar; Escape and ⌘. close it.
 private struct SettingsSplitView: View {
+    var allowsDismiss = true
+
     @Environment(AppModel.self) private var app
     @Environment(WindowRouter.self) private var router: WindowRouter?
     @Environment(\.dismiss) private var dismiss
@@ -203,8 +213,10 @@ private struct SettingsSplitView: View {
             NavigationStack {
                 page
                     .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            SettingsDoneButton { dismiss() }
+                        if allowsDismiss {
+                            ToolbarItem(placement: .confirmationAction) {
+                                SettingsDoneButton { dismiss() }
+                            }
                         }
                     }
             }
