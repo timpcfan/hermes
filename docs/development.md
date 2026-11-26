@@ -555,7 +555,18 @@ name has "refuseupload" is refused as a full disk would be (5028 `[Errno 28] No 
 device`), "toolarge" as over the 256 MB cap, and a PDF named with "nopdftoppm" as on a gateway
 without poppler (5028), so it goes again with `file.attach`. `POST /api/mock/close-sessions` closes
 every idle chat's session as another client's `session.close` would, with the sockets left up: the
-next upload or prompt on it answers 4001 "session not found", and the app resumes and sends again.
+next upload or prompt on it answers 4001 "session not found", and the app resumes and sends again
+(`{"session_id": <runtime or stored id>}` closes just that chat, so parallel tests don't collide).
+The mock answers `config.set` like the gateway's `model_switch.py` (`docs/sessions-and-models.md`
+§4): `{applied: true}` when the session takes it, `{applied: false, deferred: true}` while its turn
+runs (the switch takes over as the next turn starts), Hermes's `confirm_required` for Opus, and a
+refusal with the gateway's code. `POST /api/mock/config-set {stored, applied_field, deferred,
+error, message, reset}` shapes those answers for one chat as another gateway version would: no
+`applied` field (older than 0.24), a forced deferral, or an error such as 5001. `GET
+/api/mock/calls?stored=<id>` lists what the chat's socket calls carried (`config.set` with its
+`applied`/`deferred`/`error`, `prompt.submit` with the model each ran on), `POST
+/api/mock/calls/reset` clears them; `Tools/mock-hermes/tests/test_session_model.py` reads them to
+prove a pick ran the very next message.
 `--hermes-version` (default 0.21.6) is the version `/api/status` reports; before 0.23.1 the socket
 closes with 1009 on a message over 16 MiB, as uvicorn's did, so a file over about 12 MB never arrives.
 `session.steer` refuses 4010 "agent does not support steer" in a turn's first half second (its

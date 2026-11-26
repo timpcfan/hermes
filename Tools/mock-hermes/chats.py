@@ -27,6 +27,14 @@ import uuid
 B = None  # backend.py's module globals
 G = None  # server.py (API-server mock) module
 
+# Mock-only, for the app's model-switch tests (`docs/sessions-and-models.md` §4): what `config.set`
+# answers for one chat, and what it and `prompt.submit` received.
+#   POST /api/mock/config-set {"stored", "applied_field", "deferred", "error", "message"}
+#   GET  /api/mock/calls?stored=<stored id>      (both calls, in order)
+#   POST /api/mock/calls/reset {"stored"}
+CONFIG_MODES = {}  # stored id -> {"applied_field": bool, "deferred": bool, "error": int | None, "message": str | None}
+CALLS = []         # {"method", "session_id", "stored", ...}, in the order the socket received them
+
 
 def install(backend_globals, gateway_module):
     global B, G
@@ -44,7 +52,35 @@ def install(backend_globals, gateway_module):
                          kwargs={"reply": body.get("reply")}, daemon=True).start()
         return 200, {"ok": True, "room": room["room_id"]}
 
+    def config_mode(query, body):
+        stored = str(body.get("stored") or body.get("session_id") or "")
+        if body.get("reset"):
+            CONFIG_MODES.pop(stored, None)
+            return 200, {"ok": True, "stored": stored}
+        CONFIG_MODES[stored] = {
+            "applied_field": bool(body.get("applied_field", True)),
+            "deferred": bool(body.get("deferred", False)),
+            "error": body.get("error"),
+            "message": body.get("message"),
+        }
+        return 200, {"ok": True, "stored": stored}
+
+    def calls(query, body):
+        stored = (query.get("stored") or [""])[0]
+        return 200, {"calls": [call for call in CALLS if not stored or call.get("stored") == stored]}
+
+    def clear_calls(query, body):
+        stored = str(body.get("stored") or "")
+        if stored:
+            CALLS[:] = [call for call in CALLS if call.get("stored") != stored]
+        else:
+            CALLS.clear()
+        return 200, {"ok": True}
+
     B["HTTP_ROUTES"][("POST", "/api/mock/room-say")] = say_in_room
+    B["HTTP_ROUTES"][("POST", "/api/mock/config-set")] = config_mode
+    B["HTTP_ROUTES"][("GET", "/api/mock/calls")] = calls
+    B["HTTP_ROUTES"][("POST", "/api/mock/calls/reset")] = clear_calls
     B["CHAT_TURN_ELSEWHERE"] = turn_elsewhere
     original = {name: methods[name] for name in ("session.create", "session.resume", "prompt.submit")}
 
@@ -71,6 +107,12 @@ def install(backend_globals, gateway_module):
             print(f"[mock-hermes] prompt.submit with {', '.join(refs)}", flush=True)
         if runtime is None or runtime.get("kind") != "chat":
             return original["prompt.submit"](params)
+        # A runtime another client closed answers 4001, as Hermes's `session.close` leaves it.
+        B["runtime_for"](params)
+        pending_model_takes_over(sid)
+        info = session_model(runtime["stored"])
+        CALLS.append({"method": "prompt.submit", "session_id": sid, "stored": runtime["stored"],
+                      "text": params.get("text") or "", "model": info["model"], "provider": info["provider"]})
         return submit_chat(sid, runtime, params.get("text") or "", bool(params.get("queued")), B["submitted_kind"](params))
 
     B["CHATS_HOOKS"].update({"add_message": chat_add_message, "finish": finish})
@@ -248,16 +290,60 @@ def submit_chat(sid, runtime, text, queued=False, display_kind=None):
 
 
 def config_set(params):
+    """`config.set` as the gateway answers it (`docs/sessions-and-models.md` §4): a switch that took
+    is `applied: true`; one a running turn holds back is `applied: false, deferred: true` and takes
+    over as the next turn starts; a selection guard is `applied: false, confirm_required: true` and
+    switches nothing. A dead runtime is 4001."""
     key, value = params.get("key", ""), params.get("value", "")
+    sid = params.get("session_id") or ""
+    runtime = B["RUNTIME"].get(sid) if sid else None
+    stored = (runtime or {}).get("stored")
+    mode = CONFIG_MODES.get(stored or "", {})
     if key == "busy" and value in ("queue", "steer", "interrupt"):
         B["BUSY"]["mode"] = value  # display.busy_input_mode, for every client
+    if mode.get("error"):
+        CALLS.append({"method": "config.set", "session_id": sid, "stored": stored, "key": key, "value": value,
+                      "error": int(mode["error"])})
+        raise B["RPCError"](int(mode["error"]), mode.get("message") or "config set failed")
+    answer = {}
     if key == "model" and any(w in value.lower() for w in ("opus", "expensive")) and not params.get("confirm_expensive_model"):
         # Like Hermes's selection guards: an expensive model waits for the person to confirm.
         message = f"{value.split(' --')[0]} costs about 5x more per token than your current model."
-        return {"key": key, "value": value, "warning": message, "confirm_required": True, "confirm_message": message}
-    if key == "model" and params.get("session_id"):
-        switch_model(params["session_id"], value)
-    return {"key": key, "value": value, "scope": "session" if params.get("session_id") else "global"}
+        answer = {"warning": message, "confirm_required": True, "confirm_message": message, "applied": False}
+    elif key in ("model", "reasoning") and sid:
+        if runtime is None or runtime.get("dead"):
+            CALLS.append({"method": "config.set", "session_id": sid, "stored": stored, "key": key, "value": value,
+                          "error": 4001})
+            raise B["RPCError"](4001, "session not found")
+        if key == "model":
+            if runtime["running"]:
+                # A turn is running: the switch waits for the next turn to start (`deferred`).
+                runtime["pending_model"] = value
+                answer = {"applied": False, "deferred": True}
+            else:
+                switch_model(sid, value)
+                answer = {"applied": True}
+        else:
+            runtime["reasoning"] = value
+            answer = {"applied": True}
+    if mode.get("deferred") and key in ("model", "reasoning"):
+        # Mock-only: an old gateway's `deferred` without `applied` (the app must take it).
+        answer = {"applied": False, "deferred": True}
+    if not mode.get("applied_field", True):
+        # Mock-only: an older gateway, whose answer names no `applied`.
+        answer.pop("applied", None)
+    CALLS.append({"method": "config.set", "session_id": sid, "stored": stored, "key": key, "value": value,
+                  "applied": answer.get("applied"), "deferred": answer.get("deferred"),
+                  "confirm_required": answer.get("confirm_required")})
+    return {"key": key, "value": value, "scope": "session" if sid else "global", **answer}
+
+
+def pending_model_takes_over(sid):
+    """A deferred `config.set model` takes effect as the next turn starts (Hermes's own switch)."""
+    with B["LOCK"]:
+        value = (B["RUNTIME"].get(sid) or {}).pop("pending_model", None)
+    if value:
+        switch_model(sid, value)
 
 
 def switch_model(sid, value):

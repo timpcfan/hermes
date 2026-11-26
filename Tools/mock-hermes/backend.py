@@ -2989,10 +2989,14 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/mock/close-sessions":
             # Mock-only: another client closes the idle chats' sessions (Hermes's `session.close`, as Desktop
             # does) while this app's socket stays up. Its runtime ids are then unknown: the next call on one
-            # answers 4001 "session not found", and the app has to resume before it can go on.
+            # answers 4001 "session not found", and the app has to resume before it can go on. A `session_id`
+            # (runtime or stored) closes just that chat, so parallel tests leave each other's alone.
+            wanted = str(body.get("session_id") or body.get("stored") or "")
             with LOCK:
                 closed = 0
-                for runtime in RUNTIME.values():
+                for sid, runtime in RUNTIME.items():
+                    if wanted and wanted not in (sid, runtime["stored"]):
+                        continue
                     if runtime.get("dead") or runtime.get("running"):
                         continue
                     runtime["dead"] = True
