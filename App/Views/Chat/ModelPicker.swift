@@ -226,9 +226,18 @@ struct ModelPickerView: View {
     }
 
     #if os(macOS)
-    /// The Mac's compact popover (`screens/mac/sheets.elyx` `macModelPicker`): search, then the
-    /// models with their provider and price.
+    /// The Mac's compact popover (`screens/mac/sheets.elyx` `macModelPicker`): the models on the
+    /// left, the reasoning ladder on the right (`docs/composer.md` §1).
     private var macBody: some View {
+        HStack(spacing: 0) {
+            macModelList
+            Divider()
+            reasoningColumn
+        }
+    }
+
+    /// Search, then the models with their provider and price.
+    private var macModelList: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -354,6 +363,47 @@ struct ModelPickerView: View {
         guard let input = pricing.input, let output = pricing.output else { return nil }
         return "\(input) / \(output)"
     }
+
+    /// The popover's second column (`docs/composer.md` §1): Auto and the ladder, one level at a
+    /// time. A level picked here leaves the popover open; a model picked on the left closes it.
+    private var reasoningColumn: some View {
+        let support = conversation.chipReasoningSupport
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Reasoning")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.secondaryText)
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+            ScrollView {
+                VStack(spacing: 2) {
+                    macRow(title: String(localized: "Auto"), subtitle: nil,
+                           isSelected: conversation.reasoningEffort == nil,
+                           isDisabled: !support.isSupported) {
+                        conversation.reasoningEffort = nil
+                    }
+                    Divider().padding(.vertical, 4)
+                    ForEach(ReasoningEffort.allCases) { level in
+                        macRow(title: ReasoningNames.title(for: level), subtitle: nil,
+                               isSelected: conversation.reasoningEffort == level,
+                               isDisabled: !support.isSupported || (level == .off && !support.canDisable)) {
+                            conversation.reasoningEffort = level
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 6)
+            }
+            if let note = reasoningNote(support) {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.secondaryText)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+            }
+        }
+        .frame(width: 168, height: 380)
+    }
     #endif
 
     private var listBody: some View {
@@ -471,9 +521,6 @@ struct ModelPickerView: View {
                 }
             }
         }
-        #if os(macOS)
-        .frame(width: 380, height: 520)
-        #endif
     }
 
     private static var refreshPlacement: ToolbarItemPlacement {
