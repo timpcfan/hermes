@@ -107,3 +107,17 @@ gateway、`~/.hermes` 或付费模型。验证完成后已停止 mock 并关闭�
   `Theme` 既有 token，取舍记录在 `_brief/QUESTIONS.md`。
 - **系统版本**：截图来自 iOS 27.2 模拟器（Liquid Glass 标签栏、`.scrollEdgeEffectStyle`）；
   iOS 26 及更早版本的标签栏与滚动边缘效果可能略有差异。
+
+## 六、第一轮试用后的调整（2026-11-26 晚）
+
+用户看过真机效果后提出两点：
+
+1. **模型行改到 profile 列**：原先模型与推理强度右对齐、独占一行尾部（视觉上像单独一列）。
+   现在它排在 `来源 · profile · 项目` 行的正下方，左边缘与 profile 文字对齐（缩进 20 pt，
+   跨过来源图标列），两行同为 `.caption`，整行只剩一列小字。见 `IOSChatRow.swift`。
+2. **行线加深**：原行线用 `Theme.hairline`（7.8% 黑，浅色截图实测 RGB 235），用户反馈看不清。
+   新增 `Palette.rowSeparator` / `sectionSeparator`（22% / 30%，深浅色同强度，含 Increase
+   Contrast 变体）：浅色实测行线 RGB 199、分区线 RGB 178，与系统列表分割线同一档位但分区更重。
+
+验证：模拟器（iOS 27.2，mock 数据）浅色/暗色截图复核；像素取样确认行线 199、分区线 178、
+线宽 1 物理像素；来源文字与模型行左边缘差 0–2 px。提交 `48ef35a`、`e3ce8a5`、`6d1859b`。
