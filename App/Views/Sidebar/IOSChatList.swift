@@ -12,6 +12,8 @@ struct IOSChatList: View {
     /// Until the window is on screen the list shows one screenful, so it draws without laying out
     /// every kept chat first (`docs/inbox.md` §1).
     @State private var isFirstFrame = true
+    /// The search page: the same `workspace.search` the sidebar searches with, over the list.
+    @State private var showsSearch = false
 
     var body: some View {
         List {
@@ -30,37 +32,121 @@ struct IOSChatList: View {
         .task {
             isFirstFrame = false
         }
+        .fullScreenCover(isPresented: $showsSearch) {
+            IOSSearchPage(workspace: workspace)
+        }
     }
 
     // MARK: Header
 
-    /// "Hermes" and, beside it, the gateway's connection: a dot in the state's colour and its
-    /// name. The search button joins them in P2.
+    /// "Hermes", the gateway's connection beside it, and the search button; under them the two
+    /// filters, the profile and the sources (`mockup-v2.html`).
     private var header: some View {
         let status = ConnectionStatus(workspace)
-        return HStack(alignment: .center, spacing: 8) {
-            Text("Hermes")
-                .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(Theme.primaryText)
-                .accessibilityAddTraits(.isHeader)
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(status.color)
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(workspace.bot.name)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                Text("Hermes")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Theme.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(status.color)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(workspace.bot.name)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(status.line)
+                Spacer(minLength: 8)
+                Button {
+                    showsSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Theme.primaryText)
+                        .frame(width: 34, height: 34)
+                        .background(Theme.controlFill, in: Circle())
+                        .overlay { Circle().strokeBorder(Theme.hairline, lineWidth: 0.5) }
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Search")
+                .accessibilityIdentifier("chat.search")
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(status.line)
-            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                profileFilter
+                sourceFilter
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 2)
-        .padding(.bottom, 6)
+        .padding(.bottom, 8)
         .background(Theme.canvas)
+    }
+
+    /// One profile at a time (`InboxScope.profile`): All Profiles, or one of the profiles the list
+    /// holds. It stays visible without Bot Mode, where All and the gateway's profile are the only
+    /// choices and the filter changes nothing.
+    private var profileFilter: some View {
+        let picked = workspace.inboxScope.profile
+        let profiles = ProfileRows.profiles(in: workspace.allSessions, home: workspace.bot.profileName)
+        return Menu {
+            Picker("Profile", selection: Binding(get: { workspace.inboxScope.profile },
+                                                 set: { workspace.inboxScope.profile = $0 })) {
+                Text("All Profiles").tag(nil as String?)
+                ForEach(profiles, id: \.self) { name in
+                    Text(name).tag(Optional(name))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            FilterPill(text: picked ?? String(localized: "All Profiles"))
+        }
+        .accessibilityLabel("Profile")
+        .accessibilityValue(picked ?? String(localized: "All Profiles"))
+        .accessibilityIdentifier("chat.profileFilter")
+    }
+
+    /// The source groups the list holds (`InboxScope.hiddenSources`).
+    private var sourceFilter: some View {
+        Menu {
+            ForEach(InboxSourceGroup.allCases, id: \.self) { group in
+                Toggle(isOn: Binding {
+                    workspace.inboxScope.shows(group)
+                } set: { shown in
+                    workspace.inboxScope.set(group, shown: shown)
+                }) {
+                    Label(group.title, systemImage: group.symbol)
+                }
+            }
+            if !workspace.inboxScope.isStandard {
+                Divider()
+                Button("Show Everything", systemImage: "line.3.horizontal.decrease.circle") {
+                    workspace.inboxScope = .standard
+                }
+            }
+        } label: {
+            FilterPill(text: sourceLabel)
+        }
+        .accessibilityLabel("Sources")
+        .accessibilityValue(sourceLabel)
+        .accessibilityIdentifier("chat.sourceFilter")
+    }
+
+    private var sourceLabel: String {
+        let hidden = workspace.inboxScope.hiddenSources
+        if hidden.isEmpty || hidden == InboxScope.standard.hiddenSources {
+            return String(localized: "All sources")
+        }
+        if hidden.count == 1, let only = hidden.first {
+            return String(localized: "No \(only.title)")
+        }
+        return String(localized: "\(InboxSourceGroup.allCases.count - hidden.count) sources")
     }
 
     // MARK: Sessions
@@ -171,6 +257,71 @@ struct IOSChatList: View {
                     actionTitle: String(localized: "Retry")
                 ) {
                     Task { await workspace.connect() }
+                }
+            }
+        }
+    }
+}
+
+/// A filter's quiet capsule: its current choice and a chevron, as the design draws the two
+/// filters under the title (`mockup-v2.html`).
+struct FilterPill: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text)
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Theme.tertiaryText)
+                .accessibilityHidden(true)
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.secondaryText)
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(Theme.controlFill, in: Capsule())
+        .overlay { Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5) }
+        .contentShape(Capsule())
+    }
+}
+
+/// Search over the chat list: the same field, chips and results as the split view's sidebar
+/// (`docs/search.md`), on its own page behind the round button. A result opens its chat and the
+/// page closes; Back returns to the list.
+struct IOSSearchPage: View {
+    @Bindable var workspace: BotWorkspace
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            List {
+                SearchResultsSection(workspace: workspace)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Theme.canvas)
+            .environment(\.defaultMinListRowHeight, 10)
+            .overlay {
+                if workspace.searchText.isEmpty {
+                    SearchEmptyState(search: workspace.search)
+                }
+            }
+            .searchable(text: $workspace.searchText, prompt: String(localized: "Search chats"))
+            .searchFocused($searchFocused)
+            .onAppear { searchFocused = true }
+            .onChange(of: workspace.searchText, initial: true) {
+                if workspace.search.query != workspace.searchText { workspace.search.query = workspace.searchText }
+            }
+            // A result picked opens its screen behind this page; close it so it is what shows.
+            .onChange(of: workspace.navigation.pushes) { dismiss() }
+            .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
                 }
             }
         }
