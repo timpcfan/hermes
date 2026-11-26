@@ -69,15 +69,16 @@ below). Top to bottom, each row appears only when it has content:
 
 The model chip (`composerModelChip`) is the one control for how the next turn sends: the model's
 name and, before it, its reasoning as `cellularbars` with whole bars lit (`symbolVariableValueMode`
-`.color`; Auto is `a.circle`, and a model that doesn't reason has no glyph). The level itself is
+`.color`; Auto is `a.circle`, and a model that doesn't reason has no glyph beside its name). The level itself is
 never written on the chip; it is the chip's accessibility value and the picker's. Tapping it opens
 the picker: on iPhone a sheet with the model list and the reasoning controls pinned under it (the
 Auto switch and the seven-tick slider, Off…Max, whose ticks sit under the thumb's stops); on the
 Mac a two-column popover, the models on the left and Auto plus the seven levels on the right.
 Picking a level leaves the picker open, picking a model closes it. Off is unavailable for a model
 whose `can_disable_reasoning` is false, and a model that doesn't reason disables the reasoning
-controls and says why. While a turn runs the chip keeps only its reasoning glyph and the mode chip
-takes the words' place; the glyph still opens the picker. A Bot Chat and the answer composer have
+controls and says why. While a turn runs the chip keeps only its reasoning glyph (unlit, dimmed
+bars for a model that doesn't reason, so the chip is never empty) and the mode chip takes the
+words' place; the glyph still opens the picker. A Bot Chat and the answer composer have
 no model chip, and the `/model` command is unchanged. The gateway's model list is read when the
 chip appears, once per profile.
 
