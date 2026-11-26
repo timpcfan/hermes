@@ -5,7 +5,8 @@ import SwiftUI
 
 /// A chat in the iPhone's list (`mockup-v2.html`): the profile's avatar with the unread dot on its
 /// corner, the title and pin, where the chat came from, then what it is doing — running with its
-/// time, done, waiting on the person, or failed with the reason in red.
+/// time, done while its news is unread, how long ago it ended once read, waiting on the person, or
+/// failed with the reason in red (`docs/inbox.md` §10).
 ///
 /// The left side is one row's own state: it reads its activity line through `line(for:)`, so a
 /// reply streaming in another chat redraws that row, not this one (`docs/inbox.md` §3).
@@ -18,8 +19,8 @@ struct IOSChatRow: View {
     private var isWaiting: Bool { workspace.waitingChat(forKey: key) != nil }
 
     private var state: ChatRowState {
-        if isWaiting { return .running }
-        return line?.chatRowState ?? .done
+        ChatRowState(line: line, isWaiting: isWaiting, isUnread: isUnread,
+                     endedAt: session.endedAt, lastActive: session.lastActive)
     }
 
     private var profile: String {
@@ -116,6 +117,8 @@ struct IOSChatRow: View {
             }
         case .done:
             parts.append(String(localized: "done"))
+        case .ended(let date):
+            if let date { parts.append(String(localized: "ended \(Formatting.relativePhrase(date))")) }
         case .needsYou:
             parts.append(String(localized: "needs you"))
         case .failed(let reason):
@@ -180,8 +183,8 @@ struct ChatProfileAvatar: View {
     }
 }
 
-/// The row's trailing state: a dashed green ring and the running time, a green check and Done, an
-/// orange mark and Needs you, or a red mark and Failed.
+/// The row's trailing state: a dashed green ring and the running time, a green check and Done, how
+/// long ago a read chat ended, an orange mark and Needs you, or a red mark and Failed.
 struct ChatRowStatusBadge: View {
     let state: ChatRowState
     let startedAt: Date?
@@ -203,6 +206,8 @@ struct ChatRowStatusBadge: View {
                 }
             case .done:
                 label(symbol: "checkmark.circle", text: String(localized: "Done"), color: Theme.success)
+            case .ended(let date):
+                if let date { ChatRowAgoText(date: date) }
             case .needsYou:
                 label(symbol: "exclamationmark.circle.fill", text: String(localized: "Needs you"), color: Theme.warning)
             case .failed:
@@ -228,6 +233,32 @@ struct ChatRowStatusBadge: View {
                 .monospacedDigit()
         }
         .foregroundStyle(color)
+    }
+}
+
+/// How long ago a read chat ended ("2h", "3d"), quiet beside the other states. It redraws only
+/// when its words change, never on a clock.
+struct ChatRowAgoText: View {
+    let date: Date
+
+    var body: some View {
+        TimelineView(Schedule(date: date)) { context in
+            Text(ChatRowAgo.text(context.date.timeIntervalSince(date)))
+                .fontWeight(.regular)
+                .monospacedDigit()
+                .foregroundStyle(Theme.tertiaryText)
+        }
+    }
+
+    /// The moments the words change (`ChatRowAgo.nextChange`), and only those.
+    nonisolated struct Schedule: TimelineSchedule {
+        let date: Date
+
+        func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnySequence<Date> {
+            AnySequence(sequence(first: startDate) { [date] now in
+                date.addingTimeInterval(ChatRowAgo.nextChange(after: now.timeIntervalSince(date)))
+            })
+        }
     }
 }
 

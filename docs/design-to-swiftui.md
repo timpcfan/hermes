@@ -205,10 +205,19 @@ code field. The Mac reads the pasteboard when asked.
   system's sidebar button brings it back beside the detail, and picking something puts it away.
   The Inspector beside a chat and the Board hide it the same way. A narrow iPad window still
   collapses to a stack (`preferredCompactColumn`, driven by `CompactNavigation` in HermesKit).
-- iPhone at a compact width shows `IOSMainView` instead: Chat, Bot and Settings tabs over a
-  floating glass capsule, a round compose button beside it, and the picked chat, Bot chat or group
-  pushed in a `NavigationStack` with the bar hidden (`docs/inbox.md` §10). Settings keeps its own
-  stack. The tab bar's Chat tab carries the chat list's header — "Hermes", the connection dot and
+- iPhone at a compact width shows `IOSMainView` instead: the system's `TabView` with `Tab`s for
+  Chats (`bubble.left`), Bots (`person.2`) and Settings (`gearshape`), with nothing drawn, tinted
+  or backed by hand. The bar shrinks while a list scrolls down (`tabBarMinimizeBehavior(.onScrollDown)`)
+  and hides under a pushed screen (`toolbar(.hidden, for: .tabBar)` on the detail). Chats and Bots
+  each push the picked chat, Bot chat or group in their own `NavigationStack`; a push into one
+  clears the other, so only one tab ever holds a pushed screen. Settings keeps its own stack. From
+  iOS 27 the compose button is the bar's own prominent tab (`Tab(role: .prominent)`,
+  `square.and.pencil`): the system draws it as a separate glass circle beside the tabs, on the same
+  line, and shrinks and hides it with the bar. Picking it never opens a tab: Chats and Settings
+  start a new chat, Bots asks New Bot or New Group Chat. iOS 26 has no prominent tab, so there a
+  round compose button (`IOSComposeButton`: system glass, circle border shape) sits over the
+  bottom-right of the two lists, above the bar, in a `safeAreaInset` so the last rows scroll clear
+  of it (`docs/inbox.md` §10). The Chat tab carries the chat list's header — "Hermes", the connection dot and
   the gateway's name, the search button, and the Profile and Sources filters — so the root list's
   old gateway menu, connection subtitle, Chats/Bots switch and Tasks and Skills rows do not appear
   there. The selection stays in `BotWorkspace`: a notification, a search result or a link pushes
@@ -248,22 +257,22 @@ Mac is the window's unified toolbar.
 |---|---|---|---|---|---|
 | Open the chat list | The system back button of a pushed chat, and swipe back | The system sidebar toggle | The system toggle in the source list's titlebar, ⌃⌘S | `backButton`; `ipadNavSplit` bar; `macNavWindow` tools | `MainView` (`RootView`); `SidebarCommands` (`HermesApp`) |
 | Unread count outside the list | On the back button | No badge on the system toggle (as in Mail): the Chats / Bots switch and rows in the sidebar, and the app icon badge | Dock badge (unchanged) | `backButton`, `ipadNavPortrait` | `BackButtonCount` (`SidebarView`), from `UnreadStore.unreadElsewhere` |
-| New Chat | The round button beside the tab bar, and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `IOSTabBar.compose`; `ChatScreen.sessionToolbar`; `HermesCommands` |
-| New Bot, New Group Chat | The round button's menu on the Bot tab | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `IOSTabBar.compose`; `SidebarView.navigationRows`; `HermesCommands` |
+| New Chat | The round compose button beside the tab bar (on iOS 26 over the Chat tab's list, above the bar), and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `IOSMainView.tabs`, `IOSComposeButton`; `ChatScreen.sessionToolbar`; `HermesCommands` |
+| New Bot, New Group Chat | The round compose button on the Bot tab asks which (on iOS 26 its menu over the list) | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `IOSMainView.tabs`, `IOSComposeButton.newBotActions`; `SidebarView.navigationRows`; `HermesCommands` |
 | Model picker (a Bot Chat shows its title) | Centered in the pushed chat's toolbar | Centered in the detail toolbar | Centered in the toolbar | `chatToolbarPushed`, `botToolbarPushed` | `ChatScreen.sessionToolbar`, `BotChatViews` |
 | Routines, … menu (Bot Chat) | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` | `BotChatViews` |
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |
-| Chats / Bots switch and counts | The Chat and Bot tabs | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `IOSTabBar`; `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
+| Chats / Bots switch and counts | The Chat and Bot tabs | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `IOSMainView` (`TabView`); `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
 | Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The Chat tab's header names the gateway; Add Gateway and Edit Gateways live in Settings → Hermes Gateways. Switching and Pair a Device have no entry in this layout (DELIVERY) | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `IOSChatList.header`; `GatewayMenuContent` (`SidebarView`), `SettingsList`; `BotSwitcher` |
 | Connection status | The dot and the gateway's name beside the Chat tab's title | The sidebar footer | The source list footer | `navChats` | `IOSChatList.header` (`ConnectionStatus`); `SidebarFooter` |
-| Settings | The Settings tab | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `IOSTabBar`; `SettingsView`; `SidebarFooter` |
+| Settings | The Settings tab | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `IOSMainView` (`TabView`); `SettingsView`; `SidebarFooter` |
 | Default list (this fork: the inbox) | Pinned, then Main (idle, finished, failed, waiting on you, returned to the top), then Working while something runs, then Settled folded with its count (`docs/inbox.md` §2a) | The same | The same | `navChats`, `macNavWindow` (adapted to t3code's sidebar, no design frame) | `InboxSections`, `BotWorkspace.inboxSections`; `SidebarView.sessionSections`, `InboxRegionHeader` |
-| Sources (This App, Telegram, Discord, Terminal, Editor, Scheduled, Other Platforms), Hide Empty Chats | The filter menu; Scheduled off and empty chats hidden by default; a narrowed list fills the button and shows "Filtered: …  ✕" at the top | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu (adapted) | `InboxScope`, `InboxFilterMenuContent`, `InboxFilterButton`, `FilteredLine`; `CaughtUpState(sources:)` |
-| Unread, Needs You (narrow Main only) | In the filter menu, with counts | The filter menu | The filter menu and View ▸ Filter | `inboxFilterMenu`, `rootBottomBarFiltered` | `InboxScope.narrowsIn`, `InboxFilterMenuContent`; `CaughtUpState(scope:)` |
-| Mark All as Read | Last item of the filter menu, and at the end of the Unread list | The same | The same, and View ▸ Filter | `inboxFilterMenu` | `InboxFilterMenuContent`; `SidebarView.sessionSections` |
+| Sources (This App, Telegram, Discord, Terminal, Editor, Scheduled, Other Platforms), Hide Empty Chats | The Sources filter under the Chat tab's title, beside Profile (every profile Hermes lists); Scheduled off and empty chats hidden by default; a filter that narrows the list is tinted blue, with no line above the rows (`docs/inbox.md` §10) | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu (adapted) | `InboxScope`, `InboxFilterMenuContent`, `InboxFilterButton`, `FilteredLine`; `IOSChatList.sourceFilter`, `ProfileRows.filterChoices`; `CaughtUpState(sources:)` |
+| Unread, Needs You (narrow Main only) | Under Only in the Sources filter, which turns blue while either is on | The filter menu | The filter menu and View ▸ Filter | `inboxFilterMenu`, `rootBottomBarFiltered` | `InboxScope.narrowsIn`, `InboxFilterMenuContent`; `CaughtUpState(scope:)` |
+| Mark All as Read | At the end of the Unread list | Last item of the filter menu, and at the end of the Unread list | The same, and View ▸ Filter | `inboxFilterMenu` | `InboxFilterMenuContent`; `SidebarView.sessionSections` |
 | Search chats | The round button on the Chat tab opens a search page with the sidebar's chips (All, Chats, Bots, Tasks); picking a result opens it and closes the page | The sidebar's search field, the same chips | The source list's field, ⌥⌘F, the same chips | `navSearch`, `macSearch` | `IOSChatList.header`, `IOSSearchPage`; `SearchField`; `SearchResultsSection`, `SearchChips`, `SearchPlaceLine` |
 | Quick Open | ⌘K with a hardware keyboard only | ⌘K | ⌘K palette, File menu | `macSearch` | `HermesCommands` (unchanged) |
-| Tasks, Skills | Settings → Hermes on <bot>, after Apps and Tools; push | Sidebar rows, and the same Settings rows | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` | `SettingsPageRow` (`SettingsView`); `SidebarView.navigationRows` |
+| Tasks, Skills | Settings → Hermes on <bot>, after Apps and Tools, with their counts; push | Sidebar rows, and the same Settings rows with their counts | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` | `SkillsSettingsRow`, `TasksSettingsRow` (`SettingsView`), `HermesPageSummary`; `SidebarView.navigationRows` |
 | Projects, Board | Removed in this fork (`docs/projects.md`) | Removed | Removed | – | – |
 | Bots roster, groups, All Bots | The Bots root: All Bots pushes the grid, then the roster | Sidebar rows | Source list rows | `navBots`, `macSidebarBots` | `BotRosterSections` |
 | Pinned chats | Pinned at the top of the inbox; a pinned chat that runs moves to Working with its pin | The same | The same | `navChats` | `InboxSections.partition` |

@@ -146,6 +146,14 @@ struct CaughtUpState: View {
         }
     }
 
+    /// The profile picked on iPhone has no chat yet: Hermes lists every profile there, one without
+    /// chats included (`docs/inbox.md` §10).
+    init(profile: String) {
+        symbol = "bubble.left.and.bubble.right"
+        title = String(localized: "No chats in \(profile)")
+        message = String(localized: "Chats in this profile show up here.")
+    }
+
     /// The sources picked hold no chat.
     init(sources: Void) {
         symbol = "line.3.horizontal.decrease.circle"

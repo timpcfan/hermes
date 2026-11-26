@@ -710,27 +710,42 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
 
 ## 10. The iPhone's Chat tab (this fork)
 
-At a compact width `MainView` shows `IOSMainView` instead of the split view: Chat, Bot and Settings
-tabs over a floating glass capsule, and a round compose button beside it. iPad and Mac keep the
-split view unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
+At a compact width `MainView` shows `IOSMainView` instead of the split view: the system's tab bar
+(`TabView` with Chats `bubble.left`, Bots `person.2` and Settings `gearshape`, no styling of its
+own), which shrinks while a list scrolls down (`tabBarMinimizeBehavior(.onScrollDown)`), and a
+round glass compose button beside it on the same line (from iOS 27; on iOS 26 over the
+bottom-right of the Chats and Bots lists, above the bar). iPad and Mac keep the split view
+unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
 result or a link opens the same chat here as there.
 
-- **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, a
-  round search button, then the Profile and Sources filters as capsules. The list below is the same
+- **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, the
+  search button (system glass, `magnifyingglass`), then the Profile and Sources filters as the
+  system's bordered menu buttons. The list below is the same
   `workspace.inboxSections` with Pinned, Main, Working and Settled (`§2a`), and the same
   `ChatListSnapshot` first frame and paging, so a long history costs no more here than in the
   sidebar.
-- **Profile** is one choice at a time (`InboxScope.profile`): All Profiles or a profile the list
-  holds. **Sources** toggles the source groups (`InboxScope.hiddenSources`). A non-standard choice
-  shows "Filtered: …" above the rows and keeps "Show Everything" in the menu.
+- **Profile** is one choice at a time (`InboxScope.profile`): All Profiles or any profile Hermes
+  lists (the roster's `profiles.list`, the gateway's own first and the rest by name), chats or not;
+  without a roster list (no Bot Mode, nothing read yet) the profiles the chats come from
+  (`ProfileRows.filterChoices`). **Sources** toggles the source groups (`InboxScope.hiddenSources`)
+  and, under Only, Unread and Needs You. A filter that narrows the list is tinted blue (`Theme.link`):
+  Profile while one is picked, Sources while a group differs from the standard or Unread or Needs
+  You is on (`InboxScope.sourceChanges`). Its words say the same, so the state isn't colour alone:
+  "Unread", "Needs You · No Telegram", "5 sources", or "All sources" when nothing narrows it. No
+  "Filtered: …" line goes above the rows in this layout; "Show Everything" stays in the Sources
+  menu while anything differs from the standard. A picked profile without chats says so ("No chats
+  in scout"), not that the sources hold nothing.
 - **A row** (`IOSChatRow`): the profile's avatar at 34 pt on the left — its Bot's photo or drawn
   face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
   the unread dot on its corner. Then the title and pin, and a second line of source · profile ·
   project (`ChatRowSubtitle`; `git_repo_root`'s folder name, absent outside a repository). The
   device is never named.
-- **The trailing state** is one of four (`ChatRowState`): a dashed green ring and the running time,
-  a green check and Done, an orange mark and Needs you, or a red mark, Failed and the reason in red
-  on its own line. A waiting first message reads as running. The running time comes from the
+- **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
+  mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
+  green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
+  unread); once read it shows only how long ago it ended (`ChatRowAgo`: "now", "5m", "2h", "3d",
+  "2w", "4mo", "1y"), from the session's `ended_at`, else its `last_active`, and redraws only when
+  those words change. A waiting first message reads as running. The running time comes from the
   attached conversation's turn (`live.turn.startedAt`), else the moment the message went out here
   (`lastSentAt` for a waiting chat), else the first sight of the chat running this launch
   (`LiveActivity.runningStart`), else the session's `last_active`; the earliest fallback wins, so a
@@ -739,17 +754,31 @@ result or a link opens the same chat here as there.
 - **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
   and Mute, the same context menu, and the same Rename, Delete and error alerts. A waiting chat
   offers only Delete. Settled rows keep Un-settle.
-- **Search** is the round button: a page with the same `workspace.searchText`, chips and
+- **Search** is the glass button: a page with the same `workspace.searchText`, chips and
   `SearchResultsSection` as the sidebar (`docs/search.md`). Picking a result opens its chat and
   closes the page.
-- **Compose** starts a new chat with the existing flow, profile picker included. The tab bar goes
-  away while a chat, Bot chat, group or Settings page is pushed; Back brings the list and the bar
-  back.
+- **Compose** starts a new chat with the existing flow, profile picker included. From iOS 27 it
+  is the tab bar's prominent tab (`Tab(role: .prominent)`, `square.and.pencil`): the system draws
+  it as a separate glass circle beside the tabs, on the same line, and shrinks it with them. It is
+  a tab only in form: picking it acts a turn later and the tab stays as it was (acting inside the
+  selection change left the bar centred and unlabelled after the pushed chat). On Chats and on
+  Settings (which moves to Chats) it starts a new chat; on Bots it asks New Bot or New Group Chat,
+  and it is dimmed there while Bot Mode isn't connected. It stays on Settings because taking it
+  away moves the whole bar. iOS 26 has no prominent tab, so there `IOSComposeButton` sits in the
+  lists' bottom `safeAreaInset`, never covering the bar, with the Bot tab's menu; Settings has
+  none. The tab bar goes away while a chat, Bot chat or group is pushed
+  (`toolbar(.hidden, for: .tabBar)`); Back brings the list and the bar back. Each list keeps its
+  own stack and scroll position across tab switches.
 - **Bot tab** (`IOSBotList`) is the existing All Bots roster (`BotRosterSections`) with no filters;
   its compose button offers New Bot and New Group Chat. **Settings** reuses `SettingsView` without
-  its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools; the
-  sidebar's old Tasks, Skills and All Bots rows, the gateway switcher and the Chats/Bots switch do
-  not appear in this layout.
+  its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools, each
+  with a count under its title like the rows around it (`HermesPageSummary`): "104 skills" from the
+  list the Skills page keeps, and "5 tasks · 2 active" (active: not paused) from one read by the row,
+  whose Tasks page works on the same list, so a change there shows on the way back. Before a count
+  they say "Loading…" or "Not connected", as Apps and Tools does, or the page's own "Couldn't list
+  skills" / "Couldn't load tasks"; nothing polls. The iPad's Settings sidebar shows the same counts.
+  The sidebar's old Tasks, Skills and All Bots rows, the gateway switcher and the Chats/Bots switch
+  do not appear in this layout.
 - **The mock**: `backend.py --inbox-gtd --inbox-demo --cross-profile` seeds all four states
   (Working's cycle, the approval that waits, the finished rows, and "Nightly log rotation", whose
   failed turn is unread so its row says Failed), the profiles' faces and projects, and the settled

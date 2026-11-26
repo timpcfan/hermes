@@ -23,6 +23,59 @@ struct ChatRowPresentationTests {
                 == .failed(reason: "API Error: safeguards flagged this message"))
     }
 
+    @Test func anIdleChatIsDoneOnlyWhileUnreadThenSaysWhenItEnded() {
+        let ended = Date(timeIntervalSince1970: 1_800_000_000)
+        let active = ended.addingTimeInterval(-600)
+        #expect(ChatRowState(line: nil, isWaiting: false, isUnread: true, endedAt: ended, lastActive: active) == .done)
+        #expect(ChatRowState(line: nil, isWaiting: false, isUnread: false, endedAt: ended, lastActive: active) == .ended(at: ended))
+        // Hermes without `ended_at`: the last activity is when it ended.
+        #expect(ChatRowState(line: nil, isWaiting: false, isUnread: false, endedAt: nil, lastActive: active) == .ended(at: active))
+        #expect(ChatRowState(line: nil, isWaiting: false, isUnread: false, endedAt: nil, lastActive: nil) == .ended(at: nil))
+    }
+
+    @Test func runningNeedsYouAndFailedDontDependOnTheUnreadMark() {
+        for unread in [true, false] {
+            #expect(ChatRowState(line: nil, isWaiting: true, isUnread: unread, endedAt: nil, lastActive: nil) == .running)
+            #expect(ChatRowState(line: .thinking, isWaiting: false, isUnread: unread, endedAt: nil, lastActive: nil) == .running)
+            #expect(ChatRowState(line: .waiting(.approval), isWaiting: false, isUnread: unread, endedAt: nil, lastActive: nil) == .needsYou)
+            #expect(ChatRowState(line: .failed("Timed out"), isWaiting: false, isUnread: unread, endedAt: nil, lastActive: nil)
+                    == .failed(reason: "Timed out"))
+        }
+        // A message still going out is running even when the chat's last turn says it is waiting.
+        #expect(ChatRowState(line: .waiting(.question), isWaiting: true, isUnread: false, endedAt: nil, lastActive: nil) == .running)
+    }
+
+    @Test func endedTimeSaysHowLongAgoInOneShortUnit() {
+        let minute: TimeInterval = 60, hour: TimeInterval = 3600, day: TimeInterval = 86_400
+        #expect(ChatRowAgo.text(-30) == "now")
+        #expect(ChatRowAgo.text(0) == "now")
+        #expect(ChatRowAgo.text(59.9) == "now")
+        #expect(ChatRowAgo.text(minute) == "1m")
+        #expect(ChatRowAgo.text(59 * minute + 59) == "59m")
+        #expect(ChatRowAgo.text(2 * hour) == "2h")
+        #expect(ChatRowAgo.text(day - 1) == "23h")
+        #expect(ChatRowAgo.text(day) == "1d")
+        #expect(ChatRowAgo.text(3 * day + 5 * hour) == "3d")
+        #expect(ChatRowAgo.text(7 * day) == "1w")
+        #expect(ChatRowAgo.text(29 * day) == "4w")
+        #expect(ChatRowAgo.text(30 * day) == "1mo")
+        #expect(ChatRowAgo.text(364 * day) == "12mo")
+        #expect(ChatRowAgo.text(365 * day) == "1y")
+        #expect(ChatRowAgo.text(800 * day) == "2y")
+    }
+
+    @Test func endedTimeRedrawsExactlyWhenItsWordsChange() {
+        let day: TimeInterval = 86_400
+        let ages: [TimeInterval] = [-5, 0, 30, 59.5, 60, 61, 3599, 3600, 7300, day - 1, day, 2.5 * day, 6.9 * day,
+                                    7 * day, 20 * day, 29.5 * day, 30 * day, 200 * day, 364.5 * day, 365 * day, 1000 * day]
+        for age in ages {
+            let next = ChatRowAgo.nextChange(after: age)
+            #expect(next > age, "\(age)")
+            #expect(ChatRowAgo.text(next - 0.5) == ChatRowAgo.text(age), "\(age)")
+            #expect(ChatRowAgo.text(next) != ChatRowAgo.text(age), "\(age)")
+        }
+    }
+
     @Test func subtitleIsPlatformProfileAndProjectWhenThereIsOne() {
         #expect(ChatRowSubtitle.text(source: "telegram", profile: "money", project: nil) == "telegram · money")
         #expect(ChatRowSubtitle.text(source: "desktop", profile: "paimon", project: "IB-Robot") == "desktop · paimon · IB-Robot")

@@ -2,16 +2,33 @@ import Foundation
 import HermesPush
 
 /// What a chat row says at its trailing edge (BRIEF ios-tab-layout): the one place an
-/// `ActivityLine` becomes one of the four states the row draws.
+/// `ActivityLine` and the chat's unread mark become the state the row draws.
 public enum ChatRowState: Equatable, Sendable {
     /// Hermes is working on the turn.
     case running
-    /// Nothing runs: the chat's last turn finished (or it never ran).
+    /// Nothing runs and the finished turn hasn't been read yet: a green check and Done.
     case done
+    /// Nothing runs and the person has read the chat: only how long ago it ended ("2h", "3d").
+    case ended(at: Date?)
     /// Hermes waits for the person: an approval, an answer or a key.
     case needsYou
     /// The last turn stopped; the reason is the row's red line.
     case failed(reason: String)
+
+    /// The row's state (`docs/inbox.md` §10). A message still waiting to go out is running, and a
+    /// chat with an activity line says what it is doing. An idle chat is Done while it is unread;
+    /// once read it says when it ended: Hermes' `ended_at`, else its last activity.
+    public init(line: ActivityLine?, isWaiting: Bool, isUnread: Bool, endedAt: Date?, lastActive: Date?) {
+        if isWaiting {
+            self = .running
+        } else if let line {
+            self = line.chatRowState
+        } else if isUnread {
+            self = .done
+        } else {
+            self = .ended(at: endedAt ?? lastActive)
+        }
+    }
 }
 
 extension ActivityLine {
@@ -73,6 +90,38 @@ public enum ChatRowDuration {
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
+    }
+}
+
+/// How long ago a read chat ended, at the row's compact width and in the running time's units:
+/// "now", "5m", "2h", "3d", then "2w", "4mo" and "1y".
+public enum ChatRowAgo {
+    private static let minute = 60
+    private static let hour = 3600
+    private static let day = 86_400
+    /// Each unit and the age where the next one takes over.
+    private static let units: [(size: Int, until: Int, suffix: String)] = [
+        (minute, hour, "m"), (hour, day, "h"), (day, 7 * day, "d"), (7 * day, 30 * day, "w"), (30 * day, 365 * day, "mo"),
+    ]
+
+    public static func text(_ seconds: TimeInterval) -> String {
+        let age = max(0, Int(seconds))
+        if age < minute { return String(localized: "now") }
+        for unit in units where age < unit.until {
+            return "\(age / unit.size)\(unit.suffix)"
+        }
+        return "\(age / (365 * day))y"
+    }
+
+    /// The age at which `text` next reads differently, so a row redraws only then.
+    public static func nextChange(after seconds: TimeInterval) -> TimeInterval {
+        let age = max(0, Int(seconds))
+        if age < minute { return TimeInterval(minute) }
+        for unit in units where age < unit.until {
+            return TimeInterval(min((age / unit.size + 1) * unit.size, unit.until))
+        }
+        let year = 365 * day
+        return TimeInterval((age / year + 1) * year)
     }
 }
 

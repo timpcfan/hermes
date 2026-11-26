@@ -104,6 +104,18 @@ public struct InboxScope: Codable, Equatable, Sendable {
         return changes
     }
 
+    /// What the iPhone's Sources filter changes (`docs/inbox.md` §10): source groups off the
+    /// standard, and Unread or Needs You narrowing Main. Any of them turns its pill blue; the
+    /// profile and empty chats are not its business.
+    public var sourceChanges: [Change] {
+        changes.filter { change in
+            switch change {
+            case .source, .unread, .needsYou: true
+            case .showsEmpty, .profile: false
+            }
+        }
+    }
+
     public enum Change: Equatable, Sendable {
         case source(InboxSourceGroup, shown: Bool)
         case unread
