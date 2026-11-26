@@ -51,7 +51,13 @@ public enum ProfileRows {
 
     /// The name a row's profile mark shows: its profile, or the gateway's own for a row without one.
     public static func profileName(of row: HermesSession, home: String?) -> String {
-        row.profile ?? home ?? "default"
+        profileName(row.profile, home: home)
+    }
+
+    /// The name for a profile alone, as a row's mark shows it: its own, or the gateway's own when
+    /// it names none (`ChatHeader.profile`).
+    public static func profileName(_ profile: String?, home: String?) -> String {
+        profile ?? home ?? "default"
     }
 
     /// The profiles the rows come from, the gateway's own first, then by name.
