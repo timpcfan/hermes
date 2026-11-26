@@ -140,18 +140,18 @@ nonisolated enum Palette {
     /// canvas, so the row line sits at the system list separator's weight instead —
     /// visible as a line, still quiet. Light and dark carry the same strength.
     static let rowSeparator = Color(
-        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.18),
-        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.18),
-        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.32),
-        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.32)
+        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.22),
+        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.22),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.36),
+        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.36)
     )
     /// The line between regions: a step above the row line, so a break reads before its
     /// spacing does.
     static let sectionSeparator = Color(
-        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.26),
-        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.26),
-        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.4),
-        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.4)
+        light: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.3),
+        dark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.3),
+        increasedContrastLight: Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 0.44),
+        increasedContrastDark: Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 0.44)
     )
     /// Elevation shadow.
     static let shadow = Color(
