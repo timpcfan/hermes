@@ -4,7 +4,7 @@ import SwiftUI
 struct TasksView: View {
     let workspace: BotWorkspace
 
-    @State private var model = TasksModel()
+    @State private var model: TasksModel
     @State private var isCreating = false
     /// What New Task opens with when something suggested the task.
     @State private var prefill: TaskPrefill?
@@ -13,6 +13,13 @@ struct TasksView: View {
     /// The task Delete is asking about (`docs/tasks.md` §1).
     @State private var deleting: CronJob?
     @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// `model` is a list Settings already counts on its Tasks row, so a change made here shows
+    /// there on the way back; without one the page reads its own.
+    init(workspace: BotWorkspace, model: TasksModel? = nil) {
+        self.workspace = workspace
+        _model = State(initialValue: model ?? TasksModel())
+    }
 
     /// iPad (regular width) and Mac: the list beside the selected task (`ipadTasks`, `macTasks`).
     private var usesSplit: Bool {

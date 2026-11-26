@@ -67,15 +67,10 @@ private struct SettingsList: View {
                         AppsAndToolsSettingsRow(model: workspace.appsAndTools)
                         #if os(iOS)
                         // The iPhone's new layout has no sidebar, so the pages it used to list there
-                        // live here (`docs/settings.md`).
-                        SettingsPageRow(symbol: "book.closed", title: "Skills",
-                                        hint: "What this Hermes knows how to do") {
-                            SkillsView(workspace: workspace)
-                        }
-                        SettingsPageRow(symbol: "calendar.badge.clock", title: "Tasks",
-                                        hint: "What this Hermes runs on a schedule") {
-                            TasksView(workspace: workspace)
-                        }
+                        // live here, each with its count (`docs/inbox.md` §10).
+                        SkillsSettingsRow(workspace: workspace)
+                        TasksSettingsRow(workspace: workspace)
+                            .id(workspace.id)
                         #endif
                         MemorySettingsRow(workspace: workspace)
                         PasswordsSettingsRow(workspace: workspace)
@@ -169,6 +164,8 @@ private struct HermesPages {
     let memory: MemoryModel
     let passwords: PasswordsModel
     let browser: BrowserSettingsModel
+    /// Read by the Tasks row itself, on the gateway rather than Bot Mode.
+    let tasks = TasksModel()
 
     init(workspace: BotWorkspace) {
         botID = workspace.bot.id
@@ -275,10 +272,19 @@ private struct SettingsSplitView: View {
                         }
                         .accessibilityHint("What Hermes can reach on this gateway")
                         .settingsSidebarRow(SettingsPane.apps, selection: pane)
-                    SettingsRowLabel(symbol: "book.closed", title: "Skills", compact: true)
+                    SettingsRowLabel(
+                        symbol: "book.closed", title: "Skills",
+                        summary: SkillsSettingsRow.summary(workspace), compact: true)
+                        .task(id: workspace.connection.isOnline) { await workspace.loadSkills() }
                         .accessibilityHint("What this Hermes knows how to do")
                         .settingsSidebarRow(SettingsPane.skills, selection: pane)
-                    SettingsRowLabel(symbol: "calendar.badge.clock", title: "Tasks", compact: true)
+                    SettingsRowLabel(
+                        symbol: "calendar.badge.clock", title: "Tasks",
+                        summary: tasks(of: workspace).map { TasksSettingsRow.summary($0, workspace: workspace) },
+                        compact: true)
+                        .task(id: TasksSettingsRow.Trigger(workspace: workspace, model: tasks(of: workspace))) {
+                            if let model = tasks(of: workspace) { await TasksSettingsRow.load(model, workspace: workspace) }
+                        }
                         .accessibilityHint("What this Hermes runs on a schedule")
                         .settingsSidebarRow(SettingsPane.tasks, selection: pane)
                     SettingsRowLabel(
@@ -323,6 +329,13 @@ private struct SettingsSplitView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// The Tasks list this gateway's sidebar row counts and its page shows, once Settings has made
+    /// the pages.
+    private func tasks(of workspace: BotWorkspace) -> TasksModel? {
+        guard let pages, pages.botID == workspace.bot.id else { return nil }
+        return pages.tasks
+    }
+
     /// The selected page. A Hermes on <gateway> page falls back to General while no gateway is
     /// open.
     @ViewBuilder private var page: some View {
@@ -334,7 +347,11 @@ private struct SettingsSplitView: View {
         case (.skills, let workspace?):
             SkillsView(workspace: workspace)
         case (.tasks, let workspace?):
-            TasksView(workspace: workspace)
+            // Another list (Settings made its pages, or another gateway) is another page, so the
+            // page and its sidebar row never count different lists.
+            let model = tasks(of: workspace)
+            TasksView(workspace: workspace, model: model)
+                .id(model.map(ObjectIdentifier.init))
         case (.memory, let workspace?):
             if DebugFlags.memory != nil {
                 DebugMemoryPage(workspace: workspace)
@@ -388,11 +405,12 @@ private struct SettingsDoneButton: View {
 }
 
 #if os(iOS)
-/// Settings → Hermes on <gateway>: a page the app already has, with Setup's tile and title, pushed
-/// in on iPhone (`mockup-v2.html`, after Apps and Tools).
+/// Settings → Hermes on <gateway>: a page the app already has, with Setup's tile, title and
+/// summary line, pushed in on iPhone (`mockup-v2.html`, after Apps and Tools).
 private struct SettingsPageRow<Page: View>: View {
     let symbol: String
     let title: LocalizedStringKey
+    var summary: String?
     let hint: LocalizedStringKey
     @ViewBuilder let page: () -> Page
 
@@ -400,12 +418,70 @@ private struct SettingsPageRow<Page: View>: View {
         NavigationLink {
             page()
         } label: {
-            HStack(spacing: 12) {
-                GlyphTile(symbol: symbol, ink: true, size: 30)
-                Text(title).foregroundStyle(Theme.primaryText)
-            }
+            SettingsRowLabel(symbol: symbol, title: title, summary: summary)
         }
         .accessibilityHint(hint)
+    }
+}
+
+/// Settings → Hermes on <gateway> → Skills: how many skills Hermes has, from the list the Skills
+/// page keeps, read once per gateway (`docs/inbox.md` §10).
+private struct SkillsSettingsRow: View {
+    let workspace: BotWorkspace
+
+    var body: some View {
+        SettingsPageRow(symbol: "book.closed", title: "Skills", summary: Self.summary(workspace),
+                        hint: "What this Hermes knows how to do") {
+            SkillsView(workspace: workspace)
+        }
+        .task(id: workspace.connection.isOnline) { await workspace.loadSkills() }
+    }
+
+    /// "104 skills", or why there's no count yet.
+    static func summary(_ workspace: BotWorkspace) -> String {
+        HermesPageSummary.skills(workspace.skillCatalog, from: workspace.bot.baseURL,
+                                 isLoading: workspace.isLoadingSkills, isOnline: workspace.connection.isOnline)
+    }
+}
+
+/// Settings → Hermes on <gateway> → Tasks: how many tasks there are and how many aren't paused.
+/// The row reads the list once, and again when the gateway comes online without one; the Tasks
+/// page it opens works on the same list, so a change there shows here on the way back. Nothing
+/// polls (`docs/inbox.md` §10).
+private struct TasksSettingsRow: View {
+    let workspace: BotWorkspace
+    @State private var model = TasksModel()
+
+    var body: some View {
+        SettingsPageRow(symbol: "calendar.badge.clock", title: "Tasks",
+                        summary: Self.summary(model, workspace: workspace),
+                        hint: "What this Hermes runs on a schedule") {
+            TasksView(workspace: workspace, model: model)
+        }
+        .task(id: Trigger(workspace: workspace, model: model)) { await Self.load(model, workspace: workspace) }
+    }
+
+    /// "5 tasks · 2 active", or why there's no count yet.
+    static func summary(_ model: TasksModel, workspace: BotWorkspace) -> String {
+        HermesPageSummary.tasks(model.hasLoaded ? model.jobs : nil, failed: model.loadError != nil,
+                                isOnline: workspace.connection.isOnline)
+    }
+
+    static func load(_ model: TasksModel, workspace: BotWorkspace) async {
+        guard workspace.connection.isOnline, !model.hasLoaded, !model.isLoading else { return }
+        await model.load(client: workspace.client)
+    }
+
+    /// What the row reads for: the list it counts (the iPad's arrives once Settings has made it)
+    /// and the gateway coming online.
+    struct Trigger: Equatable {
+        let model: ObjectIdentifier?
+        let isOnline: Bool
+
+        init(workspace: BotWorkspace, model: TasksModel?) {
+            self.model = model.map(ObjectIdentifier.init)
+            isOnline = workspace.connection.isOnline
+        }
     }
 }
 #endif

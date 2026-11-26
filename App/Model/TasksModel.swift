@@ -24,6 +24,8 @@ final class TasksModel {
     /// a detail opened on the new row keeps working.
     private var madeIDs: [String: String] = [:]
     private(set) var isLoading = false
+    /// The gateway has answered a read once, so an empty list means no tasks.
+    private(set) var hasLoaded = false
     @ObservationIgnored private let jobsRead = LatestRead<[CronJob]>()
     private(set) var loadError: HermesError?
     /// What the gateway refused, said once.
@@ -60,6 +62,7 @@ final class TasksModel {
         switch result {
         case .success(let jobs):
             gatewayJobs = jobs
+            hasLoaded = true
             loadError = nil
         case .failure(let error):
             loadError = error as? HermesError ?? .invalidResponse(error.localizedDescription)

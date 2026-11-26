@@ -756,9 +756,14 @@ result or a link opens the same chat here as there.
   back. Each list keeps its own stack and scroll position across tab switches.
 - **Bot tab** (`IOSBotList`) is the existing All Bots roster (`BotRosterSections`) with no filters;
   its compose button offers New Bot and New Group Chat. **Settings** reuses `SettingsView` without
-  its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools; the
-  sidebar's old Tasks, Skills and All Bots rows, the gateway switcher and the Chats/Bots switch do
-  not appear in this layout.
+  its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools, each
+  with a count under its title like the rows around it (`HermesPageSummary`): "104 skills" from the
+  list the Skills page keeps, and "5 tasks · 2 active" (active: not paused) from one read by the row,
+  whose Tasks page works on the same list, so a change there shows on the way back. Before a count
+  they say "Loading…" or "Not connected", as Apps and Tools does, or the page's own "Couldn't list
+  skills" / "Couldn't load tasks"; nothing polls. The iPad's Settings sidebar shows the same counts.
+  The sidebar's old Tasks, Skills and All Bots rows, the gateway switcher and the Chats/Bots switch
+  do not appear in this layout.
 - **The mock**: `backend.py --inbox-gtd --inbox-demo --cross-profile` seeds all four states
   (Working's cycle, the approval that waits, the finished rows, and "Nightly log rotation", whose
   failed turn is unread so its row says Failed), the profiles' faces and projects, and the settled
