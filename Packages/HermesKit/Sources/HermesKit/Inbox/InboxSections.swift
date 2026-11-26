@@ -58,7 +58,9 @@ public struct InboxSections<Row> {
     ///   - key: the chat's stable key, as the activity sets and `returns` use.
     ///   - rowTime: the row's own time (`RowTime`).
     ///   - returns: when each chat came back to the top (`InboxReturns`).
-    ///   - workingTime: Working's order, the person's last send here or else the chat's activity.
+    ///   - workingSince: when each chat started working. Working's order is this alone, oldest
+    ///     first: the turn under way longest on top, one that just started at the bottom. Nothing
+    ///     a turn does while it runs moves the row.
     public static func partition(
         _ rows: [Row],
         key: (Row) -> String,
@@ -67,7 +69,7 @@ public struct InboxSections<Row> {
         activity: InboxActivity,
         returns: [String: Date],
         rowTime: (Row) -> Date?,
-        workingTime: (Row) -> Date?
+        workingSince: (Row) -> Date?
     ) -> InboxSections<Row> {
         var sections = InboxSections()
         var pinnedTimes: [Date] = []
@@ -80,7 +82,7 @@ public struct InboxSections<Row> {
                 sections.settled.append(row)
             case .working:
                 sections.working.append(row)
-                workingTimes.append(workingTime(row) ?? .distantPast)
+                workingTimes.append(workingSince(row) ?? .distantFuture)
             case .pinned:
                 sections.pinned.append(row)
                 pinnedTimes.append(rowTime(row) ?? .distantPast)
@@ -92,13 +94,18 @@ public struct InboxSections<Row> {
         }
         sections.pinned = newestFirst(sections.pinned, times: pinnedTimes)
         sections.main = newestFirst(sections.main, times: mainTimes)
-        sections.working = newestFirst(sections.working, times: workingTimes)
+        sections.working = oldestFirst(sections.working, times: workingTimes)
         return sections
     }
 
     /// Newest first; ties keep the order they came in.
     private static func newestFirst(_ rows: [Row], times: [Date]) -> [Row] {
         rows.indices.sorted { a, b in times[a] != times[b] ? times[a] > times[b] : a < b }.map { rows[$0] }
+    }
+
+    /// Oldest first; ties keep the order they came in.
+    private static func oldestFirst(_ rows: [Row], times: [Date]) -> [Row] {
+        rows.indices.sorted { a, b in times[a] != times[b] ? times[a] < times[b] : a < b }.map { rows[$0] }
     }
 }
 
@@ -120,17 +127,21 @@ public struct InboxSectionsCache<Row> {
         public var sessions: Int
         public var activity: InboxActivity
         public var returns: [String: Date]
+        /// When each working chat started: Working's order.
+        public var working: [String: Date]
         public var lines: Int
         public var scope: InboxScope
         /// What the filter reads besides the list (the unread badges under Unread).
         public var filterInputs: Int
         public var waiting: [String]
 
-        public init(sessions: Int, activity: InboxActivity, returns: [String: Date], lines: Int,
+        public init(sessions: Int, activity: InboxActivity, returns: [String: Date],
+                    working: [String: Date] = [:], lines: Int,
                     scope: InboxScope, filterInputs: Int, waiting: [String]) {
             self.sessions = sessions
             self.activity = activity
             self.returns = returns
+            self.working = working
             self.lines = lines
             self.scope = scope
             self.filterInputs = filterInputs

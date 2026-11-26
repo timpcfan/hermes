@@ -12,14 +12,15 @@ struct InboxSectionsTests {
         var pinned = false
         var archived = false
         var time: Double = 0
-        var sent: Double?
+        /// When it started working (`workingSince`).
+        var since: Double?
     }
 
     private static func partition(_ rows: [Row], live: Set<String> = [], needsYou: Set<String> = [], returns: [String: Date] = [:]) -> InboxSections<Row> {
         InboxSections.partition(
             rows, key: \.key, pinned: \.pinned, archived: \.archived,
             activity: InboxActivity(live: live, needsYou: needsYou), returns: returns,
-            rowTime: { t($0.time) }, workingTime: { $0.sent.map(t) ?? t($0.time) }
+            rowTime: { t($0.time) }, workingSince: { $0.since.map(t) }
         )
     }
 
@@ -77,15 +78,37 @@ struct InboxSectionsTests {
         #expect(sections.ordered.map(\.key) == ["p", "a", "w"])
     }
 
-    @Test func workingOrdersByLastSend() {
-        let rows = [Row(key: "a", time: 90, sent: 10), Row(key: "b", time: 5, sent: 40), Row(key: "c", time: 20)]
-        let sections = Self.partition(rows, live: ["a", "b", "c"])
-        #expect(sections.working.map(\.key) == ["b", "c", "a"])
+    @Test func workingKeepsTheLongestTurnOnTop() {
+        // Started 10 s, 15 s and 20 s after the base: the turn under way longest is first, the
+        // one that just started last. The rows' own times say the opposite and don't count.
+        let rows = [Row(key: "old", time: 5, since: 10), Row(key: "mid", time: 50, since: 15), Row(key: "new", time: 90, since: 20)]
+        let sections = Self.partition(rows, live: ["old", "mid", "new"])
+        #expect(sections.working.map(\.key) == ["old", "mid", "new"])
+    }
+
+    @Test func aTurnStreamingDoesNotMoveItsRow() {
+        // Tool calls and words move the rows' own times all through a turn: Working doesn't read
+        // them, so nothing jumps while it runs.
+        let running = [Row(key: "a", time: 10, since: 5), Row(key: "b", time: 20, since: 8)]
+        #expect(Self.partition(running, live: ["a", "b"]).working.map(\.key) == ["a", "b"])
+        let streaming = [Row(key: "a", time: 90, since: 5), Row(key: "b", time: 30, since: 8)]
+        #expect(Self.partition(streaming, live: ["a", "b"]).working.map(\.key) == ["a", "b"])
+        // A chat starting now goes below the two already running.
+        let third = streaming + [Row(key: "c", time: 95, since: 95)]
+        #expect(Self.partition(third, live: ["a", "b", "c"]).working.map(\.key) == ["a", "b", "c"])
+    }
+
+    @Test func aWorkingChatWithNoStartSitsBelowTheRest() {
+        let rows = [Row(key: "known", time: 1, since: 10), Row(key: "unknown", time: 99)]
+        #expect(Self.partition(rows, live: ["known", "unknown"]).working.map(\.key) == ["known", "unknown"])
     }
 
     @Test func tiesKeepTheOrderTheyCameIn() {
         let rows = [Row(key: "x", time: 1), Row(key: "y", time: 1), Row(key: "z", time: 1)]
         #expect(Self.partition(rows).main.map(\.key) == ["x", "y", "z"])
+        // Two turns started together: neither pushes the other around.
+        let working = [Row(key: "x", since: 1), Row(key: "y", since: 1), Row(key: "z", since: 1)]
+        #expect(Self.partition(working, live: ["x", "y", "z"]).working.map(\.key) == ["x", "y", "z"])
     }
 
     // MARK: After Settle

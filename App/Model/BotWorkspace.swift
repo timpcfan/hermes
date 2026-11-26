@@ -130,8 +130,17 @@ final class BotWorkspace: Identifiable {
     @ObservationIgnored var returnTracker = InboxReturns()
     @ObservationIgnored var returnGrace: Task<Void, Never>?
     @ObservationIgnored var returnsSave: Task<Void, Never>?
-    /// When the person last sent in each chat on this device: Working's order.
+    /// When the person last sent in each chat on this device: an empty chat stays listed.
     @ObservationIgnored var lastSentAt: [String: Date] = [:]
+    /// When each chat started working: Working's order, the turn under way longest on top
+    /// (`docs/inbox.md` §2a). Kept while the chat works, so a streamed reply or tool call never
+    /// moves its row; a chat leaving Working drops out.
+    var workingSince: [String: Date] = [:]
+    /// What each chat was doing at the last look (`noteActivity`), for `workingSince`.
+    @ObservationIgnored var workingPhases: [String: InboxReturns.Phase] = [:]
+    /// Whether `workingSince` has seen its first look with the list in hand: only that look reads
+    /// the chats' own last activity for a start, later ones take the moment a chat enters Working.
+    @ObservationIgnored var hasWorkingBaseline = false
     /// The regions as last built, with what they were built from (`inboxSections`).
     @ObservationIgnored var sectionsCache: InboxSectionsCache?
     /// A chat just archived, for Undo.
@@ -580,6 +589,9 @@ final class BotWorkspace: Identifiable {
         draft = ConversationModel(workspace: self)
         hasFetchedSessions = false
         allSessions = []
+        workingSince = [:]
+        workingPhases = [:]
+        hasWorkingBaseline = false
         SessionsCache.remove(id)
         ModelOptionsCache.remove(id)
         LastLinesCache.remove(id)
@@ -1228,6 +1240,9 @@ final class BotWorkspace: Identifiable {
                 allSessions = fresh
                 widgets.markKnownChats()
             }
+            // The list is in hand: the chats already running can say when their turns began
+            // (`workingSince`, `docs/inbox.md` §2a).
+            if !hasWorkingBaseline { noteWorkingStarted() }
             LaunchTrace.mark("chat list fetched (\(fresh.count))", id: "chat list fetched")
             #if HERMES_PUSH
             // Reads waiting for the push plugin are judged against this list (`PushReadQueue`).

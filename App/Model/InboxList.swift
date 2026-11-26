@@ -86,7 +86,7 @@ extension BotWorkspace {
     var inboxSections: InboxSections<HermesSession> {
         let key = InboxSectionsCache.Key(
             sessions: sessionsRevision, activity: activity.inbox, returns: inboxReturns,
-            lines: unread.linesRevision, scope: inboxScope,
+            working: workingSince, lines: unread.linesRevision, scope: inboxScope,
             filterInputs: inboxScope.unreadOnly ? unread.badgesRevision : 0, waiting: waitingChats.map(\.key)
         )
         if let sectionsCache, sectionsCache.key == key { return sectionsCache.sections }
@@ -107,9 +107,7 @@ extension BotWorkspace {
         var sections = InboxSections.partition(
             rows, key: \.stableID, pinned: \.pinned, archived: \.archived, activity: activity, returns: returns,
             rowTime: { self.rowTime($0, live: activity.live) },
-            workingTime: { session in
-                [self.lastSentAt[session.stableID], session.lastActive].compactMap(\.self).max()
-            }
+            workingSince: { self.workingSince[$0.stableID] }
         )
         // Unread and Needs You narrow Main only: what's pinned, running or settled stays in view.
         if scope.narrowsMain {
@@ -155,9 +153,12 @@ extension BotWorkspace {
     }
 
     /// What the chats are doing changed (`LiveActivity`): chats that started waiting on the
-    /// person or stopped return now; finished ones after a short grace.
+    /// person or stopped return now; finished ones after a short grace, and Working takes the
+    /// moment each chat started working.
     func noteActivity(_ phases: [String: InboxReturns.Phase]) {
+        workingPhases = phases
         returnTracker.observe(phases, now: .now)
+        noteWorkingStarted()
         publishReturns()
         scheduleReturnGrace()
     }
@@ -168,9 +169,30 @@ extension BotWorkspace {
         publishReturns()
     }
 
-    /// The person sent in a chat here: Working's order.
+    /// The person sent in a chat here: an empty chat stays listed (`holds`).
     func noteSent(_ key: String) {
         lastSentAt[key] = .now
+    }
+
+    // MARK: Working's order (`docs/inbox.md` §2a)
+
+    /// A chat entered Working: its start is the moment it did, and nothing the turn does from
+    /// there moves the row. A chat already running when the app opened has no such moment here,
+    /// so its own last activity stands in — the prompt behind the turn — at the first look with
+    /// the chat list in hand (`refreshSessions`). Before that, the moment stands.
+    func noteWorkingStarted() {
+        let working = Set(workingPhases.filter { $0.value == .working }.keys)
+        let now = Date.now
+        let listed = !hasWorkingBaseline && hasFetchedSessions && !working.isEmpty
+            && working.allSatisfy { session(forKey: $0) != nil }
+        if listed { hasWorkingBaseline = true }
+        var next = listed ? [:] : workingSince.filter { working.contains($0.key) }
+        for key in working where next[key] == nil {
+            let started = listed ? session(forKey: key)?.lastActive.map { min($0, now) } : nil
+            next[key] = started ?? now
+        }
+        guard next != workingSince else { return }
+        workingSince = next
     }
 
     // MARK: Settled (`docs/inbox.md` §2a)

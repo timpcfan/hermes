@@ -26,6 +26,8 @@ struct InboxObservationTests {
         var linesRevision = 0
         var activity = InboxActivity()
         var returns: [String: Date] = [:]
+        /// When each chat started working: Working's order.
+        var working: [String: Date] = [:]
         var waiting: [String] = []
         var rows: [HermesSession] = []
         var unread: Set<String> = []
@@ -36,7 +38,7 @@ struct InboxObservationTests {
         var inboxSections: InboxSections<HermesSession> {
             let key = InboxSectionsCache<HermesSession>.Key(
                 sessions: sessionsRevision, activity: activity, returns: returns,
-                lines: linesRevision, scope: scope,
+                working: working, lines: linesRevision, scope: scope,
                 filterInputs: scope.unreadOnly ? badgesRevision : 0, waiting: waiting
             )
             if let cache, cache.key == key { return cache.sections }
@@ -52,7 +54,7 @@ struct InboxObservationTests {
             }
             var sections = InboxSections.partition(
                 kept, key: \.stableID, pinned: \.pinned, archived: \.archived, activity: activity,
-                returns: returns, rowTime: { $0.activityDate }, workingTime: { $0.activityDate }
+                returns: returns, rowTime: { $0.activityDate }, workingSince: { working[$0.stableID] }
             )
             if scope.narrowsMain {
                 sections.main = sections.main.filter { row in
@@ -145,6 +147,24 @@ struct InboxObservationTests {
         #expect(model.inboxSections.working.isEmpty)
     }
 
+    @Test func workingOrdersByWhenEachChatStartedAndFollowsEachStart() {
+        let model = Self.model()
+        let welcome = "welcome"
+        let budget = "p:researcher:budget"
+        // Both run: the one that started first stays on top, the newer one goes below.
+        model.activity = InboxActivity(live: [budget, welcome])
+        model.working = [budget: Self.base.addingTimeInterval(-600), welcome: Self.base.addingTimeInterval(-60)]
+        #expect(model.inboxSections.working.map(\.stableID) == [budget, welcome])
+        // A start changing rebuilds the list: a chat that started later sinks.
+        #expect(Self.fires(model) { $0.working[budget] = Self.base.addingTimeInterval(-30) })
+        #expect(model.inboxSections.working.map(\.stableID) == [welcome, budget])
+        // A row's own time moving (a streamed reply, a tool call) rebuilds Main, never Working's
+        // order: the start is all that order reads.
+        let before = model.inboxSections.working.map(\.stableID)
+        _ = Self.fires(model) { $0.linesRevision &+= 1 }
+        #expect(model.inboxSections.working.map(\.stableID) == before)
+    }
+
     @Test func aNewLastLineOrReturnTimeRebuildsTheList() {
         let model = Self.model()
         #expect(Self.fires(model) { $0.linesRevision &+= 1 })
@@ -202,6 +222,10 @@ struct InboxObservationTests {
         ))
         #expect(key != InboxSectionsCache<HermesSession>.Key(
             sessions: 1, activity: InboxActivity(), returns: ["a": Self.base], lines: 0,
+            scope: .standard, filterInputs: 0, waiting: []
+        ))
+        #expect(key != InboxSectionsCache<HermesSession>.Key(
+            sessions: 1, activity: InboxActivity(), returns: [:], working: ["a": Self.base], lines: 0,
             scope: .standard, filterInputs: 0, waiting: []
         ))
         #expect(key != InboxSectionsCache<HermesSession>.Key(
