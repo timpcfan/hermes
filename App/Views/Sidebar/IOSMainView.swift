@@ -21,18 +21,12 @@ struct IOSMainView: View {
     /// two tabs never draw the same selection.
     @State private var chatPath: [DetailRoute] = []
     @State private var botPath: [DetailRoute] = []
-    /// The plus on the Bot tab opened its popover: New Bot or New Group Chat.
+    /// The plus on the Bot tab opened its panel: New Bot or New Group Chat.
     @State private var isChoosingNew = false
-    /// What the popover was asked for, made once it has gone: the root presents the sheet for it,
-    /// and can't while the popover is still up.
-    @State private var pickedNew: IOSNewBotChoice?
-    /// The window's width: the popover's rows wrap rather than run wider than the screen.
+    /// The window's width: the panel's rows wrap rather than run wider than the screen.
     @State private var windowWidth: CGFloat = 0
-    /// The pencil opened its popover of profiles (`docs/inbox.md` §9).
+    /// The pencil opened its panel of profiles (`docs/inbox.md` §9).
     @State private var isChoosingProfile = false
-    /// The profile the popover was asked for, started once it has gone (`.some(nil)` is the
-    /// gateway's own), so the chat pushes after the popover rather than under it.
-    @State private var pickedProfile: String??
 
     private var showsDetail: Bool { !chatPath.isEmpty || !botPath.isEmpty }
 
@@ -81,10 +75,6 @@ struct IOSMainView: View {
                     Color.clear
                 }
                 .disabled(tab == .bots && workspace.roster?.isConnected != true)
-                // The arrow on the popover's bottom edge, pointing down at the circle, so the
-                // popover sits right above it (`top` put it below, where there is no room).
-                .popover(isPresented: $isChoosingNew, arrowEdge: .bottom) { newBotMenu }
-                .popover(isPresented: $isChoosingProfile, arrowEdge: .bottom) { newChatMenu }
             }
         } else {
             TabView(selection: $tab) {
@@ -124,47 +114,34 @@ struct IOSMainView: View {
         tab == .bots ? "plus" : "square.and.pencil"
     }
 
-    /// New Bot and New Group Chat in a popover pointing at the plus. The panel, its arrow and
-    /// where it sits are the system's; only the rows are laid out here. A pick closes the popover
-    /// and is made once it has gone (`pickedNew`).
-    private var newBotMenu: some View {
-        // 20 pt clear of each side of the window, more than the system keeps a popover from the
-        // edge, so at the largest text sizes the titles wrap inside the panel.
-        IOSMenuRows(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity) {
+    /// How far the panel sits from the list's edge: clear of the circle on iOS 26, which floats
+    /// over the list, and just above the bar from iOS 27, where the circle is the bar's own tab.
+    private var composeMenuInset: CGFloat {
+        if #available(iOS 27.0, *) { return 8 }
+        return 60
+    }
+
+    /// New Bot and New Group Chat, in a panel hanging by the circle. A pick closes the panel and
+    /// is made at once (`IOSComposeButton.start`).
+    @ViewBuilder private var newBotPanel: some View {
+        ComposeMenuPanel(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity,
+                         edge: .bottom, inset: composeMenuInset, onDismiss: { isChoosingNew = false }) {
             IOSComposeButton.newBotActions(workspace) { choice in
-                pickedNew = choice
                 isChoosingNew = false
+                IOSComposeButton.start(choice, in: workspace)
             }
-        }
-        .labelStyle(IOSMenuRowLabelStyle())
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
-        .presentationCompactAdaptation(.popover)
-        .onDisappear {
-            guard let choice = pickedNew else { return }
-            pickedNew = nil
-            IOSComposeButton.start(choice, in: workspace)
         }
     }
 
-    /// New Chat's profiles in a popover pointing at the pencil, as New Bot's hang from the plus:
-    /// the most used last, nearest the thumb (`docs/inbox.md` §9). A pick closes the popover and
-    /// the chat starts in that profile once it has gone.
-    private var newChatMenu: some View {
-        IOSMenuRows(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity) {
+    /// New Chat's profiles in a panel by the pencil, as New Bot's hangs by the plus: the most used
+    /// last, nearest the thumb (`docs/inbox.md` §9).
+    @ViewBuilder private var newChatPanel: some View {
+        ComposeMenuPanel(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity,
+                         edge: .bottom, inset: composeMenuInset, onDismiss: { isChoosingProfile = false }) {
             IOSComposeButton.newChatActions(workspace) { profile in
-                pickedProfile = .some(profile)
                 isChoosingProfile = false
+                IOSComposeButton.startNewChat(in: workspace, profile: profile)
             }
-        }
-        .labelStyle(IOSMenuRowLabelStyle())
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
-        .presentationCompactAdaptation(.popover)
-        .onDisappear {
-            guard let profile = pickedProfile else { return }
-            pickedProfile = nil
-            IOSComposeButton.startNewChat(in: workspace, profile: profile)
         }
     }
 
@@ -216,6 +193,17 @@ struct IOSMainView: View {
                     DetailView(workspace: workspace)
                         .toolbar(.hidden, for: .tabBar)
                 }
+                // The circle's panels, drawn here rather than as popovers: iOS squares a popover's
+                // corner above its arrow when the arrow lands near the screen's edge.
+                .overlay(alignment: .bottomTrailing) {
+                    if isChoosingNew {
+                        newBotPanel
+                    } else if isChoosingProfile {
+                        newChatPanel
+                    }
+                }
+                .animation(.snappy(duration: 0.18), value: isChoosingNew)
+                .animation(.snappy(duration: 0.18), value: isChoosingProfile)
         }
     }
 

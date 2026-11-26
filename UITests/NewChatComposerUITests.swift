@@ -350,8 +350,8 @@ final class NewChatComposerUITests: XCTestCase {
         attach("new-chat-researcher-models")
     }
 
-    /// Screenshots for comparing New Chat's profile popover with the Bot tab's New popover, and
-    /// the chat screen's New Chat menu, in dark mode (no assertions on looks; attachments only).
+    /// Screenshots of the three menus the compose circle and the chat screen's pencil open, in
+    /// dark mode: they are drawn by the app now, with no popover arrow to square a corner.
     @MainActor
     func testProfileMenusLookLikeTheBotTabsNewMenu() throws {
         let phone = XCUIDevice.shared.appearance
@@ -362,10 +362,11 @@ final class NewChatComposerUITests: XCTestCase {
         let floating = app.buttons["tab.compose"].firstMatch
         let prominent = app.tabBars.buttons["New Chat"].firstMatch
         XCTAssertTrue(floating.waitForExistence(timeout: 60) || prominent.waitForExistence(timeout: 5), "no compose button")
+        func compose() -> XCUIElement { floating.exists ? floating : prominent }
         let researcher = app.buttons["newChat.profile.researcher"].firstMatch
         var opened = false
         for _ in 0..<20 {
-            (floating.exists ? floating : prominent).tap()
+            compose().tap()
             if researcher.waitForExistence(timeout: 3) { opened = true; break }
             let back = app.navigationBars.buttons.element(boundBy: 0)
             if back.exists { back.tap() }
@@ -373,34 +374,30 @@ final class NewChatComposerUITests: XCTestCase {
         }
         XCTAssertTrue(opened)
         Thread.sleep(forTimeInterval: 1)
-        attach("compare-chats-profile-popover")
-        app.tap()
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
-        Thread.sleep(forTimeInterval: 1)
-
-        // The Bot tab's New popover, from the same circle.
-        app.tabBars.buttons["Bots"].firstMatch.tap()
-        Thread.sleep(forTimeInterval: 1)
-        let plus = app.tabBars.buttons["New"].firstMatch
-        XCTAssertTrue(plus.waitForExistence(timeout: 10))
-        plus.tap()
-        XCTAssertTrue(app.buttons["New Bot"].waitForExistence(timeout: 10))
-        Thread.sleep(forTimeInterval: 1)
-        attach("compare-bots-new-popover")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
-        Thread.sleep(forTimeInterval: 1)
-
-        // The chat screen's pencil menu.
-        app.tabBars.buttons["Chats"].firstMatch.tap()
-        Thread.sleep(forTimeInterval: 1)
-        (floating.exists ? floating : prominent).tap()
-        XCTAssertTrue(researcher.waitForExistence(timeout: 10))
+        attach("menu-chats-profiles")
         researcher.tap()
+        Thread.sleep(forTimeInterval: 2)
+
+        // The chat screen's pencil.
         let pencil = app.buttons["New chat"].firstMatch
         XCTAssertTrue(pencil.waitForExistence(timeout: 15))
         pencil.tap()
         Thread.sleep(forTimeInterval: 1.5)
-        attach("compare-chat-screen-menu")
+        attach("menu-chat-pencil")
+        pencil.tap()
+        Thread.sleep(forTimeInterval: 1)
+
+        // The Bot tab's New panel, from the same circle.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        Thread.sleep(forTimeInterval: 1)
+        app.tabBars.buttons["Bots"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        let plus = app.tabBars.buttons["New"].firstMatch
+        XCTAssertTrue(plus.waitForExistence(timeout: 10), "no New on the Bot tab")
+        plus.tap()
+        XCTAssertTrue(app.buttons["New Bot"].waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1)
+        attach("menu-bots-new")
     }
 
     // MARK: Helpers

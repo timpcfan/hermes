@@ -82,6 +82,10 @@ struct ChatScreen: View {
         )
     }
 
+    /// The pencil's panel of profiles is up (`docs/inbox.md` §9), drawn by this screen so it can
+    /// hang under the toolbar rather than inside it.
+    @State private var isChoosingProfile = false
+
     /// Set when this is a Bot's Bot Chat.
     private var roster: BotRoster? {
         conversation.isBotChat ? workspace.roster : nil
@@ -128,6 +132,19 @@ struct ChatScreen: View {
         .toolbar { toolbar }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
+        .overlay(alignment: .topTrailing) {
+            #if os(iOS)
+            if isChoosingProfile {
+                ComposeMenuPanel(maxWidth: 300, edge: .top, inset: 8, onDismiss: { isChoosingProfile = false }) {
+                    IOSComposeButton.newChatActions(workspace, reversed: true) { profile in
+                        isChoosingProfile = false
+                        workspace.startNewChat(in: profile)
+                    }
+                }
+                .animation(.snappy(duration: 0.18), value: isChoosingProfile)
+            }
+            #endif
+        }
         .environment(\.helperNavigator, helperNavigator)
         .environment(\.inspectorModel, conversation.inspector)
         .modifier(HelperPresentation(conversation: conversation, workspace: workspace, navigator: helperNavigator))
@@ -706,62 +723,29 @@ struct ChatScreen: View {
             .help("New chat (⌘N)")
             .disabled(conversation.isEmpty && conversation.sessionID == nil)
         } else {
-            NewChatProfileMenuButton(workspace: workspace)
-        }
-    }
-}
-
-/// The chat screen's pencil while the list holds every profile's chats (`docs/inbox.md` §9): a
-/// popover of profiles with their faces, hugging its rows like the compose button's
-/// (`IOSMenuRows`). This pencil sits at the top and the popover opens downward, so the order is
-/// turned round: the most used first, next to the pencil. A system `Menu` can't draw the faces
-/// and sizes itself wider. On the Mac the rows are a plain menu, as its toolbar's are.
-private struct NewChatProfileMenuButton: View {
-    let workspace: BotWorkspace
-
-    @State private var isPresented = false
-    /// The profile picked, started once the popover has gone (`.some(nil)` is the gateway's own).
-    @State private var picked: String??
-
-    var body: some View {
-        #if os(iOS)
-        Button {
-            isPresented = true
-        } label: {
-            Image(systemName: "square.and.pencil")
-        }
-        .accessibilityLabel("New chat")
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
-            IOSMenuRows(maxWidth: 280) {
-                IOSComposeButton.newChatActions(workspace, reversed: true) { profile in
-                    picked = .some(profile)
-                    isPresented = false
+            #if os(macOS)
+            // The Mac's toolbar menus are the system's, as they always are.
+            Menu {
+                ForEach(workspace.newChatProfiles.reversed()) { profile in
+                    Button(profile.title) {
+                        workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
+                    }
                 }
+            } label: {
+                Image(systemName: "square.and.pencil")
             }
-            .labelStyle(IOSMenuRowLabelStyle())
-            .buttonStyle(.plain)
-            .padding(.vertical, 6)
-            .presentationCompactAdaptation(.popover)
-            .onDisappear {
-                guard let profile = picked else { return }
-                picked = nil
-                workspace.startNewChat(in: profile)
+            .menuOrder(.fixed)
+            .accessibilityLabel("New chat")
+            .help("New chat (⌘N)")
+            #else
+            Button {
+                isChoosingProfile = true
+            } label: {
+                Image(systemName: "square.and.pencil")
             }
+            .accessibilityLabel("New chat")
+            #endif
         }
-        #else
-        Menu {
-            ForEach(workspace.newChatProfiles.reversed()) { profile in
-                Button(profile.title) {
-                    workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
-                }
-            }
-        } label: {
-            Image(systemName: "square.and.pencil")
-        }
-        .menuOrder(.fixed)
-        .accessibilityLabel("New chat")
-        .help("New chat (⌘N)")
-        #endif
     }
 }
 
