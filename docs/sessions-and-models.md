@@ -113,10 +113,14 @@ Not built yet:
 
 ## 4. Model picker and provider keys
 
-The chat's title is the model picker (`modelPicker`): the chosen model, else the model the chat's
-row reports, else the gateway default, else the gateway's name. iPhone and iPad show a sheet with
-search, the Mac a compact popover (`macModelPicker`). Bot Chats have no picker; a Bot's model is
-part of its profile (`docs/bots-groups-skills.md`).
+The composer's model chip (`composerModelChip`) is the model picker: it names the chosen model,
+else the model the chat's row reports, else the gateway default, else the gateway's name, and
+carries its reasoning as signal bars. iPhone and iPad show a sheet with search and the reasoning
+controls pinned under it (Auto and the seven levels); the Mac shows a compact two-column popover
+(`macModelPicker`), the models on the left and the ladder on the right. Picking a level leaves the
+picker open; picking a model closes it. The chat's title names the chat and its profile instead
+([chat.md](chat.md) §4). Bot Chats have no picker; a Bot's model is part of its profile
+(`docs/bots-groups-skills.md`).
 
 | Action | Call | Notes |
 |---|---|---|
@@ -125,7 +129,7 @@ part of its profile (`docs/bots-groups-skills.md`).
 | Pick a model | stored on the chat | Also remembered as this gateway's model for new chats on this device (`UserDefaults` `model.<gateway id>`, `effort.<gateway id>`). `/model <name>` and `/model <name> --provider <slug>` pick by id, short name or display name |
 | Over the API server | the run's body | Each `POST /v1/runs` carries `model`, `provider` and `model_options.reasoning_effort`. Turns with images (`POST /api/sessions/{id}/chat/stream`) add `require_model_lock: true` |
 | Over the gateway | `session.create`, then `config.set` | A new chat passes `model`, `provider` and `reasoning_effort` to `session.create`. Later changes go before the next turn, only when they changed: `config.set {session_id, key: "model", value: "<model> --provider <slug>"}` and `config.set {session_id, key: "reasoning", value}` |
-| Think (reasoning level) | the composer's Think chip | Auto (the gateway decides), Off, Minimal, Low, Medium, High, XHigh, Max: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` on the wire. `/reasoning <level>` (alias `/effort`) does the same |
+| Reasoning level | the composer's model chip | Auto (the gateway decides), Off, Minimal, Low, Medium, High, XHigh, Max: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` on the wire. The chip shows the level as whole signal bars (Auto: `a.circle`); a model that doesn't reason has no glyph and its controls are disabled. `/reasoning <level>` (alias `/effort`) does the same |
 | Thinking block | `reasoning.delta` and `reasoning.available` events | See `docs/chat.md` |
 
 When the chat's model fails, Hermes answers with its fallback model (`fallback_model` in its

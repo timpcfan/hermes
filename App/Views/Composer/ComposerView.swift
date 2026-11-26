@@ -570,8 +570,9 @@ struct ComposerView: View {
         conversation.typedAnswerRequest != nil && conversation.editingQueued == nil
     }
 
-    /// While a turn runs and there's something to send, the send mode takes Think's place: Think
-    /// applies to the next turn anyway. Not while Send answers a question: there's no mode to pick.
+    /// While a turn runs and there's something to send, the send mode appears beside the model
+    /// chip, which keeps only its glyph: the model and reasoning apply to the next turn anyway. Not
+    /// while Send answers a question: there's no mode to pick.
     /// A turn that can't take a note shows Send Next alone: what's typed waits in Up Next.
     private var showsModeChip: Bool {
         (conversation.canSendFollowUp || conversation.canQueue || conversation.editingQueued != nil) && !dictation.isActive

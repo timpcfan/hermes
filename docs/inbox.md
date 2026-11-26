@@ -692,8 +692,8 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   can't dirty what observes it). The turn itself, steering and approvals ride the runtime the
   resume minted, which Hermes already binds to that profile. Two profiles' chats with one id
   resume as two runtimes: the profile names whose chat opens.
-- **New Chat** picks its profile (`NewChatProfileButton` beside the model picker, only while the
-  chat has no session and the list holds every profile's chats): the roster's profiles with the
+- **New Chat** picks its profile before the chat exists (the compose button's menu, below, only
+  while the list holds every profile's chats): the roster's profiles with the
   gateway's own first, the last choice remembered per gateway on this device
   (`BotWorkspace.rememberNewChatProfile`). The create, the first prompt and the chat's history all
   run in the chosen profile (`ConversationModel.newChatProfile` feeds `gatewayProfile` until
@@ -712,14 +712,14 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   upward; ties put the roster's earlier profiles lower, the gateway's own first
   (`ProfileRows.newChatMenuOrder`). The chat screen's own pencil (top, opening downward) offers
   the same profiles turned round, most used next to it. With one profile, or without Bot Mode,
-  New Chat starts at once as before. The picker beside the model stays for changing a draft's
-  profile after it opened.
+  New Chat starts at once as before. Once the chat exists its profile is fixed: the top bar
+  names it (`ChatHeaderTitle`), plainly and without a control, and nothing changes it after.
 - **Models follow the profile**: profiles have their own providers and defaults, so a chat in
   another profile reads that profile's list over the gateway (`model.options` with `profile`,
   `BotWorkspace.loadModelOptions(for:)`), kept per connection; the gateway's own profile keeps
-  `GET /api/model/options`. The title, the model picker, `/model`, Try Again's suggestions and
-  model following all read the chat's list (`ConversationModel.modelOptions`), and the picker's
-  first row reads "Profile default" there. A model choice is remembered per profile
+  `GET /api/model/options`. The top bar's title and profile, the composer's model chip, `/model`,
+  Try Again's suggestions and model following all read the chat's list
+  (`ConversationModel.modelOptions`), and the picker's first row reads "Profile default" there. A model choice is remembered per profile
   (`BotWorkspace.preferredModel(for:)`), and changing a new chat's profile takes that profile's
   choice or its default, so a model only one profile's providers serve never rides into another.
 - **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it

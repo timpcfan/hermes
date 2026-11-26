@@ -29,11 +29,12 @@ below). Top to bottom, each row appears only when it has content:
 4. Skill chips (up to five, `composerSkills`), then file and PDF chips (`composerFiles`)
 5. The text field, with Bot and gateway-file pills inline
 6. The command hint line, in command mode (`composerCommand`)
-7. Controls: **+**, **Think** (or the mode chip while a turn runs and the field has content), the
+7. Controls: **+**, the model chip (the model and its reasoning; the mode chip appears beside it
+   while a turn runs and the field has content), the
    background-process chip (`processChip`, [background-processes.md](background-processes.md)
    §5), the project chip (`projectChip`, [projects.md](projects.md)), a spacer, a short status
    when the gateway is busy, connecting or needs a sign-in, **Dictate**, then one trailing
-   button. Bot Chats have no Think control, and its slot takes no room until the mode chip shows
+   button. Bot Chats have no model chip, and its slot takes no room until the mode chip shows
    in it. While dictating, the whole controls row becomes the dictation row (§3). Holding
    Dictate records a voice message instead: the field and controls become the recorder, locked
    and Review panels ([voice.md](voice.md) §2).
@@ -47,14 +48,15 @@ below). Top to bottom, each row appears only when it has content:
    AX5). Each has a hit area of at least 44 pt, centered on the circle, and so does the close
    button on a dictation error. The panel's corner radius follows the buttons, half a button plus
    10 pt: 28 at Large, 36 at AX5. The buttons and chips on the controls row are 8 pt apart at
-   every size. The chips (Think or the mode chip, the process chip, the project
+   every size. The chips (the model chip, the mode chip, the process chip, the project
    chip and the status) grow until the first accessibility size, AX1, and stop there at 44 pt
    tall, with 20 pt glyphs, a 21 pt running dot and a 28 pt project tile; a long press shows a
    chip large (the Large Content Viewer).
 
    Up to xxxLarge, and on iPad and the Mac at every size, the controls are one row and it is
    never wider than the panel: when it runs out of room, the process chip truncates first, then
-   the project chip (its branch before its name), then Think. From AX1 in a compact width (an
+   the project chip (its branch before its name), then the model chip's name (its model name
+   before its reasoning glyph). From AX1 in a compact width (an
    iPhone, an iPad in Slide Over), the chips move to their own row (`chipRow`) under the field,
    8 pt apart: it scrolls sideways within the panel's edges and never truncates, a chip that isn't shown takes no room,
    and the project chip stays beside the mode chip while a turn runs. The controls row under it
@@ -65,7 +67,19 @@ below). Top to bottom, each row appears only when it has content:
    At the accessibility sizes the field's placeholder ("Reply to Hermes…") wraps and the field
    grows to hold it, rather than cutting it off.
 
-The model picker is in the chat's title, not in the composer.
+The model chip (`composerModelChip`) is the one control for how the next turn sends: the model's
+name and, before it, its reasoning as `cellularbars` with whole bars lit (`symbolVariableValueMode`
+`.color`; Auto is `a.circle`, and a model that doesn't reason has no glyph). The level itself is
+never written on the chip; it is the chip's accessibility value and the picker's. Tapping it opens
+the picker: on iPhone a sheet with the model list and the reasoning controls pinned under it (the
+Auto switch and the seven-tick slider, Off…Max, whose ticks sit under the thumb's stops); on the
+Mac a two-column popover, the models on the left and Auto plus the seven levels on the right.
+Picking a level leaves the picker open, picking a model closes it. Off is unavailable for a model
+whose `can_disable_reasoning` is false, and a model that doesn't reason disables the reasoning
+controls and says why. While a turn runs the chip keeps only its reasoning glyph and the mode chip
+takes the words' place; the glyph still opens the picker. A Bot Chat and the answer composer have
+no model chip, and the `/model` command is unchanged. The gateway's model list is read when the
+chip appears, once per profile.
 
 Menus that grow up from the composer (the "/" and "@" menus, a group chat's members) never pass
 the top bar or a banner under it, with the keyboard up or down: each is as tall as its rows, at
@@ -102,7 +116,7 @@ Offline, the panel dims to half opacity and +, Dictate and the trailing button a
 | + → Files | Attach files or PDFs from the device, up to 20 MB each; images picked here become image attachments. A file in iCloud Drive or another provider is downloaded first; a package or folder (a Pages document) goes as a zip of it. A file that can't be read or downloaded, or a pick Files couldn't hand over, says so in an alert. When Hermes refuses a file at send time, everything goes back into the field and the banner says why in plain words, with the file's name (a full disk, over Hermes's cap, a file that arrived broken, a Hermes without uploads), never the raw error. A Hermes before 0.23.1 reads a file in one socket message of at most 16 MiB, so a file over 12 MB isn't sent to it: the banner says it's larger than this Hermes takes until Hermes is updated. A chat whose session Hermes closed meanwhile resumes and uploads again, once | `pdf.attach {session_id, content_base64, filename}` sends a PDF's pages as images; anything else, or a PDF the gateway can't render, goes with `file.attach {session_id, data_url, name}` and the prompt carries its `@file:` reference. A file over 12 MB waits for `/api/status`'s `version` first. A 4001 "session not found" on an upload resumes the chat (`session.resume`) and uploads everything again. The API server has no upload: text files and PDFs with a text layer go inline after the message, anything else is refused with an alert |
 | + → File on Gateway… | Puts `@` in the field to pick a file on the Hermes machine; the same as typing `@path`. Gateway protocol only, not in Bot Chats | `complete.path` |
 | + → Skills…, Commands… | Put `/` in the field and open the slash menu (Skills… opens the full skill list). Shown over the gateway protocol when the gateway has skills | the catalog from `commands.catalog` and `complete.slash`; see [commands-and-references.md](commands-and-references.md) |
-| Think | Reasoning effort for this chat: Auto, Off, Minimal, Low, Medium, High, Extra High, Max. Applied when the next turn starts | Gateway protocol: `config.set {session_id, key: "reasoning", value}` when it changed; API server: `model_options.reasoning_effort` |
+| Model chip | The model the next turn sends with, and its reasoning as whole signal bars. Its picker chooses both: reasoning is Auto, Off, Minimal, Low, Medium, High, Extra High or Max, applied when the next turn starts; a model closes the picker because the model moves the chat ([sessions-and-models.md](sessions-and-models.md) §4) | Gateway protocol: `config.set {session_id, key: "reasoning", value}` when it changed, and the model picker's own calls; API server: `model_options.reasoning_effort` |
 | Typing `/` | A query capsule in the field and the slash menu above the composer, filtered on the device | — |
 | Picking a command that takes an argument | Command mode: command pill, argument placeholder, hint line; Send disabled until the argument is there (`composerCommand`) | on Send: the app's own handling, or `slash.exec` / `command.dispatch` |
 | Typing `@`, picking a Bot or path | A query capsule, then an atomic pill inline (`composerReferences`) | `complete.path {word, session_id}` for files (debounced, up to 12 items); the roster for Bots |
