@@ -38,12 +38,20 @@ struct ChatHeaderTitle: View {
         .multilineTextAlignment(textAlignment)
         #if os(iOS)
         // iPhone and iPad read the chat's name from the leading edge, where the chat itself starts.
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // The bar sizes its title by the title's ideal width and centres it: asking for more than
+        // the bar has makes it give the title all the room between the buttons, so a short name
+        // starts at the leading edge too, not only one long enough to fill the bar.
+        .frame(idealWidth: Self.greedyWidth, maxWidth: .infinity, alignment: .leading)
         #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title), \(profile)"))
         .accessibilityIdentifier("chatHeaderTitle")
     }
+
+    #if os(iOS)
+    /// Wider than any bar, so the bar clamps the title to the room it has (`body`).
+    private static let greedyWidth: CGFloat = 2_000
+    #endif
 
     private var stackAlignment: HorizontalAlignment {
         #if os(macOS)
