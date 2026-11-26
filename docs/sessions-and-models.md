@@ -149,6 +149,23 @@ Bot Mode on) moves the row. The model remembered for new chats doesn't change. T
 `ChatModelFollow` in HermesKit; the mock keeps each chat's model and logs the model each turn runs
 on.
 
+What `config.set` answers decides whether the pick counts (`tui_gateway/model_switch.py`):
+`applied: true` means the session runs it; `applied: false, deferred: true` means a turn is running
+and the switch takes over as the next one starts — that is this message's turn, so it counts;
+`applied: false, confirm_required: true` is a selection guard and nothing changed (§4.1). A gateway
+older than that answer sends no `applied`, so a set that answered took, unless its fields say
+`deferred` or `confirm_required`. The chat records the pick as applied only when it took; the logic
+is `RunSettingsApply` in HermesKit.
+
+A runtime Hermes no longer has answers 4001 (another client closed the chat, or a restart). The app
+resumes the stored session, sets the chat's model and effort on the new runtime, and only then
+submits the prompt; the image upload's and the prompt's own resume do the same. So the first message
+after a pick is the one that runs on it, never the one after. A set that didn't take (a 4001 that
+keeps failing, 5001, another refusal) is never recorded: the chat goes back to the model Hermes
+reports, and a notice in the chat says "Hermes didn't switch this chat to <model>. This message runs
+on <model>." A reasoning effort that didn't take is left for the next send and doesn't hold the
+message.
+
 Provider keys are entered during setup, not in the picker: `model.save_key {slug, api_key}` with
 4003 (a provider that signs in, such as an OAuth one: run `hermes model` on the gateway) and 4006
 (a managed install) explained (`docs/onboarding.md` §3).

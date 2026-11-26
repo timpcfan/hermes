@@ -193,6 +193,35 @@ struct RunSettingsTests {
         ])
     }
 
+    @Test func aResumeThatReportsAnotherPickFollowsIt() async {
+        let events = Events()
+        let gemini = ModelSelection(provider: "openrouter", model: "google/gemini-3-pro")
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: gpt, effort: nil),
+            applied: RunSettings(model: sonnet, effort: nil),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                throw GatewayRPCError(code: 4001, message: "session not found")
+            },
+            reattach: {
+                await events.add(.reattach)
+                // Opening the resumed session took another device's pick: that's what the chat wants now.
+                return .init(
+                    runtime: "runtime-2", applied: RunSettings(model: gemini, effort: nil),
+                    wanted: RunSettings(model: gemini, effort: nil)
+                )
+            }
+        )
+        #expect(outcome.runtime == "runtime-2")
+        #expect(outcome.modelApplied)
+        #expect(outcome.applied?.model == gemini)
+        #expect(await events.events == [
+            .set(runtime: "runtime-1", key: "model", value: gptValue),
+            .reattach,
+        ])
+    }
+
     @Test func aFailedEffortIsNotRecordedAndDoesNotHoldTheMessage() async {
         let events = Events()
         let outcome = await RunSettingsApply.run(
@@ -214,6 +243,28 @@ struct RunSettingsTests {
         #expect(outcome.applied == RunSettings(model: sonnet, effort: .low))
         #expect(outcome.notice == nil)
         #expect(await events.events == [.set(runtime: "runtime-1", key: "reasoning", value: "high")])
+    }
+
+    @Test func aChatOnTheGatewaysDefaultSetsNoModel() async {
+        let events = Events()
+        // No pick from this device: the session's reported model is not a pick that could fail.
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: nil, effort: nil),
+            applied: RunSettings(model: sonnet, effort: nil),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                return .object(["applied": .bool(true)])
+            },
+            reattach: {
+                await events.add(.reattach)
+                return .init(runtime: "runtime-2", applied: RunSettings(model: sonnet, effort: nil))
+            }
+        )
+        #expect(outcome.modelApplied)
+        #expect(outcome.applied?.model == sonnet)
+        #expect(outcome.notice == nil)
+        #expect(await events.events.isEmpty)
     }
 
     @Test func nothingChangedMakesNoCalls() async {

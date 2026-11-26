@@ -986,11 +986,6 @@ final class ConversationModel: Identifiable {
     /// The model and effort last applied to the gateway session, so they're set only on change.
     @ObservationIgnored private var appliedRunSettings: RunSettings?
 
-    private struct RunSettings: Equatable {
-        var model: ModelSelection?
-        var effort: ReasoningEffort?
-    }
-
     /// Forks this chat into a new session (gateway chats only).
     func branch() {
         guard !isBotChat, let workspace, let key = stableKey, let session = workspace.session(forKey: key) else { return }
@@ -5320,7 +5315,8 @@ extension ConversationModel {
                     return
                 }
                 if !isBotChat {
-                    await applyRunSettings(runtime: runtime, roster: roster)
+                    // A stale runtime is resumed here, and the pick set on the new one, before the prompt.
+                    runtime = await applyRunSettings(runtime: runtime, roster: roster)
                 }
                 if !staged.isEmpty {
                     // A try before this one staged them and never sent its prompt: not twice.
@@ -5351,6 +5347,9 @@ extension ConversationModel {
                         staged = StagedImages()
                         runtimeSessionID = nil
                         runtime = try await ensureRuntime()
+                        // A new runtime starts from what Hermes reports: set the chat's pick on it
+                        // again, so this message still runs on it.
+                        runtime = await applyRunSettings(runtime: runtime, roster: roster)
                     }
                 }
                 if !images.isEmpty, let key = stableKey {
@@ -5410,9 +5409,13 @@ extension ConversationModel {
                 do {
                     answer = try await submitWatched(submit, roster: roster)
                 } catch let error as GatewayRPCError where error.isSessionNotFound {
-                    // The backend forgot this runtime id (a restart); resume and send again.
+                    // The backend forgot this runtime id (a restart); resume, set the chat's model
+                    // and effort on the new one, and only then send again.
                     runtimeSessionID = nil
                     runtime = try await ensureRuntime()
+                    if !isBotChat {
+                        runtime = await applyRunSettings(runtime: runtime, roster: roster)
+                    }
                     submit["session_id"] = .string(runtime)
                     answer = try await submitWatched(submit, roster: roster)
                 }
@@ -5782,38 +5785,62 @@ extension ConversationModel {
         return runtime
     }
 
-    /// The chat's model and reasoning effort, set on its gateway session when they change.
-    private func applyRunSettings(runtime: String, roster: BotRoster) async {
+    /// The chat's model and reasoning effort, set on its gateway session when they change. A runtime
+    /// Hermes no longer has (4001) is resumed and the pick set on the new one, so the message that
+    /// follows runs on it. Returns the runtime the prompt must go to (`docs/sessions-and-models.md` §4).
+    private func applyRunSettings(runtime: String, roster: BotRoster) async -> String {
         let wanted = RunSettings(model: model, effort: reasoningEffort)
         guard wanted != appliedRunSettings else {
             // The turn goes with what the session already has, the gateway's default included, so a
             // pick made here is settled and the chat follows other devices again.
             modelFollow.sent(appliedRunSettings?.model)
-            return
+            return runtime
         }
-        let previous = appliedRunSettings
-        var applied = wanted
-        if let model, model != previous?.model {
-            let result = try? await roster.request("config.set", [
-                "session_id": .string(runtime), "key": .string("model"),
-                "value": .string("\(model.model) --provider \(model.provider)"),
-            ])
-            if result?["confirm_required"]?.boolValue == true {
-                // Hermes held the switch back (an expensive model): this message goes with the model
-                // the chat had, and the person decides about the new one.
-                let message = result?["confirm_message"]?.stringValue ?? result?["warning"]?.stringValue ?? ""
-                modelConfirmation = ModelConfirmation(selection: model, message: message)
-                self.model = previous?.model
-                applied.model = previous?.model
+        let outcome = await RunSettingsApply.run(
+            wanted: wanted,
+            applied: appliedRunSettings,
+            runtime: runtime,
+            set: { runtime, key, value in
+                try await roster.request("config.set", [
+                    "session_id": .string(runtime), "key": .string(key), "value": .string(value),
+                ])
+            },
+            reattach: { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.reattachForRunSettings()
+            }
+        )
+        appliedRunSettings = outcome.applied
+        if let confirmation = outcome.confirmationMessage {
+            // Hermes held the switch back (an expensive model): this message goes with the model
+            // the chat had, and the person decides about the new one.
+            if let attempted = wanted.model {
+                modelConfirmation = ModelConfirmation(selection: attempted, message: confirmation)
+            }
+            self.model = outcome.applied?.model
+        } else if !outcome.modelApplied {
+            // The pick didn't take: the chat shows the model its session really runs, and the
+            // message says which one it went with.
+            self.model = outcome.applied?.model
+            if let notice = outcome.notice {
+                appendLocal(.notice(Notice(id: "model-switch-\(UUID().uuidString)", kind: "model", text: notice)))
             }
         }
-        if let reasoningEffort, reasoningEffort != previous?.effort {
-            _ = try? await roster.request("config.set", [
-                "session_id": .string(runtime), "key": .string("reasoning"), "value": .string(reasoningEffort.rawValue),
-            ])
-        }
-        appliedRunSettings = applied
-        modelFollow.sent(applied.model)
+        modelFollow.sent(outcome.applied?.model)
+        return outcome.runtime
+    }
+
+    /// `config.set` found this chat's runtime gone: resumes it, and says what Hermes reports for the
+    /// one it got, so `RunSettingsApply` can set what still differs before the prompt.
+    private func reattachForRunSettings() async throws -> RunSettingsApply.Reattach {
+        runtimeSessionID = nil
+        let runtime = try await ensureRuntime()
+        // Opening the resumed session may have taken another device's pick (`ChatModelFollow`):
+        // what the chat wants now is what goes on the new runtime.
+        return RunSettingsApply.Reattach(
+            runtime: runtime, applied: appliedRunSettings,
+            wanted: RunSettings(model: model, effort: reasoningEffort)
+        )
     }
 
     /// The person picked the chat's model on this device: it wins over another device's pick for
@@ -5857,14 +5884,29 @@ extension ConversationModel {
         model = confirmation.selection
         guard let runtime = runtimeSessionID, let roster = gatewayRoster else { return }
         Task {
-            let result = try? await roster.request("config.set", [
-                "session_id": .string(runtime), "key": .string("model"),
-                "value": .string("\(confirmation.selection.model) --provider \(confirmation.selection.provider)"),
-                "confirm_expensive_model": .bool(true),
-            ])
-            if result != nil {
+            let answer: ConfigSetAnswer
+            do {
+                let result = try await roster.request("config.set", [
+                    "session_id": .string(runtime), "key": .string("model"),
+                    "value": .string("\(confirmation.selection.model) --provider \(confirmation.selection.provider)"),
+                    "confirm_expensive_model": .bool(true),
+                ])
+                answer = ConfigSetAnswer(result: result, error: nil)
+            } catch {
+                answer = ConfigSetAnswer(result: nil, error: error)
+            }
+            if case .applied = answer {
                 appliedRunSettings = RunSettings(model: confirmation.selection, effort: appliedRunSettings?.effort)
                 modelFollow.sent(confirmation.selection)
+            } else {
+                // Confirmed, but Hermes still didn't switch: the chat keeps the model it runs.
+                self.model = appliedRunSettings?.model
+                let used = appliedRunSettings?.model?.shortName ?? String(localized: "the model the chat already had")
+                appendLocal(.notice(Notice(
+                    id: "model-switch-\(UUID().uuidString)", kind: "model",
+                    text: String(localized: "Hermes didn't switch this chat to \(confirmation.selection.shortName). It still runs on \(used).")
+                )))
+                modelFollow.sent(appliedRunSettings?.model)
             }
         }
     }

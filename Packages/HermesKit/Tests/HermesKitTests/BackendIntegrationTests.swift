@@ -92,6 +92,72 @@ struct BackendIntegrationTests {
         #expect(answer.contains("approved: `once`"))
     }
 
+    /// A model picked after another client closed the chat's session runs the very next message:
+    /// `config.set` answers 4001 on the dead runtime, the chat resumes, the model and effort are set
+    /// on the new runtime, and only then does `prompt.submit` go — once, on the new runtime
+    /// (`docs/sessions-and-models.md` §4).
+    @Test func aModelPickOnADeadRuntimeRunsTheVeryNextMessage() async throws {
+        let (client, socket) = try await connect()
+        defer { Task { await socket.close() } }
+        let created = try await socket.request("session.create", ["title": .string("model switch")])
+        let deadRuntime = try #require(created["session_id"]?.stringValue)
+        let stored = try #require(created["stored_session_id"]?.stringValue)
+        let before = try #require(Self.model(in: created["info"]))
+        // Another client closes the idle chat: this socket keeps a runtime id Hermes has forgotten.
+        _ = try await client.rest(
+            "api/mock/close-sessions", method: "POST", body: .object(["session_id": .string(stored)]))
+
+        let picked = ModelSelection(provider: "openrouter", model: "openai/gpt-5")
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: picked, effort: .high),
+            applied: RunSettings(model: before, effort: nil),
+            runtime: deadRuntime,
+            set: { runtime, key, value in
+                try await socket.request("config.set", [
+                    "session_id": .string(runtime), "key": .string(key), "value": .string(value),
+                ])
+            },
+            reattach: {
+                let resumed = try await socket.request("session.resume", [
+                    "session_id": .string(stored), "omit_messages": .bool(true),
+                ])
+                let runtime = try #require(resumed["session_id"]?.stringValue)
+                let reported = Self.model(in: resumed["info"])
+                return RunSettingsApply.Reattach(runtime: runtime, applied: RunSettings(model: reported, effort: nil))
+            }
+        )
+        #expect(outcome.runtime != deadRuntime)
+        #expect(outcome.modelApplied)
+        #expect(outcome.effortApplied)
+        #expect(outcome.applied == RunSettings(model: picked, effort: .high))
+
+        let answer = try await socket.request(
+            "prompt.submit", ["session_id": .string(outcome.runtime), "text": .string("short hello")],
+            timeout: .seconds(30))
+        #expect(answer["status"]?.stringValue == "streaming")
+
+        let calls = try await client.rest("api/mock/calls", query: [URLQueryItem(name: "stored", value: stored)])
+        let rows: [JSONValue] = if case .array(let rows)? = calls["calls"] { rows } else { [] }
+        let sets = rows.filter { $0["method"]?.stringValue == "config.set" }
+        #expect(sets.count == 3)
+        #expect(sets.first?["session_id"]?.stringValue == deadRuntime)
+        #expect(sets.first?["error"]?.truncatedIntValue == 4001)
+        #expect(sets.dropFirst().allSatisfy { $0["session_id"]?.stringValue == outcome.runtime })
+        #expect(sets.last?["applied"]?.boolValue == true)
+
+        // One prompt, on the new runtime, and the mock's session runs the picked model for it.
+        let submits = rows.filter { $0["method"]?.stringValue == "prompt.submit" }
+        #expect(submits.count == 1)
+        #expect(submits.first?["session_id"]?.stringValue == outcome.runtime)
+        #expect(submits.first?["model"]?.stringValue == picked.model)
+    }
+
+    private static func model(in info: JSONValue?) -> ModelSelection? {
+        guard let model = info?["model"]?.stringValue, !model.isEmpty,
+              let provider = info?["provider"]?.stringValue, !provider.isEmpty else { return nil }
+        return ModelSelection(provider: provider, model: model)
+    }
+
     @Test func routinesRoundTrip() async throws {
         let (_, socket) = try await connect()
         defer { Task { await socket.close() } }

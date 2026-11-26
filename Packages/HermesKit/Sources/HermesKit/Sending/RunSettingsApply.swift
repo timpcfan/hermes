@@ -12,10 +12,14 @@ public enum RunSettingsApply {
     public struct Reattach: Equatable, Sendable {
         public var runtime: String
         public var applied: RunSettings?
+        /// What the chat wants now, when opening the resumed session changed it (another device's
+        /// pick, which the chat follows). Nil keeps what was asked for.
+        public var wanted: RunSettings?
 
-        public init(runtime: String, applied: RunSettings?) {
+        public init(runtime: String, applied: RunSettings?, wanted: RunSettings? = nil) {
             self.runtime = runtime
             self.applied = applied
+            self.wanted = wanted
         }
     }
 
@@ -59,10 +63,84 @@ public enum RunSettingsApply {
         set: @Sendable (_ runtime: String, _ key: String, _ value: String) async throws -> JSONValue,
         reattach: @Sendable () async throws -> Reattach
     ) async -> Outcome {
-        // The old behavior: whatever the call answered, the pick was taken as applied.
+        var wanted = wanted
+        var runtime = runtime
         var effective = applied ?? RunSettings()
-        if let model = wanted.model { effective.model = model }
-        if let effort = wanted.effort { effective.effort = effort }
-        return Outcome(runtime: runtime, applied: effective, modelApplied: true, effortApplied: true)
+        // No pick from this device (the chat runs the gateway's default) is nothing to set: the
+        // default is not a model name, and picking it back is not a switch.
+        var modelApplied = wanted.model == nil || wanted.model == effective.model
+        var effortApplied = wanted.effort == effective.effort
+        var confirmationMessage: String?
+        var reattached = false
+
+        func setConfig(_ key: String, _ value: String) async -> ConfigSetAnswer {
+            do {
+                return ConfigSetAnswer(result: try await set(runtime, key, value), error: nil)
+            } catch {
+                return ConfigSetAnswer(result: nil, error: error)
+            }
+        }
+
+        /// A new runtime starts from what Hermes reports for it, so what this device knew about the
+        /// old one is set again where it differs. One resume per send: a second 4001 is a failure.
+        func resume() async -> Bool {
+            guard !reattached else { return false }
+            reattached = true
+            guard let resumed = try? await reattach() else { return false }
+            runtime = resumed.runtime
+            if let updated = resumed.wanted { wanted = updated }
+            effective = resumed.applied ?? RunSettings()
+            modelApplied = wanted.model == nil || wanted.model == effective.model
+            effortApplied = wanted.effort == effective.effort
+            return true
+        }
+
+        /// Sets what differs. Returns whether it resumed the chat, so the caller can go once more
+        /// on the runtime Hermes gave back.
+        func applyOnce() async -> Bool {
+            if !modelApplied, let model = wanted.model, confirmationMessage == nil {
+                let value = "\(model.model) --provider \(model.provider)"
+                let answer = await setConfig("model", value)
+                if case .sessionNotFound = answer, await resume() { return true }
+                switch answer {
+                case .applied:
+                    modelApplied = true
+                    effective.model = model
+                case .confirmRequired(let message):
+                    confirmationMessage = message
+                case .sessionNotFound, .failed:
+                    break
+                }
+            }
+            if !effortApplied, let effort = wanted.effort {
+                let answer = await setConfig("reasoning", effort.rawValue)
+                if case .sessionNotFound = answer, await resume() { return true }
+                if case .applied = answer {
+                    effortApplied = true
+                    effective.effort = effort
+                }
+            }
+            return false
+        }
+
+        if await applyOnce() {
+            _ = await applyOnce()
+        }
+
+        var notice: String?
+        if let model = wanted.model, !modelApplied, confirmationMessage == nil {
+            notice = Self.notice(wanted: model, used: effective.model)
+        }
+
+        return Outcome(
+            runtime: runtime, applied: effective, modelApplied: modelApplied,
+            effortApplied: effortApplied, confirmationMessage: confirmationMessage, notice: notice
+        )
+    }
+
+    /// The sentence for a model that didn't take: the one picked, and the one the message runs on.
+    public static func notice(wanted: ModelSelection, used: ModelSelection?) -> String {
+        let used = used.map(\.shortName) ?? String(localized: "the model the chat already had")
+        return String(localized: "Hermes didn't switch this chat to \(wanted.shortName). This message runs on \(used).")
     }
 }
