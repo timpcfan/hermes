@@ -667,6 +667,8 @@ private struct ReasoningSheetBar: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .tint(Theme.ink)
+                    // `labelsHidden` takes the switch's own name with the words drawn beside it.
+                    .accessibilityLabel(Text("Auto"))
                     .disabled(!support.isSupported)
             }
             // Seven stops, Off…Max; Off is where a model that can't turn reasoning off stops
