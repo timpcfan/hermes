@@ -28,6 +28,11 @@ struct IOSMainView: View {
     @State private var pickedNew: IOSNewBotChoice?
     /// The window's width: the popover's rows wrap rather than run wider than the screen.
     @State private var windowWidth: CGFloat = 0
+    /// The pencil opened its popover of profiles (`docs/inbox.md` §9).
+    @State private var isChoosingProfile = false
+    /// The profile the popover was asked for, started once it has gone (`.some(nil)` is the
+    /// gateway's own), so the chat pushes after the popover rather than under it.
+    @State private var pickedProfile: String??
 
     private var showsDetail: Bool { !chatPath.isEmpty || !botPath.isEmpty }
 
@@ -79,6 +84,7 @@ struct IOSMainView: View {
                 // The arrow on the popover's bottom edge, pointing down at the circle, so the
                 // popover sits right above it (`top` put it below, where there is no room).
                 .popover(isPresented: $isChoosingNew, arrowEdge: .bottom) { newBotMenu }
+                .popover(isPresented: $isChoosingProfile, arrowEdge: .bottom) { newChatMenu }
             }
         } else {
             TabView(selection: $tab) {
@@ -141,6 +147,27 @@ struct IOSMainView: View {
         }
     }
 
+    /// New Chat's profiles in a popover pointing at the pencil, as New Bot's hang from the plus:
+    /// the most used last, nearest the thumb (`docs/inbox.md` §9). A pick closes the popover and
+    /// the chat starts in that profile once it has gone.
+    private var newChatMenu: some View {
+        IOSMenuRows(maxWidth: windowWidth > 0 ? windowWidth - 40 : .infinity) {
+            IOSComposeButton.newChatActions(workspace) { profile in
+                pickedProfile = .some(profile)
+                isChoosingProfile = false
+            }
+        }
+        .labelStyle(IOSMenuRowLabelStyle())
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .presentationCompactAdaptation(.popover)
+        .onDisappear {
+            guard let profile = pickedProfile else { return }
+            pickedProfile = nil
+            IOSComposeButton.startNewChat(in: workspace, profile: profile)
+        }
+    }
+
     /// The tab selection, except that picking the compose circle acts and leaves the tab as it was.
     /// The action waits a turn: run inside the selection change, the screen it pushes hides and
     /// shows the bar while the bar is still settling, and the bar comes back centred and unlabelled.
@@ -161,6 +188,9 @@ struct IOSMainView: View {
     private func compose() {
         if tab == .bots {
             isChoosingNew = true
+        } else if !workspace.newChatProfiles.isEmpty {
+            // The list holds every profile's chats: which one the chat starts in comes first.
+            isChoosingProfile = true
         } else {
             IOSComposeButton.startNewChat(in: workspace)
         }
@@ -247,14 +277,30 @@ struct IOSComposeButton: View {
     var body: some View {
         switch tab {
         case .chats:
-            Button("New Chat", systemImage: "square.and.pencil") {
-                Self.startNewChat(in: workspace)
+            if workspace.newChatProfiles.isEmpty {
+                Button("New Chat", systemImage: "square.and.pencil") {
+                    Self.startNewChat(in: workspace)
+                }
+                .labelStyle(.iconOnly)
+                .buttonBorderShape(.circle)
+                .controlSize(.extraLarge)
+                .glassButton()
+                .accessibilityIdentifier("tab.compose")
+            } else {
+                // A system menu opens upward from the corner, so its last row is nearest the thumb.
+                Menu {
+                    Self.newChatActions(workspace) { Self.startNewChat(in: workspace, profile: $0) }
+                } label: {
+                    Label("New Chat", systemImage: "square.and.pencil")
+                        .labelStyle(.iconOnly)
+                }
+                .menuStyle(.button)
+                .menuOrder(.fixed)
+                .buttonBorderShape(.circle)
+                .controlSize(.extraLarge)
+                .glassButton()
+                .accessibilityIdentifier("tab.compose")
             }
-            .labelStyle(.iconOnly)
-            .buttonBorderShape(.circle)
-            .controlSize(.extraLarge)
-            .glassButton()
-            .accessibilityIdentifier("tab.compose")
         case .bots:
             Menu {
                 Self.newBotActions(workspace) { Self.start($0, in: workspace) }
@@ -278,6 +324,29 @@ struct IOSComposeButton: View {
     static func startNewChat(in workspace: BotWorkspace) {
         if workspace.sidebarMode != .chats { workspace.sidebarMode = .chats }
         workspace.startNewChat()
+    }
+
+    /// A new chat in `profile` (nil is the gateway's own), with that profile's model list.
+    static func startNewChat(in workspace: BotWorkspace, profile: String?) {
+        if workspace.sidebarMode != .chats { workspace.sidebarMode = .chats }
+        workspace.startNewChat(in: profile)
+    }
+
+    /// One row per profile for New Chat, top to bottom as `BotWorkspace.newChatProfiles` orders
+    /// them (the most used last). `pick` gets the profile, nil for the gateway's own.
+    @ViewBuilder static func newChatActions(_ workspace: BotWorkspace, pick: @escaping (String?) -> Void) -> some View {
+        ForEach(workspace.newChatProfiles) { profile in
+            Button {
+                pick(workspace.isHomeProfile(profile) ? nil : profile.name)
+            } label: {
+                Label {
+                    Text(profile.title)
+                } icon: {
+                    ProfileFace(workspace: workspace, profile: profile.name, size: 24)
+                }
+            }
+            .accessibilityIdentifier("newChat.profile.\(profile.name)")
+        }
     }
 
     /// New Bot and New Group Chat, offered and enabled as everywhere else: the Bot tab's menu

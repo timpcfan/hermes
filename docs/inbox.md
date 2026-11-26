@@ -703,6 +703,25 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
   change whose chat was created. A waiting first message keeps its profile too, so a relaunch
   resumes under the same key. Bot Mode not connected,
   New Chat is as it always was: the gateway's own profile, no picker.
+- **New Chat asks for the profile first** (this fork): while the list holds every profile's
+  chats and Bot Mode lists more than one, the compose button (the tab bar's prominent tab, or
+  the floating circle on iOS 26) opens a popover of profiles, laid out like the Bot tab's New
+  menu (`IOSComposeButton.newChatActions`, `IOSMenuRows`). The chat starts in the picked profile
+  (`BotWorkspace.startNewChat(in:)`) before it opens. The rows are ordered least used to most
+  used by chats in the list, so the most used sits last, nearest the thumb under a menu opening
+  upward; ties put the roster's earlier profiles lower, the gateway's own first
+  (`ProfileRows.newChatMenuOrder`). The chat screen's own pencil (top, opening downward) offers
+  the same profiles turned round, most used next to it. With one profile, or without Bot Mode,
+  New Chat starts at once as before. The picker beside the model stays for changing a draft's
+  profile after it opened.
+- **Models follow the profile**: profiles have their own providers and defaults, so a chat in
+  another profile reads that profile's list over the gateway (`model.options` with `profile`,
+  `BotWorkspace.loadModelOptions(for:)`), kept per connection; the gateway's own profile keeps
+  `GET /api/model/options`. The title, the model picker, `/model`, Try Again's suggestions and
+  model following all read the chat's list (`ConversationModel.modelOptions`), and the picker's
+  first row reads "Profile default" there. A model choice is remembered per profile
+  (`BotWorkspace.preferredModel(for:)`), and changing a new chat's profile takes that profile's
+  choice or its default, so a model only one profile's providers serve never rides into another.
 - **Fallbacks**: Bot Mode not connected, the list is the gateway API's own profile's chats, as it
   always was: no badges, no Profile filter (the kept choice waits, `InboxScope.withoutProfile`),
   and the device's marks for other profiles' rows are dropped (`UnreadStore.forgetProfiled`). A

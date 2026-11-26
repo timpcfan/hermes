@@ -130,11 +130,13 @@ final class SlashCatalog {
         var values: [Value] = []
         switch SlashCommands.canonical(command) {
         case "model":
-            let defaults = workspace.modelOptions.flatMap { options in
+            // The chat's own profile's list (`docs/inbox.md` §9).
+            let options = conversation.modelOptions
+            let defaults = options.flatMap { options in
                 options.model.map { ModelSelection(provider: options.provider ?? "", model: $0) }
             }
             let current = conversation.model ?? defaults
-            for provider in workspace.modelOptions?.usableProviders ?? [] {
+            for provider in options?.usableProviders ?? [] {
                 for model in provider.models where !provider.isUnavailable(model) {
                     let isCurrent = current.map { $0.model == model && (provider.matches(provider: $0.provider) || $0.provider.isEmpty) } ?? false
                     var detail = provider.name

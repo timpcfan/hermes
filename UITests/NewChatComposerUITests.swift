@@ -309,6 +309,47 @@ final class NewChatComposerUITests: XCTestCase {
         attach("chosen-profile-after-runtime-reclaimed")
     }
 
+    /// New Chat asks which profile first, from a menu on the compose button (`docs/inbox.md` §9),
+    /// and the chat opens with that profile's own models. Run the mock with --cross-profile.
+    @MainActor
+    func testNewChatsProfileMenuOpensTheChatWithThatProfilesModels() throws {
+        let app = launch(["-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
+        defer { app.terminate() }
+        // iOS 26 floats the compose circle over the list; from iOS 27 it is the tab bar's
+        // prominent tab, which the bar reports by its title.
+        let floating = app.buttons["tab.compose"].firstMatch
+        let prominent = app.tabBars.buttons["New Chat"].firstMatch
+        XCTAssertTrue(floating.waitForExistence(timeout: 60) || prominent.waitForExistence(timeout: 5), "no compose button")
+        let compose = floating.exists ? floating : prominent
+        // The menu needs the roster's profiles, read once Bot Mode connects.
+        let researcher = app.buttons["newChat.profile.researcher"].firstMatch
+        var opened = false
+        for _ in 0..<20 {
+            compose.tap()
+            if researcher.waitForExistence(timeout: 3) { opened = true; break }
+            // Without the menu the tap opened a plain new chat: back to the list and try again.
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if back.exists { back.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(opened, "New Chat didn't offer the profiles; start the mock with --cross-profile")
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'newChat.profile.'"))
+        XCTAssertGreaterThanOrEqual(rows.count, 2, "the menu lists every profile")
+        attach("new-chat-profile-menu")
+        researcher.tap()
+
+        // The chat starts in Research Buddy, titled with that profile's default model.
+        XCTAssertTrue(app.buttons["Profile: Research Buddy"].waitForExistence(timeout: 15), "the chat didn't start in Research Buddy")
+        let model = app.buttons["Model: Hermes 4 70B"].firstMatch
+        XCTAssertTrue(model.waitForExistence(timeout: 20), "the title didn't show Research Buddy's default model")
+        model.tap()
+        // Only Research Buddy's provider: none of the gateway's own list.
+        XCTAssertTrue(app.staticTexts["Nous Portal"].waitForExistence(timeout: 10) || app.buttons.matching(NSPredicate(format: "label CONTAINS 'Hermes 4 70B'")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["OpenRouter"].exists, "the gateway's own providers showed in another profile's list")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Claude Sonnet'")).firstMatch.exists)
+        attach("new-chat-researcher-models")
+    }
+
     // MARK: Helpers
 
     /// The composer's field, typed into and on screen above the keyboard, and the composer's

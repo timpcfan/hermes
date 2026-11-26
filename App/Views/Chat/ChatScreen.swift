@@ -695,15 +695,35 @@ struct ChatScreen: View {
         }
     }
 
-    private var newChatButton: some View {
-        Button {
-            workspace.startNewChat()
-        } label: {
-            Image(systemName: "square.and.pencil")
+    @ViewBuilder private var newChatButton: some View {
+        if workspace.newChatProfiles.isEmpty {
+            Button {
+                workspace.startNewChat()
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .accessibilityLabel("New chat")
+            .help("New chat (⌘N)")
+            .disabled(conversation.isEmpty && conversation.sessionID == nil)
+        } else {
+            // Which profile the chat starts in comes first (`docs/inbox.md` §9). This pencil sits at
+            // the top and its menu opens downward, so the order is turned round: the most used
+            // first, next to the pencil (the compose button's opens upward, most used last).
+            Menu {
+                ForEach(workspace.newChatProfiles.reversed()) { profile in
+                    Button {
+                        workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
+                    } label: {
+                        Label(profile.title, systemImage: "person.crop.circle")
+                    }
+                }
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .menuOrder(.fixed)
+            .accessibilityLabel("New chat")
+            .help("New chat (⌘N)")
         }
-        .accessibilityLabel("New chat")
-        .help("New chat (⌘N)")
-        .disabled(conversation.isEmpty && conversation.sessionID == nil)
     }
 }
 

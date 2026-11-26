@@ -344,8 +344,25 @@ final class ConversationModel: Identifiable {
         didSet {
             guard newChatProfile != oldValue, sessionID == nil else { return }
             workspace?.rememberNewChatProfile(newChatProfile)
+            // The model follows the profile: its own last choice there, else its default. A pick
+            // made for another profile's providers may not exist in this one (`docs/inbox.md` §9).
+            if let workspace {
+                model = workspace.preferredModel(for: newChatProfile ?? workspace.bot.profileName)
+                modelFollow.picked()
+            }
         }
     }
+
+    /// The profile this chat runs in, for its model list and choices (`gatewayProfile`).
+    var modelProfile: String? { gatewayProfile }
+    /// It runs in another profile than the gateway's own, whose list is read over Bot Mode.
+    var runsInAnotherProfile: Bool {
+        guard !isBotChat, let profile = gatewayProfile, let workspace else { return false }
+        return !ProfileRows.isHome(profile, home: workspace.bot.profileName)
+    }
+
+    /// The model list this chat picks from: its own profile's (`docs/inbox.md` §9).
+    var modelOptions: ModelOptions? { workspace?.modelOptions(for: gatewayProfile) }
     /// Hermes asked before switching to an expensive model (`confirm_required`): the chat keeps its
     /// model until the person confirms.
     var modelConfirmation: ModelConfirmation?
@@ -706,9 +723,10 @@ final class ConversationModel: Identifiable {
         self.botName = nil
         self.sessionID = session?.id
         self.stableKey = session?.stableID
-        self.model = workspace.preferredModel
-        self.reasoningEffort = workspace.preferredEffort
         self.newChatProfile = workspace.preferredNewChatProfile
+        // A new chat starts with its profile's own last model choice (`docs/inbox.md` §9).
+        self.model = workspace.preferredModel(for: session == nil ? (workspace.preferredNewChatProfile ?? workspace.bot.profileName) : workspace.bot.profileName)
+        self.reasoningEffort = workspace.preferredEffort
         if let key = session?.stableID {
             goal = UserDefaults.standard.string(forKey: "goal.\(key)")
             queue = FollowUpQueueStore.load(key: key)
@@ -723,9 +741,9 @@ final class ConversationModel: Identifiable {
     init(workspace: BotWorkspace, waiting: WaitingChat, queue: [QueuedFollowUp]) {
         self.workspace = workspace
         self.botName = nil
-        self.model = waiting.model ?? workspace.preferredModel
-        self.reasoningEffort = waiting.effort ?? workspace.preferredEffort
         self.newChatProfile = waiting.profile
+        self.model = waiting.model ?? workspace.preferredModel(for: waiting.profile ?? workspace.bot.profileName)
+        self.reasoningEffort = waiting.effort ?? workspace.preferredEffort
         self.waitingChat = waiting
         self.queue = queue
         self.keptFromRelaunch = true
@@ -2564,7 +2582,7 @@ final class ConversationModel: Identifiable {
         let parts = argument.components(separatedBy: " --provider ")
         let wanted = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
         let provider = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : nil
-        for option in workspace?.modelOptions?.usableProviders ?? [] where provider == nil || option.matches(provider: provider) {
+        for option in modelOptions?.usableProviders ?? [] where provider == nil || option.matches(provider: provider) {
             if let model = option.models.first(where: { $0.lowercased() == wanted || ModelSelection(provider: option.slug, model: $0).shortName.lowercased() == wanted || ModelNames.display($0).lowercased() == wanted }) {
                 return ModelSelection(provider: option.slug, model: model)
             }
@@ -3728,7 +3746,7 @@ final class ConversationModel: Identifiable {
         turnGate = TurnSettleGate()
         isRemoteTurn = false
         if !isBotChat {
-            workspace?.rememberModelChoice(model, effort: reasoningEffort)
+            workspace?.rememberModelChoice(model, effort: reasoningEffort, profile: gatewayProfile)
             // Working lists the chats the person sent in last first (`docs/inbox.md` §2a); a
             // settled chat is un-settled first, without holding up the send (S3).
             if let stableKey {
@@ -5821,7 +5839,7 @@ extension ConversationModel {
 
     /// Takes the reported model when another device picked it; silently, as the title shows it.
     private func follow(_ report: ChatModelFollow.Report, running: Bool = false) {
-        guard let adopted = modelFollow.reported(report, current: model, options: workspace?.modelOptions,
+        guard let adopted = modelFollow.reported(report, current: model, options: modelOptions,
                                                  turnRunning: running || isWorking) else { return }
         model = adopted
     }

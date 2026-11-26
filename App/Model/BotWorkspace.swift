@@ -158,6 +158,11 @@ final class BotWorkspace: Identifiable {
     /// tap on a notice that launched the app waits for it (`PushCenter.show`).
     @ObservationIgnored private(set) var hasFetchedSessions = false
     private(set) var modelOptions: ModelOptions?
+    /// Another profile's model list, read over the gateway when a chat runs in it
+    /// (`model.options` with its profile, `docs/inbox.md` §9): profiles keep their own providers
+    /// and defaults, so the gateway's own list would offer models that profile can't run.
+    private(set) var profileModelOptions: [String: ModelOptions] = [:]
+    @ObservationIgnored private var profileModelLoads: [String: Task<Void, Never>] = [:]
     /// The "/" menu's skills and commands, per profile.
     @ObservationIgnored private var slashCatalogs: [String: SlashCatalog] = [:]
 
@@ -585,6 +590,9 @@ final class BotWorkspace: Identifiable {
         LastLinesCache.remove(id)
         nextSessionOffset = 0
         modelOptions = nil
+        profileModelOptions = [:]
+        profileModelLoads.values.forEach { $0.cancel() }
+        profileModelLoads = [:]
         connection = .idle
         Task { await connect() }
     }
@@ -820,6 +828,42 @@ final class BotWorkspace: Identifiable {
         }
         selection = nil
         navigation.show()
+    }
+
+    /// New Chat from the profile menu (`docs/inbox.md` §9): the draft starts in `profile` (nil is
+    /// the gateway's own), with that profile's model choice and list, before the chat opens.
+    func startNewChat(in profile: String?) {
+        let profile = isForeign(profile) ? profile : nil
+        if !draft.isEmpty || draft.sessionID != nil {
+            draft = ConversationModel(workspace: self)
+        }
+        draft.newChatProfile = profile
+        selection = nil
+        navigation.show()
+        Task { await loadModelOptions(for: profile ?? bot.profileName) }
+    }
+
+    /// The profiles New Chat offers, top to bottom, the most used last (nearest the thumb under
+    /// the compose button): every profile Bot Mode lists, the gateway's own included. Empty when
+    /// the list holds only the gateway's own chats, where New Chat starts there as it always did.
+    var newChatProfiles: [BotProfile] {
+        guard listsEveryProfile, let roster, roster.isConnected else { return [] }
+        let home = bot.profileName
+        let isOwn = { (profile: BotProfile) in ProfileRows.isHome(profile.name, isDefault: profile.isDefault, home: home) }
+        // The gateway's own first, so with no chats yet it sits at the bottom of the menu.
+        var own = roster.visibleBots.filter(isOwn)
+        if own.isEmpty {
+            own = [BotProfile(json: .object(["name": .string(home ?? "default"), "is_default": .bool(true)]))]
+        }
+        let bots = own + roster.visibleBots.filter { !isOwn($0) }
+        guard bots.count > 1 else { return [] }
+        let order = ProfileRows.newChatMenuOrder(bots.map(\.name), rows: allSessions, home: home)
+        return order.compactMap { name in bots.first { $0.name == name } }
+    }
+
+    /// Whether `profile` is the gateway's own (nil, its address's profile, or the main one).
+    func isHomeProfile(_ profile: BotProfile) -> Bool {
+        ProfileRows.isHome(profile.name, isDefault: profile.isDefault, home: bot.profileName)
     }
 
     /// The open screen went away under the person (deleted, archived, its Bot or gateway gone):
@@ -1071,6 +1115,32 @@ final class BotWorkspace: Identifiable {
             defaults.set(data, forKey: "model.\(bot.id.uuidString)")
         } else {
             defaults.removeObject(forKey: "model.\(bot.id.uuidString)")
+        }
+        defaults.set(effort?.rawValue, forKey: "effort.\(bot.id.uuidString)")
+    }
+
+    /// The model choice a new chat in `profile` starts with (`docs/inbox.md` §9). The gateway's own
+    /// profile keeps the device's usual choice; another profile its own, since a model picked for
+    /// one profile's providers may not exist in another's. Nil follows that profile's default.
+    func preferredModel(for profile: String?) -> ModelSelection? {
+        guard isForeign(profile), let profile else { return preferredModel }
+        guard let data = UserDefaults.standard.data(forKey: "model.\(bot.id.uuidString).p.\(profile)") else { return nil }
+        return try? JSONDecoder().decode(ModelSelection.self, from: data)
+    }
+
+    /// Keeps a model choice for new chats in `profile`; the gateway's own goes to the usual place.
+    func rememberModelChoice(_ model: ModelSelection?, effort: ReasoningEffort?, profile: String?) {
+        guard isForeign(profile), let profile else {
+            rememberModelChoice(model, effort: effort)
+            return
+        }
+        preferredEffort = effort
+        let defaults = UserDefaults.standard
+        let key = "model.\(bot.id.uuidString).p.\(profile)"
+        if let model, let data = try? JSONEncoder().encode(model) {
+            defaults.set(data, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
         }
         defaults.set(effort?.rawValue, forKey: "effort.\(bot.id.uuidString)")
     }
@@ -1414,6 +1484,47 @@ final class BotWorkspace: Identifiable {
 
     /// Why the last model list didn't load, while there's none to show.
     private(set) var modelOptionsError: String?
+
+    /// Whether `profile` is another profile than the one this gateway's address serves.
+    private func isForeign(_ profile: String?) -> Bool {
+        guard let profile, !profile.isEmpty else { return false }
+        return !ProfileRows.isHome(profile, home: bot.profileName)
+    }
+
+    /// The model list a chat in `profile` picks from: the gateway's own for its own profile (and
+    /// when no profile is named), else that profile's once read. Nil while it loads.
+    func modelOptions(for profile: String?) -> ModelOptions? {
+        guard isForeign(profile), let profile else { return modelOptions }
+        return profileModelOptions[profile]
+    }
+
+    /// The model new turns use in `profile` when the person hasn't picked one.
+    func defaultModelName(for profile: String?) -> String? {
+        modelOptions(for: profile)?.model.map(Formatting.modelShortName)
+    }
+
+    /// Reads `profile`'s model list over the gateway (`model.options`, profile-scoped), once per
+    /// connection unless `refresh`. The gateway's own profile reads the usual list instead.
+    func loadModelOptions(for profile: String?, refresh: Bool = false) async {
+        guard isForeign(profile), let profile else {
+            if refresh || modelOptions == nil { await loadModelOptions(refresh: refresh) }
+            return
+        }
+        if !refresh, profileModelOptions[profile] != nil { return }
+        if let running = profileModelLoads[profile] { return await running.value }
+        guard let roster, roster.isConnected else { return }
+        let task = Task { [weak self] in
+            var params: [String: JSONValue] = ["profile": .string(profile)]
+            if refresh { params["refresh"] = .bool(true) }
+            guard let reply = try? await roster.request("model.options", params, timeout: .seconds(60)),
+                  let data = try? JSONEncoder().encode(reply),
+                  let options = try? ModelOptions.read(data) else { return }
+            self?.profileModelOptions[profile] = options
+        }
+        profileModelLoads[profile] = task
+        await task.value
+        profileModelLoads[profile] = nil
+    }
 
     /// Add Key… for a provider without one (`model.save_key`, over Bot Mode), then the models again.
     func saveProviderKey(_ key: String, slug: String) async throws {

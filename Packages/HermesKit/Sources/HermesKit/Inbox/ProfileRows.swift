@@ -73,6 +73,24 @@ public enum ProfileRows {
         return [own] + names.sorted()
     }
 
+    /// The New Chat menu's profiles, top to bottom (`docs/inbox.md` §9): the most used last, so it
+    /// sits nearest the thumb under a menu that opens upward from the compose button. Use is the
+    /// number of chats each profile has in the list. Ties put the roster's earlier profiles lower
+    /// (the gateway's own comes first there, so with no chats yet it sits nearest the thumb), and
+    /// never reshuffle between equal profiles. Each name appears once.
+    public static func newChatMenuOrder(_ names: [String], rows: [HermesSession], home: String?) -> [String] {
+        var counts: [String: Int] = [:]
+        for row in rows { counts[profileName(of: row, home: home), default: 0] += 1 }
+        var seen = Set<String>()
+        let unique = names.filter { !$0.isEmpty && seen.insert($0).inserted }
+        let position = Dictionary(uniqueKeysWithValues: unique.enumerated().map { ($1, $0) })
+        return unique.sorted { lhs, rhs in
+            let (left, right) = (counts[lhs, default: 0], counts[rhs, default: 0])
+            if left != right { return left < right }
+            return position[lhs, default: 0] > position[rhs, default: 0]
+        }
+    }
+
     /// The row's mark: "money", or "paimon · hermesapp" when it ran in a repository.
     public static func badge(profile: String, project: String?) -> String {
         guard let project else { return profile }
