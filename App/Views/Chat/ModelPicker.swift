@@ -131,7 +131,7 @@ struct ModelPickerButton: View {
         if let key = conversation.stableKey, let model = workspace.session(forKey: key)?.model, !model.isEmpty {
             return ModelNames.display(model)
         }
-        return workspace.defaultModelName.map(ModelNames.display) ?? workspace.bot.name
+        return workspace.defaultModelName(for: conversation.modelProfile).map(ModelNames.display) ?? workspace.bot.name
     }
 
     var body: some View {
@@ -161,10 +161,9 @@ struct ModelPickerButton: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .task {
-            if workspace.modelOptions == nil {
-                await workspace.loadModelOptions()
-            }
+        // Its own profile's list (`docs/inbox.md` §9), read again when a new chat changes profile.
+        .task(id: conversation.modelProfile ?? "") {
+            await workspace.loadModelOptions(for: conversation.modelProfile)
         }
     }
 }
@@ -177,14 +176,23 @@ struct ModelPickerView: View {
     @State private var query = ""
     @State private var expandedProviders: Set<String> = []
 
+    /// This chat's profile's list (`docs/inbox.md` §9), not the gateway's own.
+    private var options: ModelOptions? { conversation.modelOptions }
+    private var defaultModelName: String? { workspace.defaultModelName(for: conversation.modelProfile) }
+    private func refresh() async { await workspace.loadModelOptions(for: conversation.modelProfile, refresh: true) }
+    /// "Gateway default", or "Profile default" in another profile, whose own default it is.
+    private var defaultTitle: String {
+        conversation.runsInAnotherProfile ? String(localized: "Profile default") : String(localized: "Gateway default")
+    }
+
     private var providers: [ModelProvider] {
-        workspace.modelOptions?.usableProviders ?? []
+        options?.usableProviders ?? []
     }
 
     /// Providers Hermes reports without credentials (`authenticated: false`): shown, not hidden,
     /// with the way to give them a key (`docs/setup.md` §4.3).
     private var needingKeys: [ModelProvider] {
-        workspace.modelOptions?.providers.filter { $0.authenticated == false } ?? []
+        options?.providers.filter { $0.authenticated == false } ?? []
     }
 
     @State private var addingKeyFor: ModelProvider?
@@ -241,7 +249,7 @@ struct ModelPickerView: View {
             .padding(8)
             ScrollView {
                 VStack(spacing: 2) {
-                    macRow(title: String(localized: "Gateway default"), subtitle: workspace.defaultModelName, isSelected: conversation.model == nil) {
+                    macRow(title: defaultTitle, subtitle: defaultModelName, isSelected: conversation.model == nil) {
                         select(nil)
                     }
                     ForEach(providers) { provider in
@@ -251,7 +259,7 @@ struct ModelPickerView: View {
                             ForEach(models, id: \.self) { model in
                                 macRow(
                                     title: ModelNames.display(model),
-                                    subtitle: [provider.name, provider.isCurrent && model == workspace.modelOptions?.model ? String(localized: "Default") : nil, provider.pricing?[model].flatMap(shortPrice)].compactMap { $0 }.joined(separator: " · "),
+                                    subtitle: [provider.name, provider.isCurrent && model == options?.model ? String(localized: "Default") : nil, provider.pricing?[model].flatMap(shortPrice)].compactMap { $0 }.joined(separator: " · "),
                                     isSelected: conversation.model == ModelSelection(provider: provider.slug, model: model),
                                     isDisabled: provider.isUnavailable(model)
                                 ) {
@@ -277,15 +285,15 @@ struct ModelPickerView: View {
                                 .padding(.vertical, 4)
                         }
                     }
-                    if workspace.modelOptions == nil, let error = workspace.modelOptionsError {
+                    if options == nil, let error = workspace.modelOptionsError, !conversation.runsInAnotherProfile {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(error).font(.caption).foregroundStyle(Theme.secondaryText)
-                            Button("Try Again") { Task { await workspace.loadModelOptions(refresh: true) } }
+                            Button("Try Again") { Task { await refresh() } }
                                 .controlSize(.small)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
-                    } else if workspace.modelOptions == nil {
+                    } else if options == nil {
                         SkeletonRows(count: 3).padding(10)
                     }
                 }
@@ -299,7 +307,7 @@ struct ModelPickerView: View {
                     .foregroundStyle(Theme.secondaryText)
                 Spacer()
                 Button {
-                    Task { await workspace.loadModelOptions(refresh: true) }
+                    Task { await refresh() }
                 } label: {
                     if workspace.isRefreshingModels {
                         Spinner(size: .mini)
@@ -359,8 +367,8 @@ struct ModelPickerView: View {
             List {
                 Section {
                     row(
-                        title: String(localized: "Gateway default"),
-                        subtitle: workspace.defaultModelName,
+                        title: defaultTitle,
+                        subtitle: defaultModelName,
                         isSelected: conversation.model == nil
                     ) {
                         select(nil)
@@ -415,12 +423,12 @@ struct ModelPickerView: View {
                         Text("Hermes on \(workspace.bot.name) has no key for these. Or add one there with `hermes model`.")
                     }
                 }
-                if workspace.modelOptions == nil, let error = workspace.modelOptionsError {
+                if options == nil, let error = workspace.modelOptionsError, !conversation.runsInAnotherProfile {
                     Section {
                         Text(error).foregroundStyle(Theme.secondaryText)
-                        Button("Try Again") { Task { await workspace.loadModelOptions(refresh: true) } }
+                        Button("Try Again") { Task { await refresh() } }
                     }
-                } else if workspace.modelOptions == nil {
+                } else if options == nil {
                     Section { SkeletonRows(count: 3) }
                 } else if providers.isEmpty {
                     Section {
@@ -446,7 +454,7 @@ struct ModelPickerView: View {
                 }
                 ToolbarItem(placement: Self.refreshPlacement) {
                     Button {
-                        Task { await workspace.loadModelOptions(refresh: true) }
+                        Task { await refresh() }
                     } label: {
                         if workspace.isRefreshingModels {
                             Spinner()
@@ -498,7 +506,7 @@ struct ModelPickerView: View {
 
     private func select(_ selection: ModelSelection?) {
         conversation.pickModel(selection)
-        workspace.rememberModelChoice(selection, effort: conversation.reasoningEffort)
+        workspace.rememberModelChoice(selection, effort: conversation.reasoningEffort, profile: conversation.modelProfile)
         onDone()
     }
 

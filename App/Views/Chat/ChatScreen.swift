@@ -82,6 +82,10 @@ struct ChatScreen: View {
         )
     }
 
+    /// The pencil's panel of profiles is up (`docs/inbox.md` §9), drawn by this screen so it can
+    /// hang under the toolbar rather than inside it.
+    @State private var isChoosingProfile = false
+
     /// Set when this is a Bot's Bot Chat.
     private var roster: BotRoster? {
         conversation.isBotChat ? workspace.roster : nil
@@ -128,6 +132,19 @@ struct ChatScreen: View {
         .toolbar { toolbar }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
+        .overlay(alignment: .topTrailing) {
+            #if os(iOS)
+            if isChoosingProfile {
+                ComposeMenuPanel(maxWidth: 300, edge: .top, inset: 8, onDismiss: { isChoosingProfile = false }) {
+                    IOSComposeButton.newChatActions(workspace, reversed: true) { profile in
+                        isChoosingProfile = false
+                        workspace.startNewChat(in: profile)
+                    }
+                }
+                .animation(.snappy(duration: 0.18), value: isChoosingProfile)
+            }
+            #endif
+        }
         .environment(\.helperNavigator, helperNavigator)
         .environment(\.inspectorModel, conversation.inspector)
         .modifier(HelperPresentation(conversation: conversation, workspace: workspace, navigator: helperNavigator))
@@ -695,15 +712,40 @@ struct ChatScreen: View {
         }
     }
 
-    private var newChatButton: some View {
-        Button {
-            workspace.startNewChat()
-        } label: {
-            Image(systemName: "square.and.pencil")
+    @ViewBuilder private var newChatButton: some View {
+        if workspace.newChatProfiles.isEmpty {
+            Button {
+                workspace.startNewChat()
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .accessibilityLabel("New chat")
+            .help("New chat (⌘N)")
+            .disabled(conversation.isEmpty && conversation.sessionID == nil)
+        } else {
+            #if os(macOS)
+            // The Mac's toolbar menus are the system's, as they always are.
+            Menu {
+                ForEach(workspace.newChatProfiles.reversed()) { profile in
+                    Button(profile.title) {
+                        workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
+                    }
+                }
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .menuOrder(.fixed)
+            .accessibilityLabel("New chat")
+            .help("New chat (⌘N)")
+            #else
+            Button {
+                isChoosingProfile = true
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .accessibilityLabel("New chat")
+            #endif
         }
-        .accessibilityLabel("New chat")
-        .help("New chat (⌘N)")
-        .disabled(conversation.isEmpty && conversation.sessionID == nil)
     }
 }
 

@@ -40,7 +40,21 @@ def setup_status(params):
             **({"profile": params["profile"]} if params.get("profile") else {})}
 
 
+# Profiles with their own providers (`model.options` with `profile`, `docs/inbox.md` §9): another
+# profile's list differs from the gateway's own, as Hermes's per-profile config makes it.
+PROFILE_MODEL_OPTIONS = {
+    "researcher": {
+        "model": "Hermes-4-70B", "provider": "nous",
+        "providers": [{"slug": "nous", "name": "Nous Portal", "is_current": True, "is_user_defined": False,
+                       "authenticated": True, "models": ["Hermes-4-70B"], "featured_models": [], "total_models": 1}],
+    },
+}
+
+
 def model_options(params):
+    profile = (params.get("profile") or "").strip()
+    if profile in PROFILE_MODEL_OPTIONS:
+        return copy.deepcopy(PROFILE_MODEL_OPTIONS[profile])
     rows = []
     for provider in PROVIDERS:
         row = copy.deepcopy(provider)

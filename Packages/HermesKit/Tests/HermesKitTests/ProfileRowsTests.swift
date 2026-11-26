@@ -291,4 +291,41 @@ struct ProfileRowsTests {
                 == ["default", "art", "money", "travel"])
         #expect(ProfileRows.filterChoices(listed: ["money"], rows: [], home: "default", picked: "default") == ["default", "money"])
     }
+
+    // MARK: New Chat menu
+
+    @Test func theMostUsedProfileSitsLastNearestTheThumb() {
+        // paimon 3 chats, work 1, money 0: the menu reads top to bottom least to most used.
+        let rows = [Self.session("a", profile: "paimon"), Self.session("b", profile: "paimon"),
+                    Self.session("c", profile: "paimon"), Self.session("d")]
+        let order = ProfileRows.newChatMenuOrder(["work", "paimon", "money"], rows: rows, home: "work")
+        #expect(order == ["money", "work", "paimon"])
+    }
+
+    @Test func tiesPutTheRostersFirstProfileLowest() {
+        // No chats at all: the gateway's own (first in the roster) lands at the bottom, and equal
+        // profiles never reshuffle between calls.
+        let order = ProfileRows.newChatMenuOrder(["work", "paimon", "money"], rows: [], home: "work")
+        #expect(order == ["money", "paimon", "work"])
+        #expect(ProfileRows.newChatMenuOrder(["work", "paimon", "money"], rows: [], home: "work") == order)
+    }
+
+    @Test func theMenuListsEachProfileOnce() {
+        let order = ProfileRows.newChatMenuOrder(["work", "", "work", "paimon"], rows: [], home: "work")
+        #expect(order == ["paimon", "work"])
+    }
+
+    // MARK: Models per profile
+
+    @Test func aPickStaysOnlyWhereTheProfilesListOffersIt() {
+        let paimon = ModelOptions(providers: [
+            ModelProvider(slug: "xunxin-default", name: "Xunxin", isCurrent: true, models: ["deepseek-v4.1-flash"]),
+            ModelProvider(slug: "locked", name: "Locked", isCurrent: false, models: ["qwen4-max"], authenticated: false),
+        ], model: "deepseek-v4.1-flash", provider: "xunxin-default")
+        #expect(paimon.offers(ModelSelection(provider: "xunxin-default", model: "deepseek-v4.1-flash")))
+        // Another profile's model, and a model only an unusable provider has, are not offered.
+        #expect(!paimon.offers(ModelSelection(provider: "xunxin-default", model: "qwen4-max")))
+        #expect(!paimon.offers(ModelSelection(provider: "locked", model: "qwen4-max")))
+        #expect(!paimon.offers(ModelSelection(provider: "openrouter", model: "deepseek-v4.1-flash")))
+    }
 }

@@ -86,6 +86,15 @@ public struct ModelOptions: Decodable, Sendable, Hashable {
         providers.filter { $0.isUsable && !$0.models.isEmpty }
     }
 
+    /// Whether a usable provider in this list serves `selection` (by slug, name or alias), so a
+    /// chat moved to another profile keeps a pick only that profile can run (`docs/inbox.md` §9).
+    public func offers(_ selection: ModelSelection) -> Bool {
+        usableProviders.contains { provider in
+            (provider.matches(provider: selection.provider) || selection.provider.isEmpty)
+                && provider.models.contains(selection.model) && !provider.isUnavailable(selection.model)
+        }
+    }
+
     /// The list from `GET /api/model/options`'s body, fresh or as kept on the device.
     public static func read(_ data: Data) throws -> ModelOptions {
         do {

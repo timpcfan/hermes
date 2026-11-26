@@ -1855,7 +1855,7 @@ struct BranchAction: Equatable {
     }
 
     var models: [(ModelSelection, String)] {
-        guard let options = conversation.workspace?.modelOptions else { return [] }
+        guard let options = conversation.modelOptions else { return [] }
         return options.usableProviders.flatMap { provider in
             (provider.featuredModels ?? Array(provider.models.prefix(4))).map {
                 (ModelSelection(provider: provider.slug, model: $0), "\(ModelNames.display($0)) · \(provider.name)")
