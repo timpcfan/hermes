@@ -1,170 +1,64 @@
 import HermesKit
 import SwiftUI
 
-/// Whose profile a new chat starts in (`docs/inbox.md` §9): beside the model while the chat has
-/// no session of its own and the list holds every profile's chats. The choice is remembered for
-/// the next new chat on this gateway.
-struct NewChatProfileButton: View {
+/// The chat's top bar (`docs/chat.md` §4): where the person is, in the chat's name and the profile
+/// it runs in. The model and reasoning are the composer's chip; nothing here is a control.
+struct ChatHeaderTitle: View {
     @Bindable var conversation: ConversationModel
     let workspace: BotWorkspace
 
-    @State private var isPresented = false
+    private var session: HermesSession? {
+        guard let key = conversation.stableKey else { return nil }
+        return workspace.session(forKey: key)
+    }
 
-    /// The chosen profile's title, or the gateway's own ("Hermes" for the main one).
+    /// The chat's row's name, else its first message, else a draft's "New chat".
     private var title: String {
-        let name = conversation.newChatProfile ?? workspace.bot.profileName ?? "default"
-        return workspace.roster?.bot(named: name)?.title ?? name
+        ChatHeader.title(of: session, fallback: String(localized: "New chat"))
+    }
+
+    /// The profile the chat runs in, named as its row in the chat list is; a draft names the one
+    /// it will be created in.
+    private var profile: String {
+        ChatHeader.profile(of: conversation.modelProfile, home: workspace.bot.profileName)
     }
 
     var body: some View {
-        Button {
-            isPresented = true
-        } label: {
-            HStack(spacing: 5) {
-                ProfileFace(workspace: workspace, profile: conversation.newChatProfile ?? workspace.bot.profileName ?? "default", size: 18)
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Theme.tertiaryText)
-            }
-            .padding(.horizontal, 6)
-            .contentShape(Rectangle())
+        VStack(alignment: stackAlignment, spacing: 0) {
+            Text(title)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(Theme.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(profile)
+                .font(.caption2)
+                .foregroundStyle(Theme.secondaryText)
+                .lineLimit(1)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Profile: \(title)")
-        .accessibilityHint("Choose the profile this chat starts in")
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            NewChatProfilePicker(conversation: conversation, workspace: workspace) {
-                isPresented = false
-            }
-            .presentationCompactAdaptation(.sheet)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-    }
-}
-
-/// The roster's profiles with checkmarks; the gateway's own first.
-private struct NewChatProfilePicker: View {
-    @Bindable var conversation: ConversationModel
-    let workspace: BotWorkspace
-    let onDone: () -> Void
-
-    /// The gateway's own profile first, then the roster's order.
-    private var choices: [BotProfile] {
-        let home = workspace.bot.profileName
-        let bots = workspace.roster?.visibleBots ?? []
-        let own = bots.filter { ProfileRows.isHome($0.name, isDefault: $0.isDefault, home: home) }
-        let others = bots.filter { !ProfileRows.isHome($0.name, isDefault: $0.isDefault, home: home) }
-        // A roster that doesn't name the gateway's own profile still offers it.
-        if own.isEmpty {
-            let main = BotProfile(json: .object(["name": .string(home ?? "default"), "is_default": .bool(true)]))
-            return [main] + others
-        }
-        return own + others
+        .multilineTextAlignment(textAlignment)
+        #if os(iOS)
+        // iPhone and iPad read the chat's name from the leading edge, where the chat itself starts.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #endif
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(title), \(profile)"))
+        .accessibilityIdentifier("chatHeaderTitle")
     }
 
-    private func isChosen(_ profile: BotProfile) -> Bool {
-        let home = ProfileRows.isHome(profile.name, isDefault: profile.isDefault, home: workspace.bot.profileName)
-        return home ? conversation.newChatProfile == nil : conversation.newChatProfile == profile.name
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    ForEach(choices) { profile in
-                        Button {
-                            let home = ProfileRows.isHome(profile.name, isDefault: profile.isDefault, home: workspace.bot.profileName)
-                            conversation.newChatProfile = home ? nil : profile.name
-                            onDone()
-                        } label: {
-                            HStack(spacing: 12) {
-                                ProfileFace(workspace: workspace, profile: profile.name, size: 28)
-                                Text(profile.title).foregroundStyle(Theme.primaryText)
-                                Spacer()
-                                if isChosen(profile) {
-                                    Image(systemName: "checkmark").foregroundStyle(Theme.primaryText)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(isChosen(profile) ? .isSelected : [])
-                    }
-                } footer: {
-                    Text("The chat runs in this profile: its history, tools and memory. New chats start here until you pick another.")
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle(String(localized: "Profile"))
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Done"), systemImage: "checkmark") { onDone() }
-                }
-            }
-        }
+    private var stackAlignment: HorizontalAlignment {
         #if os(macOS)
-        .frame(width: 380, height: 420)
+        .center
+        #else
+        .leading
         #endif
     }
-}
 
-/// The title of the chat: which bot and model will answer. Tapping opens the picker.
-struct ModelPickerButton: View {
-    @Bindable var conversation: ConversationModel
-    let workspace: BotWorkspace
-
-    @State private var isPresented = false
-
-    /// "Claude Sonnet 4.6" (`blocks/toolbars.elyx` `modelPicker`).
-    private var title: String {
-        if let model = conversation.model {
-            return ModelNames.display(model.model)
-        }
-        if let key = conversation.stableKey, let model = workspace.session(forKey: key)?.model, !model.isEmpty {
-            return ModelNames.display(model)
-        }
-        return workspace.defaultModelName(for: conversation.modelProfile).map(ModelNames.display) ?? workspace.bot.name
-    }
-
-    var body: some View {
-        Button {
-            isPresented = true
-        } label: {
-            HStack(spacing: 7) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(Theme.primaryText)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiaryText)
-            }
-            .padding(.horizontal, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Model: \(title)")
-        .accessibilityHint("Choose the model Hermes uses in this chat")
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            ModelPickerView(conversation: conversation, workspace: workspace) {
-                isPresented = false
-            }
-            .presentationCompactAdaptation(.sheet)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-        // Its own profile's list (`docs/inbox.md` §9), read again when a new chat changes profile.
-        .task(id: conversation.modelProfile ?? "") {
-            await workspace.loadModelOptions(for: conversation.modelProfile)
-        }
+    private var textAlignment: TextAlignment {
+        #if os(macOS)
+        .center
+        #else
+        .leading
+        #endif
     }
 }
 
