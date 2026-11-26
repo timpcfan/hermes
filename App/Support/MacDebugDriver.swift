@@ -20,13 +20,16 @@ import HermesPush
 /// `mainkey esc` (Esc in the chats window; `mainkey cmd+r` ⌘R there, then the menus; `mainkey
 /// tab|up|down|left|right|return` typed there; `key cmd+r` ⌘R in Settings, then the menus); `sidebar`
 /// (the sidebar button's action); `select group:<id>|bot:<name>` (a sidebar row, as a click on it
-/// would); `dump`, `views` and `toolbar` (the accessibility, content and
-/// toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
+/// would; `select bots` the Bots home); `dump`, `views` and `toolbar` (the accessibility, content
+/// and toolbar view trees, with frames; `maindump` the chats window's accessibility tree). The ⌘K
 /// palette: `paletteopen`, `palettekey up|down|return|esc|space|cmd+return|cmd+<digit>`,
 /// `palettetype <text>` (typed into its field as keys, one per character), `paletteblur` (takes
 /// the field out of editing) and `palette` (the field's text, the field editor's corrections and
 /// the chats windows' titles). `badge needsYou|unreadChats` sets what the Dock badge counts, as
-/// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `remove gateway
+/// Settings → Notifications → Dock Badge does, whose pop-up menu a drive can't use. `mute
+/// chat:<id>|bot:<name>|group:<id>` mutes that row until it's turned back on, as its context menu's
+/// Mute does, whose submenu a drive can't use; `unread` and `read` with the same targets do what
+/// its Mark as Unread and Mark as Read do (a group chat has only Mark as Read). `remove gateway
 /// <name>` removes a gateway as Remove in Settings → Gateways does once confirmed, without the
 /// alert; only a gateway on this Mac (127.0.0.1, localhost or ::1), so a run can't remove a real
 /// one. `stopnotifications gateway <name>` does what Stop Notifications on that gateway's
@@ -44,6 +47,9 @@ import HermesPush
 /// notice, the mock's sockets cut for that long, then the wake notice). The mock calls go to
 /// `-HERMES_BOOTSTRAP_BACKEND` on this Mac only, with `-HERMES_MOCK_TOKEN`, the mock's `--token`.
 /// `window` logs whether the chats window is on screen, which a run needs to mean anything.
+/// `sidebarlists` logs each of the sidebar's lists: hidden or shown, its rows, where it's scrolled,
+/// whether Tab, a click or VoiceOver can reach it; `sidebarat <points>` scrolls the shown one to
+/// that far from its top.
 @MainActor
 enum MacDebugDriver {
     static func runIfAsked(router: WindowRouter, app: AppModel, workspace: () -> BotWorkspace?) async {
@@ -116,6 +122,18 @@ enum MacDebugDriver {
                 result = mode(argument, in: workspace())
             case "scroll":
                 result = await scroll(argument)
+            case "sidebarlists":
+                result = sidebarLists()
+            case "sidebarat":
+                result = sidebarAt(argument)
+            case "search":
+                // What typing in the sidebar's search field does; no argument clears it.
+                if let workspace = workspace() {
+                    workspace.searchText = argument
+                    result = argument.isEmpty ? "cleared" : "searching"
+                } else {
+                    result = "no workspace"
+                }
             case "cycle":
                 result = await cycle(argument, in: workspace())
             case "burst":
@@ -124,6 +142,10 @@ enum MacDebugDriver {
                 result = await sleepWake(argument)
             case "badge":
                 result = badge(argument)
+            case "mute":
+                result = mute(argument, in: workspace())
+            case "unread", "read":
+                result = mark(argument, unread: parts[0] == "unread", in: workspace())
             case "remove":
                 result = remove(argument, in: app)
             case "stopnotifications":
@@ -145,6 +167,44 @@ enum MacDebugDriver {
         #else
         return "no push in this build"
         #endif
+    }
+
+    /// `mute chat:<id>|bot:<name>|group:<id>`: what Mute → Until I Turn It Back On does on that
+    /// row. A target that isn't in the lists is logged, never guessed.
+    private static func mute(_ target: String, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        guard let key = unreadKey(target, in: workspace) else { return "unknown target" }
+        workspace.unread.mute(key, for: .untilTurnedOff)
+        return workspace.unread.isMuted(key) ? "muted \(key)" : "not muted"
+    }
+
+    /// `unread <target>` and `read <target>`: what the row's Mark as Unread and Mark as Read do,
+    /// for the same targets as `mute`. A group chat's menu has no Mark as Unread, so neither does this.
+    private static func mark(_ target: String, unread: Bool, in workspace: BotWorkspace?) -> String {
+        guard let workspace else { return "no workspace" }
+        guard let key = unreadKey(target, in: workspace) else { return "unknown target" }
+        if unread, target.hasPrefix("group:") { return "refused: a group chat has no Mark as Unread" }
+        if unread { workspace.unread.markUnread(key) } else { workspace.unread.markRead(key) }
+        return "\(unread ? "marked unread" : "marked read") \(key)"
+    }
+
+    /// The unread store's key for a `chat:<id>`, `bot:<name>` or `group:<id>` in the lists.
+    private static func unreadKey(_ target: String, in workspace: BotWorkspace) -> String? {
+        let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "chat":
+            let session = workspace.session(forKey: parts[1]) ?? workspace.sessions.first { $0.id == parts[1] }
+            return session?.stableID
+        case "bot":
+            let bots = (workspace.roster?.visibleBots ?? []) + (workspace.roster?.hiddenBots ?? [])
+            return bots.contains(where: { $0.name == parts[1] }) ? UnreadStore.botKey(parts[1]) : nil
+        case "group":
+            let rooms = workspace.roster?.groupRooms.rooms ?? []
+            return rooms.contains(where: { $0.id == parts[1] }) ? UnreadStore.groupKey(parts[1]) : nil
+        default:
+            return nil
+        }
     }
 
     /// `remove gateway <name>`: what Remove does once its alert is confirmed. Only a gateway on
@@ -183,10 +243,13 @@ enum MacDebugDriver {
     }
 
     /// `select group:<id>` or `select bot:<name>`: what a click on that sidebar row does, so a chat
-    /// can be left and opened again in one launch.
+    /// can be left and opened again in one launch. `select bots` goes back to the Bots home and its
+    /// tiles, as `-HERMES_OPEN bots` opens it.
     private static func select(_ target: String, in workspace: BotWorkspace?) -> String {
         guard let workspace else { return "no workspace" }
-        if target.hasPrefix("group:") {
+        if target == "bots" {
+            workspace.selection = nil
+        } else if target.hasPrefix("group:") {
             workspace.selection = .group(String(target.dropFirst(6)))
         } else if target.hasPrefix("bot:") {
             workspace.selection = .bot(String(target.dropFirst(4)))
@@ -643,6 +706,73 @@ enum MacDebugDriver {
                 + "spell checking \($0.isContinuousSpellCheckingEnabled)"
         } ?? "no field editor"
         return "field \"\(field.stringValue)\" (\(field.currentEditor() == nil ? "not editing" : "editing")) · \(corrections) · \(chats)"
+    }
+
+    /// The sidebar's lists in the chats window: scroll views over tables, narrower than half the
+    /// window and starting in its left half. On the Mac each mode keeps a list of its own.
+    private static func sidebarScrollViews(in window: NSWindow) -> [NSScrollView] {
+        var found: [NSScrollView] = []
+        func visit(_ view: NSView) {
+            if let scroll = view as? NSScrollView, scroll.documentView is NSTableView {
+                let frame = scroll.convert(scroll.bounds, to: nil)
+                if frame.width < window.frame.width / 2, frame.minX < window.frame.width / 2 { found.append(scroll) }
+            }
+            view.subviews.forEach(visit)
+        }
+        window.contentView.map(visit)
+        return found
+    }
+
+    /// `sidebarlists`: per list, hidden or shown, rows, scroll position, and whether the key view
+    /// loop (what Tab walks), a click at its middle, or the window's accessibility tree reaches it.
+    private static func sidebarLists() -> String {
+        guard let window = mainWindow else { return "no chats window" }
+        let lists = sidebarScrollViews(in: window)
+        guard !lists.isEmpty else { return "no sidebar list" }
+        // Every view Tab can reach from the window's first view, the way AppKit walks it.
+        var keyViews: [NSView] = []
+        var next = window.contentView?.nextValidKeyView
+        while let view = next, keyViews.count < 2000, !keyViews.contains(where: { $0 === view }) {
+            keyViews.append(view)
+            next = view.nextValidKeyView
+        }
+        var axElements: [NSObject] = []
+        func walkAX(_ element: Any, depth: Int) {
+            guard depth < 40, let object = element as? NSObject else { return }
+            axElements.append(object)
+            for child in (element as? any NSAccessibilityProtocol)?.accessibilityChildren() ?? [] {
+                walkAX(child, depth: depth + 1)
+            }
+        }
+        walkAX(window, depth: 0)
+        return lists.enumerated().map { index, scroll in
+            let table = scroll.documentView as? NSTableView
+            let clip = scroll.contentView
+            let inside = { (view: NSView) in view === scroll || view.isDescendant(of: scroll) }
+            let center = scroll.convert(NSPoint(x: scroll.bounds.midX, y: scroll.bounds.midY), to: nil)
+            // hitTest takes a point in the receiver's superview, as a click's does.
+            let hit = window.contentView.flatMap { content in content.hitTest(content.superview?.convert(center, from: nil) ?? center) }
+            let tabbable = keyViews.filter(inside).count
+            let inAX = axElements.contains { element in (element as? NSView).map(inside) ?? false }
+            let state = scroll.isHiddenOrHasHiddenAncestor ? "hidden" : "shown"
+            return "list \(index) \(state) alpha \(String(format: "%.2f", scroll.alphaValue)) rows \(table?.numberOfRows ?? -1) "
+                + "at \(Int(clip.bounds.minY)) of \(Int(scroll.documentView?.frame.height ?? 0)) (inset \(Int(scroll.contentInsets.top))) "
+                + "keyViews \(tabbable) tableTakesKey \(table?.canBecomeKeyView ?? false) "
+                + "click \(hit.map(inside) ?? false ? "lands" : "misses") ax \(inAX ? "listed" : "absent")"
+        }.joined(separator: " | ")
+    }
+
+    /// `sidebarat 600`: the shown sidebar list scrolled to 600 points from its top.
+    private static func sidebarAt(_ argument: String) -> String {
+        guard let window = mainWindow else { return "no chats window" }
+        guard let top = Double(argument) else { return "sidebarat needs points" }
+        guard let scroll = sidebarScrollViews(in: window).first(where: { !$0.isHiddenOrHasHiddenAncestor && $0.alphaValue > 0 }) else {
+            return "no shown sidebar list"
+        }
+        let clip = scroll.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: top))
+        scroll.reflectScrolledClipView(clip)
+        return "at \(Int(clip.bounds.minY))"
     }
 
     private static func log(_ line: String) {

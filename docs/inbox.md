@@ -471,6 +471,15 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 - **Empty lists** (`CaughtUpState`): Unread or Needs You with nothing left shows "You're all caught
   up" or "Nothing needs you"; sources that hold no chat, once every page is in, "No chats from
   these sources". A gateway with no chats at all shows "No chats yet" instead.
+- **A list per mode on the Mac** (`KeptList`): Chats and Bots each keep a list of their own in
+  the sidebar, and the Chats / Bots switch shows one and hides the other. A switch moves no rows:
+  each list keeps its rows, their measured heights and its scroll position, so going back finds
+  the list where it was left. With one list for both modes every switch replaced each row, and
+  AppKit compared and measured the whole list again, which held up the window for a quarter of a
+  second or more. While Bots shows, the chats list keeps what it showed before the switch, with
+  no search results in it (entering Bots clears the search). Bots mode hides the toolbar's filter
+  button instead of taking it out, so a switch doesn't build the toolbar again. iPhone and iPad
+  keep one list for every mode.
 - **Mark All as Read** at the end of the Unread list and in the filter menu: every badge clears at
   once, and the gateway hears of them 4 calls at a time. A mark this device set holds over the
   gateway's until its call is back and 10 s more (or the gateway agrees), so a busy Mac's list
@@ -549,6 +558,9 @@ loading rows while it's open and loading.
   as one line, and a Reply refused for the limit announces it. A sent bubble reads every quote in
   order, with whose it was when this device knows: "You, quoting Hermes, “the first passage” and
   “the second”: your words".
+- On the Mac, the list of the mode that isn't shown (§5) is out of reach: its scroll view is
+  hidden, so Tab and the arrow keys never move into it, VoiceOver doesn't list it, and it takes
+  no clicks, hover or scrolling. Only the shown list is in the window's accessibility tree.
 - Never colour alone: needs you has the hand, failed the triangle, muted the slashed bell, unread
   the weight and the count.
 - At the accessibility text sizes on iPhone and iPad the list keeps everything and cuts nothing
@@ -600,6 +612,12 @@ inbox's regions, `--cross-profile` for every profile's chats, §9) and a real He
 - A group chat's row shows its newest message ("Ada: …") and that message's time, never "N Bots"
   or a frozen line, with the list on screen or another chat open, for a room left earlier and for
   one never opened (`room-say` with `reply`, [bots-groups-skills.md](bots-groups-skills.md) §4).
+- On the Mac, switch between Chats and Bots a few times with each list scrolled: each comes
+  back where it was left, with the same rows, counts, sections and selection (the `sidebarlists`
+  and `sidebarat` drive steps, [development.md](development.md)). A switch can still log one or
+  two hangs of up to about 650 ms (`-HERMES_HANG_LOG`), spent mostly in window layout: the toolbar
+  and the window's key view loop. The hidden list isn't in the window's accessibility tree, and Tab
+  never reaches it.
 - Reduce Motion: no shimmer or slide. Light, dark and Increase Contrast match the renders.
 - Fast flicks up and down that start on a reply's text, a message, a row or a row with its
   actions open all scroll the chat and the list; a swipe left on a reply still replies, and one
