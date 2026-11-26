@@ -773,11 +773,12 @@ result or a link opens the same chat here as there.
   `.caption`. Then the title and pin,
   at `.body` semibold and up to two lines: a long title wraps and the row grows, while the trailing
   status keeps its corner. Under it a line of source · profile · project (`ChatRowSubtitle`;
-  `git_repo_root`'s folder name, absent outside a repository) in `.caption`. The device is never
-  named. When Hermes serves a model or a `reasoning_effort` for the chat, the same line ends flush
-  right with "qwen4-max · xhigh" in `.caption` tertiary text (`ChatRowSubtitle.modelLine`), the
-  profile reading from the left edge: the provider prefix goes, a long name is cut, a missing half
-  leaves nothing behind, and with neither the line ends at the profile.
+  `git_repo_root`'s folder name, absent outside a repository) in `.footnote`. The device is never
+  named. When Hermes serves a model for the chat, the same line ends flush
+  right with the chat's model ("qwen4-max") in `.footnote` tertiary text
+  (`ChatRowSubtitle.modelLine`), the profile reading from the left edge in `.footnote` too; the reasoning level is
+  not shown (it read as noise beside the profile). The provider prefix goes, a long model name is
+  cut, and without a model the line ends at the profile.
 - **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
   mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
   green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
