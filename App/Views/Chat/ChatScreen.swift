@@ -706,24 +706,62 @@ struct ChatScreen: View {
             .help("New chat (⌘N)")
             .disabled(conversation.isEmpty && conversation.sessionID == nil)
         } else {
-            // Which profile the chat starts in comes first (`docs/inbox.md` §9). This pencil sits at
-            // the top and its menu opens downward, so the order is turned round: the most used
-            // first, next to the pencil (the compose button's opens upward, most used last).
-            Menu {
-                ForEach(workspace.newChatProfiles.reversed()) { profile in
-                    Button {
-                        workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
-                    } label: {
-                        Label(profile.title, systemImage: "person.crop.circle")
-                    }
-                }
-            } label: {
-                Image(systemName: "square.and.pencil")
-            }
-            .menuOrder(.fixed)
-            .accessibilityLabel("New chat")
-            .help("New chat (⌘N)")
+            NewChatProfileMenuButton(workspace: workspace)
         }
+    }
+}
+
+/// The chat screen's pencil while the list holds every profile's chats (`docs/inbox.md` §9): a
+/// popover of profiles with their faces, hugging its rows like the compose button's
+/// (`IOSMenuRows`). This pencil sits at the top and the popover opens downward, so the order is
+/// turned round: the most used first, next to the pencil. A system `Menu` can't draw the faces
+/// and sizes itself wider. On the Mac the rows are a plain menu, as its toolbar's are.
+private struct NewChatProfileMenuButton: View {
+    let workspace: BotWorkspace
+
+    @State private var isPresented = false
+    /// The profile picked, started once the popover has gone (`.some(nil)` is the gateway's own).
+    @State private var picked: String??
+
+    var body: some View {
+        #if os(iOS)
+        Button {
+            isPresented = true
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .accessibilityLabel("New chat")
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            IOSMenuRows(maxWidth: 280) {
+                IOSComposeButton.newChatActions(workspace, reversed: true) { profile in
+                    picked = .some(profile)
+                    isPresented = false
+                }
+            }
+            .labelStyle(IOSMenuRowLabelStyle())
+            .buttonStyle(.plain)
+            .padding(.vertical, 6)
+            .presentationCompactAdaptation(.popover)
+            .onDisappear {
+                guard let profile = picked else { return }
+                picked = nil
+                workspace.startNewChat(in: profile)
+            }
+        }
+        #else
+        Menu {
+            ForEach(workspace.newChatProfiles.reversed()) { profile in
+                Button(profile.title) {
+                    workspace.startNewChat(in: workspace.isHomeProfile(profile) ? nil : profile.name)
+                }
+            }
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("New chat")
+        .help("New chat (⌘N)")
+        #endif
     }
 }
 

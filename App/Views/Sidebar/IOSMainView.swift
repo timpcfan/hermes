@@ -333,9 +333,11 @@ struct IOSComposeButton: View {
     }
 
     /// One row per profile for New Chat, top to bottom as `BotWorkspace.newChatProfiles` orders
-    /// them (the most used last). `pick` gets the profile, nil for the gateway's own.
-    @ViewBuilder static func newChatActions(_ workspace: BotWorkspace, pick: @escaping (String?) -> Void) -> some View {
-        ForEach(workspace.newChatProfiles) { profile in
+    /// them (the most used last), or `reversed` for a popover opening downward. `pick` gets the
+    /// profile, nil for the gateway's own.
+    @ViewBuilder static func newChatActions(_ workspace: BotWorkspace, reversed: Bool = false, pick: @escaping (String?) -> Void) -> some View {
+        let profiles = workspace.newChatProfiles
+        ForEach(reversed ? Array(profiles.reversed()) : profiles) { profile in
             Button {
                 pick(workspace.isHomeProfile(profile) ? nil : profile.name)
             } label: {
