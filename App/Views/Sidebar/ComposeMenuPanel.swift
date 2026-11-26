@@ -32,12 +32,10 @@ struct ComposeMenuPanel<Content: View>: View {
                 .labelStyle(IOSMenuRowLabelStyle())
                 .buttonStyle(.plain)
                 .padding(.vertical, 6)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .strokeBorder(.separator.opacity(0.6), lineWidth: 0.5)
-                }
-                .shadow(color: .black.opacity(0.24), radius: 26, y: 10)
+                // Liquid Glass, as the system's own popovers and the rest of this app draw it
+                // (`SidebarOverChat.panel`), rather than a plain material blur.
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .shadow(color: Theme.shadow, radius: 20, y: 12)
                 .padding(.horizontal, 10)
                 .padding(edge == .bottom ? .bottom : .top, inset)
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: anchor)))
