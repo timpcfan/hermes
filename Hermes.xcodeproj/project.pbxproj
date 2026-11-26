@@ -88,6 +88,7 @@
 		3F3264FB6816BB1E1DA41FAA /* MemoryParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A3472D56E936333D8BF4EBF /* MemoryParts.swift */; };
 		3F58E5D13D95B496DD614B55 /* TalkPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482C95B9926E755A073D07C3 /* TalkPreferences.swift */; };
 		3FE18DC1E93A6F1CD513BF47 /* LearnedTidyingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC34F7F2AAF2AE70DFEE5E6 /* LearnedTidyingPage.swift */; };
+		40B8012D6EB645478D486450 /* IOSChatRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB1797B38534062C2C3F38F /* IOSChatRow.swift */; };
 		4111DB522AC945C6CEB3D3E8 /* DesignGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203DAC47C6E03EE23A70BB37 /* DesignGallery.swift */; };
 		43DD54BB30E936BE9CC68161 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7699DF662EFC156426E4861 /* VoiceRecorder.swift */; };
 		444176C4AAE5F530206C801B /* FrameMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF3D76568885BDC8E99A82D /* FrameMonitor.swift */; };
@@ -467,6 +468,7 @@
 		38ECE52D5A1D7C9C53DB24BC /* WidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSettings.swift; sourceTree = "<group>"; };
 		3913701718FC64048198E1F6 /* GatewayTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayTranscriber.swift; sourceTree = "<group>"; };
 		39535385FE4051FB1A7D3958 /* MacPluginsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPluginsPane.swift; sourceTree = "<group>"; };
+		3AB1797B38534062C2C3F38F /* IOSChatRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatRow.swift; sourceTree = "<group>"; };
 		3B8DEB5FC3888A222BAA3996 /* PreviewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewController.swift; sourceTree = "<group>"; };
 		3BE9E26294360C9EDBE2AC4C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3C3CC94EB12ABAA772C0C9A5 /* UserBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserBubble.swift; sourceTree = "<group>"; };
@@ -1438,6 +1440,7 @@
 			children = (
 				E7C3E92CFAE67E60ABC5D6B1 /* IOSBotList.swift */,
 				89F6307063CB440F0DB83253 /* IOSChatList.swift */,
+				3AB1797B38534062C2C3F38F /* IOSChatRow.swift */,
 				A73268AE70D9FC9A3D3EC2ED /* IOSMainView.swift */,
 				C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */,
 				7AB786670227F23BE604A7E7 /* SidebarChrome.swift */,
@@ -1887,6 +1890,7 @@
 				3CCCBA16B93E485914FD45B3 /* HeyHermes.swift in Sources */,
 				06A08760A781B7F4D31AF218 /* IOSBotList.swift in Sources */,
 				E4B052E6A3EB20761610B568 /* IOSChatList.swift in Sources */,
+				40B8012D6EB645478D486450 /* IOSChatRow.swift in Sources */,
 				D24D416CE4DB4A8BA9CC31CC /* IOSMainView.swift in Sources */,
 				8F1D15B20B90A1A195A6F2B7 /* ImageAttachment.swift in Sources */,
 				2EF1C70E5D0E3B06DA39D1A0 /* InAppBrowser.swift in Sources */,

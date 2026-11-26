@@ -14,6 +14,10 @@ struct IOSChatList: View {
     @State private var isFirstFrame = true
     /// The search page: the same `workspace.search` the sidebar searches with, over the list.
     @State private var showsSearch = false
+    @State private var renaming: HermesSession?
+    @State private var renameText = ""
+    @State private var deleting: HermesSession?
+    @State private var actionError: HermesError?
 
     var body: some View {
         List {
@@ -32,8 +36,34 @@ struct IOSChatList: View {
         .task {
             isFirstFrame = false
         }
+        .modifier(ArchivedToast(workspace: workspace, bottomPadding: 78) { actionError = $0 })
         .fullScreenCover(isPresented: $showsSearch) {
             IOSSearchPage(workspace: workspace)
+        }
+        .alert("Rename Chat", isPresented: renameBinding) {
+            TextField("Title", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { commitRename() }
+                .keyboardShortcut(.defaultAction)
+        }
+        .alert(
+            deleting.map { String(localized: "Delete “\($0.displayTitle)”?") } ?? "",
+            isPresented: deleteBinding,
+            presenting: deleting
+        ) { session in
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { delete(session) }
+        } message: { session in
+            if workspace.waitingChat(forKey: session.stableID) != nil {
+                Text("Its message waits for \(workspace.bot.name) and won't be sent.")
+            } else {
+                Text("The conversation is removed from Hermes on every device.")
+            }
+        }
+        .alert("Something went wrong", isPresented: errorBinding, presenting: actionError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { error in
+            Text(error.errorDescription ?? "")
         }
     }
 
@@ -217,16 +247,157 @@ struct IOSChatList: View {
         }
     }
 
+    @ViewBuilder
     private func sessionRow(_ session: HermesSession) -> some View {
-        SidebarRow(isSelected: false, height: InboxMetrics.rowHeight) {
-            workspace.pick(.session(session.stableID))
-        } label: {
-            ChatInboxRow(session: session, workspace: workspace)
+        if workspace.waitingChat(forKey: session.stableID) != nil {
+            row(session)
+                .contextMenu {
+                    Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = session }
+                }
+        } else {
+            row(session)
+                .contextMenu { contextMenu(for: session) }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button(isUnread(session) ? "Read" : "Unread",
+                           systemImage: isUnread(session) ? "envelope.open" : "envelope.badge") {
+                        toggleRead(session.stableID, isUnread: isUnread(session))
+                    }
+                    .tint(Theme.swipeAction)
+                    Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") {
+                        togglePin(session)
+                    }
+                    .tint(Theme.swipeActionQuiet)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button("Settle", systemImage: "checkmark.circle") { archive(session) }
+                        .tint(Theme.swipeAction)
+                    Button(workspace.unread.isMuted(session.stableID) ? "Unmute" : "Mute",
+                           systemImage: workspace.unread.isMuted(session.stableID) ? "bell" : "bell.slash") {
+                        toggleMute(session.stableID, muted: workspace.unread.isMuted(session.stableID))
+                    }
+                    .tint(Theme.swipeActionQuiet)
+                }
         }
     }
 
+    private func row(_ session: HermesSession) -> some View {
+        SidebarRow(isSelected: false, height: InboxMetrics.rowHeight) {
+            workspace.pick(.session(session.stableID))
+        } label: {
+            IOSChatRow(session: session, workspace: workspace)
+        }
+    }
+
+    @ViewBuilder
     private func settledRow(_ session: HermesSession) -> some View {
         SettledRow(session: session, workspace: workspace)
+            .contextMenu {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                Divider()
+                Button("Rename…", systemImage: "pencil") {
+                    renameText = session.title ?? ""
+                    renaming = session
+                }
+                Button("Copy Session ID", systemImage: "number") { Pasteboard.copy(session.id) }
+                Divider()
+                Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
+                    .tint(Theme.swipeAction)
+            }
+    }
+
+    // MARK: Row actions
+
+    private func isUnread(_ session: HermesSession) -> Bool {
+        workspace.unread.badge(for: session.stableID).isUnread
+            || workspace.unread.readMark(for: session.stableID) == .markedUnread
+    }
+
+    private func toggleRead(_ key: String, isUnread: Bool) {
+        if isUnread { workspace.unread.markRead(key) } else { workspace.unread.markUnread(key) }
+    }
+
+    private func togglePin(_ session: HermesSession) {
+        Task { await run { try await workspace.setPinned(session, !session.pinned) } }
+    }
+
+    private func toggleMute(_ key: String, muted: Bool) {
+        if muted { workspace.unread.unmute(key) } else { workspace.unread.mute(key, for: .untilTurnedOff) }
+    }
+
+    private func archive(_ session: HermesSession) {
+        Task { await run { try await workspace.archive(session) } }
+    }
+
+    private func unsettle(_ session: HermesSession) {
+        Task { await run { try await workspace.unarchive(session) } }
+    }
+
+    @ViewBuilder
+    private func contextMenu(for session: HermesSession) -> some View {
+        let key = session.stableID
+        let unread = isUnread(session)
+        Button(unread ? "Mark as Read" : "Mark as Unread", systemImage: unread ? "envelope.open" : "envelope.badge") {
+            toggleRead(key, isUnread: unread)
+        }
+        Button(session.pinned ? "Unpin" : "Pin", systemImage: session.pinned ? "pin.slash" : "pin") {
+            togglePin(session)
+        }
+        MuteMenu(unread: workspace.unread, key: key)
+        Divider()
+        Button("Rename…", systemImage: "pencil") {
+            renameText = session.title ?? ""
+            renaming = session
+        }
+        if workspace.capabilities?.features.sessionFork != false {
+            Button("Branch", systemImage: "arrow.triangle.branch") {
+                Task { await run { try await workspace.fork(session) } }
+            }
+        }
+        if workspace.roster?.isConnected == true {
+            Button("Checkpoints…", systemImage: "clock.arrow.circlepath") {
+                workspace.showCheckpoints(for: session)
+            }
+        }
+        Button("Copy Session ID", systemImage: "number") { Pasteboard.copy(session.id) }
+        Divider()
+        Button("Settle", systemImage: "checkmark.circle") { archive(session) }
+        Button("Delete…", systemImage: "trash", role: .destructive) { deleting = session }
+    }
+
+    private func commitRename() {
+        guard let session = renaming else { return }
+        let title = renameText
+        Task { await run { try await workspace.rename(session, to: title) } }
+    }
+
+    private func delete(_ session: HermesSession) {
+        Task { await run { try await workspace.delete(session) } }
+    }
+
+    private func run(_ action: () async throws -> Void) async {
+        do {
+            try await action()
+        } catch {
+            actionError = error as? HermesError ?? .invalidResponse(error.localizedDescription)
+        }
+    }
+
+    private var renameBinding: Binding<Bool> {
+        Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
+    }
+
+    private var deleteBinding: Binding<Bool> {
+        Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })
     }
 
     // MARK: States
