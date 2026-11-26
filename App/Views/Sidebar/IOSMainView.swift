@@ -17,6 +17,10 @@ struct IOSMainView: View {
     var onListChanged: (Bool) -> Void = { _ in }
 
     @State private var tab = IOSMainTab.chats
+    /// What the bar itself shows. The compose circle is a tab in form only (iOS 27's prominent
+    /// tab), so a tap on it is undone here before SwiftUI keeps it: left selected, its empty
+    /// content would leave a black screen with no way back (`docs/inbox.md` §9).
+    @State private var barSelection = IOSMainTab.chats
     /// Each list's pushed screen. At most one holds one: a push into one tab clears the other, so
     /// two tabs never draw the same selection.
     @State private var chatPath: [DetailRoute] = []
@@ -34,13 +38,23 @@ struct IOSMainView: View {
         tabs
             .tabBarMinimizeBehavior(.onScrollDown)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
-            .onChange(of: workspace.navigation.pushes) { pushSelection() }
+            .onChange(of: workspace.navigation.pushes) {
+                // A chat opened under the panel closes it, as a popover would.
+                closeComposePanels()
+                pushSelection()
+            }
             .onChange(of: workspace.navigation.pops) { popToRoot() }
             .onChange(of: showsDetail) { _, shows in
                 workspace.setShowsDetail(shows)
                 onListChanged(!shows)
             }
+            .onChange(of: barSelection) { _, picked in
+                pickFromBar(picked)
+            }
             .onChange(of: tab) { _, newTab in
+                // The panel belongs to the tab it was opened on.
+                closeComposePanels()
+                if barSelection != newTab { barSelection = newTab }
                 // The first screen's mode follows the tab the person picked, so iPad and Mac open
                 // where it was. A deep link into a Bot chat doesn't change it (the chat is the same
                 // screen in both modes, and the mode's remembered selection must not replace it).
@@ -66,7 +80,7 @@ struct IOSMainView: View {
     /// floats over the lists instead (`stack`).
     @ViewBuilder private var tabs: some View {
         if #available(iOS 27.0, *) {
-            TabView(selection: pickingCompose) {
+            TabView(selection: $barSelection) {
                 chatsTab
                 botsTab
                 settingsTab
@@ -145,24 +159,32 @@ struct IOSMainView: View {
         }
     }
 
-    /// The tab selection, except that picking the compose circle acts and leaves the tab as it was.
-    /// The action waits a turn: run inside the selection change, the screen it pushes hides and
-    /// shows the bar while the bar is still settling, and the bar comes back centred and unlabelled.
-    private var pickingCompose: Binding<IOSMainTab> {
-        Binding {
-            tab
-        } set: { picked in
-            guard picked == .compose else {
-                tab = picked
-                return
-            }
-            Task { compose() }
+    /// Picking the compose circle acts and leaves the bar on the tab it was on: that tab has no
+    /// screen behind it, and left selected it showed a black one with no way back. The action
+    /// waits a turn: run inside the selection change, the screen it pushes hides and shows the bar
+    /// while the bar is still settling.
+    private func pickFromBar(_ picked: IOSMainTab) {
+        guard picked == .compose else {
+            tab = picked
+            return
         }
+        barSelection = tab
+        Task { compose() }
     }
 
     /// The compose circle: a new chat on Chats and Settings (which moves to Chats to show it), and
     /// on Bots the popover with New Bot and New Group Chat.
     private func compose() {
+        // A second tap on the circle closes its panel rather than opening it again: the panel sits
+        // over the only thing the person can still tap.
+        if isChoosingNew {
+            isChoosingNew = false
+            return
+        }
+        if isChoosingProfile {
+            isChoosingProfile = false
+            return
+        }
         if tab == .bots {
             isChoosingNew = true
         } else if !workspace.newChatProfiles.isEmpty {
@@ -171,6 +193,12 @@ struct IOSMainView: View {
         } else {
             IOSComposeButton.startNewChat(in: workspace)
         }
+    }
+
+    /// Closes the circle's panel: a tab change, or a chat opening, leaves it behind.
+    private func closeComposePanels() {
+        isChoosingNew = false
+        isChoosingProfile = false
     }
 
     /// A list and the screens pushed over it. The tab bar steps aside for a pushed screen, as the

@@ -400,6 +400,46 @@ final class NewChatComposerUITests: XCTestCase {
         attach("menu-bots-new")
     }
 
+    /// A second tap on the circle while its panel is up must not leave a black screen, and
+    /// changing tab must close the panel (`docs/inbox.md` §9).
+    @MainActor
+    func testTheComposePanelClosesOnASecondTapAndOnATabChange() throws {
+        let app = launch(["-AppleLanguages", "(en-US)", "-AppleLocale", "en_US"])
+        defer { app.terminate() }
+        let floating = app.buttons["tab.compose"].firstMatch
+        let prominent = app.tabBars.buttons["New Chat"].firstMatch
+        XCTAssertTrue(floating.waitForExistence(timeout: 60) || prominent.waitForExistence(timeout: 5), "no compose button")
+        func compose() -> XCUIElement { floating.exists ? floating : prominent }
+        let researcher = app.buttons["newChat.profile.researcher"].firstMatch
+        var opened = false
+        for _ in 0..<20 {
+            compose().tap()
+            if researcher.waitForExistence(timeout: 3) { opened = true; break }
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if back.exists { back.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(opened)
+        Thread.sleep(forTimeInterval: 1)
+        attach("panel-open")
+        compose().tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        attach("panel-second-tap")
+        XCTAssertFalse(researcher.exists, "a second tap didn't close the panel")
+        XCTAssertTrue(app.staticTexts["All Profiles"].waitForExistence(timeout: 5) || app.cells.firstMatch.exists,
+                      "the list is gone: a black screen")
+        // Open again, then change tab: the panel must go.
+        if !researcher.exists { compose().tap() }
+        XCTAssertTrue(researcher.waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1)
+        let bots = app.tabBars.buttons["Bots"].firstMatch
+        XCTAssertTrue(bots.waitForExistence(timeout: 5))
+        bots.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        attach("panel-tab-change")
+        XCTAssertFalse(researcher.exists, "the panel stayed open across a tab change")
+    }
+
     // MARK: Helpers
 
     /// The composer's field, typed into and on screen above the keyboard, and the composer's
