@@ -65,6 +65,18 @@ private struct SettingsList: View {
                     Section("Hermes on \(workspace.bot.name)") {
                         SetupSettingsRow(workspace: workspace)
                         AppsAndToolsSettingsRow(model: workspace.appsAndTools)
+                        #if os(iOS)
+                        // The iPhone's new layout has no sidebar, so the pages it used to list there
+                        // live here (`docs/settings.md`).
+                        SettingsPageRow(symbol: "book.closed", title: "Skills",
+                                        hint: "What this Hermes knows how to do") {
+                            SkillsView(workspace: workspace)
+                        }
+                        SettingsPageRow(symbol: "calendar.badge.clock", title: "Tasks",
+                                        hint: "What this Hermes runs on a schedule") {
+                            TasksView(workspace: workspace)
+                        }
+                        #endif
                         MemorySettingsRow(workspace: workspace)
                         PasswordsSettingsRow(workspace: workspace)
                         BrowserSettingsRow(workspace: workspace)
@@ -136,7 +148,7 @@ private struct SettingsList: View {
 #if os(iOS)
 /// A page of iPad Settings, picked in the sidebar.
 private enum SettingsPane: Hashable {
-    case setup, apps, memory, passwords, browser
+    case setup, apps, skills, tasks, memory, passwords, browser
     case general, chat, voice, notifications, developer
 
     /// The page a `-HERMES_*` flag opens (screenshots).
@@ -263,6 +275,12 @@ private struct SettingsSplitView: View {
                         }
                         .accessibilityHint("What Hermes can reach on this gateway")
                         .settingsSidebarRow(SettingsPane.apps, selection: pane)
+                    SettingsRowLabel(symbol: "book.closed", title: "Skills", compact: true)
+                        .accessibilityHint("What this Hermes knows how to do")
+                        .settingsSidebarRow(SettingsPane.skills, selection: pane)
+                    SettingsRowLabel(symbol: "calendar.badge.clock", title: "Tasks", compact: true)
+                        .accessibilityHint("What this Hermes runs on a schedule")
+                        .settingsSidebarRow(SettingsPane.tasks, selection: pane)
                     SettingsRowLabel(
                         symbol: "brain", title: "Memory",
                         summary: pages?.memory.summary ?? String(localized: "What Hermes knows about you"), compact: true)
@@ -313,6 +331,10 @@ private struct SettingsSplitView: View {
             SetupOverviewView(workspace: workspace)
         case (.apps, let workspace?):
             AppsAndToolsView(model: workspace.appsAndTools)
+        case (.skills, let workspace?):
+            SkillsView(workspace: workspace)
+        case (.tasks, let workspace?):
+            TasksView(workspace: workspace)
         case (.memory, let workspace?):
             if DebugFlags.memory != nil {
                 DebugMemoryPage(workspace: workspace)
@@ -364,6 +386,29 @@ private struct SettingsDoneButton: View {
             .keyboardShortcut(.cancelAction)
     }
 }
+
+#if os(iOS)
+/// Settings → Hermes on <gateway>: a page the app already has, with Setup's tile and title, pushed
+/// in on iPhone (`mockup-v2.html`, after Apps and Tools).
+private struct SettingsPageRow<Page: View>: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    let hint: LocalizedStringKey
+    @ViewBuilder let page: () -> Page
+
+    var body: some View {
+        NavigationLink {
+            page()
+        } label: {
+            HStack(spacing: 12) {
+                GlyphTile(symbol: symbol, ink: true, size: 30)
+                Text(title).foregroundStyle(Theme.primaryText)
+            }
+        }
+        .accessibilityHint(hint)
+    }
+}
+#endif
 
 /// A Settings row's leading part: its ink tile, its title and, for Hermes on <gateway>, a one-line
 /// summary ("2 things to set up"). `compact` is the iPad sidebar's smaller summary.
