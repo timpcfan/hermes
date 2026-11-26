@@ -86,6 +86,38 @@ struct ChatRowPresentationTests {
         #expect(ChatRowSubtitle.text(source: "", profile: nil, project: nil) == "app")
     }
 
+    @Test func modelLineIsTheShortModelAndItsEffortWhenBothAreKnown() {
+        #expect(ChatRowSubtitle.modelLine(model: "xunxin-default/qwen4-max", effort: "xhigh") == "qwen4-max · xhigh")
+        #expect(ChatRowSubtitle.modelLine(model: "anthropic/claude-sonnet-4.6", effort: "high") == "claude-sonnet-4.6 · high")
+        // The effort is the provider's word in lowercase, "none" included: it says reasoning is off.
+        #expect(ChatRowSubtitle.modelLine(model: "openai/gpt-5.2", effort: " HIGH ") == "gpt-5.2 · high")
+        #expect(ChatRowSubtitle.modelLine(model: "openai/gpt-5.2", effort: "none") == "gpt-5.2 · none")
+    }
+
+    @Test func modelLineLeavesOutWhicheverSideIsMissingAndNeverADanglingSeparator() {
+        #expect(ChatRowSubtitle.modelLine(model: "anthropic/claude-sonnet-4.6", effort: nil) == "claude-sonnet-4.6")
+        #expect(ChatRowSubtitle.modelLine(model: nil, effort: "high") == "high")
+        #expect(ChatRowSubtitle.modelLine(model: "", effort: "high") == "high")
+        #expect(ChatRowSubtitle.modelLine(model: "  ", effort: "high") == "high")
+        #expect(ChatRowSubtitle.modelLine(model: "openai/gpt-5.2", effort: "") == "gpt-5.2")
+        #expect(ChatRowSubtitle.modelLine(model: "openai/gpt-5.2", effort: "   ") == "gpt-5.2")
+        #expect(ChatRowSubtitle.modelLine(model: nil, effort: nil) == nil)
+        #expect(ChatRowSubtitle.modelLine(model: "", effort: "") == nil)
+        #expect(ChatRowSubtitle.modelLine(model: "provider/", effort: nil) == "provider")
+    }
+
+    @Test func modelLineCutsALongNameAtItsLimit() {
+        let short = String(repeating: "a", count: ChatRowSubtitle.modelNameLimit)
+        #expect(ChatRowSubtitle.modelLine(model: "provider/\(short)", effort: nil) == short)
+        let long = String(repeating: "b", count: ChatRowSubtitle.modelNameLimit + 12)
+        let cut = ChatRowSubtitle.modelLine(model: "provider/\(long)", effort: "xhigh")
+        #expect(cut == String(repeating: "b", count: ChatRowSubtitle.modelNameLimit) + "… · xhigh")
+        #expect(cut?.hasPrefix("b") == true)
+        // A model id's provider is dropped before the cut, so its own length never costs a letter.
+        let nested = ChatRowSubtitle.modelLine(model: "provider/family/\(long)", effort: nil)
+        #expect(nested == String(repeating: "b", count: ChatRowSubtitle.modelNameLimit) + "…")
+    }
+
     @Test func platformsUseTheWordsTheRowsUse() {
         #expect(ChatRowSubtitle.platformName(nil) == "app")
         #expect(ChatRowSubtitle.platformName("api_server") == "app")

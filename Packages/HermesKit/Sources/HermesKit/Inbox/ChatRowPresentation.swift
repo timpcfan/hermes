@@ -78,6 +78,35 @@ public enum ChatRowSubtitle {
         default: return name
         }
     }
+
+    /// The longest model name a row shows before the rest is cut off.
+    public static let modelNameLimit = 28
+
+    /// The model and reasoning effort a chat ran with, for the row's trailing corner: "qwen4-max ·
+    /// xhigh". The provider prefix goes (`ModelSelection.shortName`), and a name past
+    /// `modelNameLimit` ends in an ellipsis so a long id never takes the row's width. Either side
+    /// missing leaves the other alone, and neither means no line at all: never a stray "·".
+    public static func modelLine(model: String?, effort: String?) -> String? {
+        var parts: [String] = []
+        if let name = shortModelName(model) { parts.append(name) }
+        if let effort = effortName(effort) { parts.append(effort) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// `xunxin-default/qwen4-max` → `qwen4-max`, cut to `modelNameLimit` with "…".
+    static func shortModelName(_ model: String?) -> String? {
+        let trimmed = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let name = trimmed.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init) ?? ""
+        guard !name.isEmpty else { return nil }
+        return name.count <= modelNameLimit ? name : String(name.prefix(modelNameLimit)) + "…"
+    }
+
+    /// Hermes serves the effort in the provider's own words; the row shows them as they are, in
+    /// lowercase, and leaves out an empty one.
+    static func effortName(_ effort: String?) -> String? {
+        let name = effort?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return name.isEmpty ? nil : name
+    }
 }
 
 /// How long a running chat's turn has been going, at the row's compact width: "45s", "4m",

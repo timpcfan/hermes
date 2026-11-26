@@ -34,6 +34,20 @@ class SessionList(MockCase):
         self.call("PATCH", f"/api/sessions/{old}", {"pinned": False}, port=self.gateway)
         self.assertNotIn(old, self.ids("/api/sessions?limit=2", port=self.gateway))
 
+    def test_rows_carry_the_model_and_reasoning_effort_hermes_has(self):
+        status, body = self.call("GET", "/api/sessions?limit=200", port=self.gateway)
+        self.assertEqual(status, 200)
+        rows = {row["id"]: row for row in body["data"]}
+        # Both, model alone, and neither: the app's row line is exercised in every shape.
+        both = rows["api_1760_welcome"]
+        self.assertEqual((both["model"], both["reasoning_effort"]), ("xunxin-default/qwen4-max", "xhigh"))
+        model_only = rows["api_1760_long"]
+        self.assertEqual(model_only["model"], "anthropic/claude-sonnet-4.6")
+        self.assertNotIn("reasoning_effort", model_only)
+        neither = rows["api_old_1"]
+        self.assertIsNone(neither["model"])
+        self.assertNotIn("reasoning_effort", neither)
+
     def test_pinning_a_chat_the_gateway_lacks_is_refused(self):
         status, body = self.call("PATCH", "/api/sessions/nope", {"pinned": True}, port=self.gateway)
         self.assertEqual((status, body["error"]["code"]), (404, "session_not_found"))
