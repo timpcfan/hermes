@@ -57,17 +57,6 @@ struct IOSChatRow: View {
                         .foregroundStyle(Theme.danger)
                         .lineLimit(1)
                 }
-                // The model and effort share the profile line's column, under it (`docs/inbox.md`
-                // §10): one left edge for the row's small print, never a column of its own.
-                if let modelLine {
-                    Text(modelLine)
-                        .font(.caption)
-                        .foregroundStyle(Theme.tertiaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.leading, Self.subtitleGutter)
-                        .accessibilityHidden(true)
-                }
             }
         }
         .padding(.vertical, 8)
@@ -104,22 +93,28 @@ struct IOSChatRow: View {
         HStack(spacing: 4) {
             Image(systemName: InboxSourceGroup(source: session.source).symbol)
                 .font(.system(size: InboxMetrics.glyphSize))
-                // A fixed gutter, so the model line below can start on the text's column.
-                .frame(width: Self.subtitleGlyphWidth, alignment: .center)
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(subtitle)
-                // The same small print as the model line below it: the two read as one column.
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
+            // The model and effort finish the same line (`docs/inbox.md` §10): one run of small
+            // print — source · profile · project · model · effort — never a line of its own.
+            if let modelLine {
+                Text("·")
+                    .font(.caption)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .accessibilityHidden(true)
+                Text(modelLine)
+                    .font(.caption)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityHidden(true)
+            }
         }
     }
-
-    /// The source glyph's column width; the model line indents past it to share the profile
-    /// text's left edge.
-    private static let subtitleGlyphWidth: CGFloat = 16
-    private static var subtitleGutter: CGFloat { subtitleGlyphWidth + 4 }
 
     /// When the running turn started, best first: the attached conversation's turn, the moment the
     /// message went out here, the first sight of the chat running this launch, then the session's

@@ -208,9 +208,11 @@ come back to the top of Main only when they need the person. One List, top to bo
    key). Sorted by the later of the row's time and the moment it **came back** (below), newest
    first.
 3. **Working**: chats with a turn running, sending included, pinned ones too (they keep their pin
-   mark). Sorted by the person's last send on this device, else the chat's activity. The region,
-   header included, is absent while nothing runs. It folds with its header ("Working 2 ⌄"), open
-   by default, kept on the device (`inbox.workingExpanded`).
+   mark). Sorted by how long each has been working, longest turn first: a chat takes its place the
+   moment it starts working and keeps it until the turn ends, so a streamed reply or a tool call
+   never moves a row — the one that just started goes to the bottom. The region, header included,
+   is absent while nothing runs. It folds with its header ("Working 2 ⌄"), open by default, kept
+   on the device (`inbox.workingExpanded`).
 4. **Settled**: chats the person marked finished, which Hermes keeps as `archived`. Folded by
    default, the header shows how many there are ("Settled 73 ›"); open, ten slim rows, then "Show
    25 more" at a time. Kept per gateway (`inbox.settledExpanded.<gateway>`). Absent while
@@ -230,10 +232,12 @@ for chats still listed, so a cold launch keeps Main's order.
 
 **What it reads**: the regions are built in one pass and cached against the list's revision, two
 sets from `LiveActivity` (`inbox.live`, `inbox.needsYou`), which change only when a chat starts,
-stops or starts waiting (never with each streamed word, unlike `lines`), the return times, the
-last lines' revision and the filter. It never reads the selection, and row times read the live set
-instead of each chat's line. The first frame still lists 40 rows (`ChatListSnapshot`); Working and
-Settled come after them, and older pages load at the very end, below Settled.
+stops or starts waiting (never with each streamed word, unlike `lines`), the return times,
+Working's start times (`workingSince`: the moment each chat entered Working; the first look at a
+gateway seeds the chats already running at their own last activity, the prompt behind the turn),
+the last lines' revision and the filter. It never reads the selection, and row times read the live
+set instead of each chat's line. The first frame still lists 40 rows (`ChatListSnapshot`); Working
+and Settled come after them, and older pages load at the very end, below Settled.
 
 **Settled's rows** come from the Dashboard backend only: `GET /api/sessions?archived=only&order=recent`
 with `limit`/`offset`, which answers `total` (`BackendClient.archivedSessions`, `SettledChats`);
@@ -750,11 +754,11 @@ result or a link opens the same chat here as there.
   `.caption`. Then the title and pin,
   at `.body` semibold and up to two lines: a long title wraps and the row grows, while the trailing
   status keeps its corner. Under it a line of source · profile · project (`ChatRowSubtitle`;
-  `git_repo_root`'s folder name, absent outside a repository) in `.caption`, the same small print as
-  the model line below it so the two read as one column. The device is never named. When Hermes
-  serves a model or a `reasoning_effort` for the chat, a second `.caption` tertiary line under the
-  profile line shows "qwen4-max · xhigh" (`ChatRowSubtitle.modelLine`): the provider prefix goes, a
-  long name is cut, a missing half leaves no stray "·", and with neither the line is absent.
+  `git_repo_root`'s folder name, absent outside a repository) in `.caption`. The device is never
+  named. When Hermes serves a model or a `reasoning_effort` for the chat, the same line goes on with
+  "· qwen4-max · xhigh" in `.caption` tertiary text (`ChatRowSubtitle.modelLine`): one run of small
+  print, one line, the provider prefix gone, a long name cut, a missing half leaving no stray "·",
+  and with neither the line ends as before.
 - **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
   mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
   green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
