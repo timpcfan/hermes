@@ -223,11 +223,18 @@ struct IOSChatList: View {
         let sections = workspace.inboxSections
         let top = sections.pinned + sections.main
         let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
+        let isWhole = listed.count == top.count
+        let hasMarkAll = isWhole && workspace.inboxScope.unreadOnly && !top.isEmpty
+        let hasWorking = isWhole && !sections.working.isEmpty
+        let hasSettled = isWhole && settledRegionShown
+        let pinnedCount = min(listed.count, sections.pinned.count)
+        let dividers = topDividers(of: Array(listed), pinnedCount: pinnedCount, hasMarkAll: hasMarkAll,
+                                   hasWorking: hasWorking, hasSettled: hasSettled)
         ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
+                .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
         }
-        let isWhole = listed.count == top.count
-        if isWhole, workspace.inboxScope.unreadOnly, !top.isEmpty {
+        if hasMarkAll {
             Button("Mark All as Read") {
                 Task { await workspace.unread.markAllRead(workspace.unreadChatKeys) }
             }
@@ -237,12 +244,17 @@ struct IOSChatList: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .modifier(SidebarRowInsets())
+            .sidebarRowDivider(hasWorking || hasSettled ? .section : .none)
         }
-        if isWhole, !sections.working.isEmpty {
+        if hasWorking {
             InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workspace.workingExpanded)
+                // Folded, the header itself ends the region; open, its last row does.
+                .sidebarRowDivider(workspace.workingExpanded ? .none : (hasSettled ? .section : .none))
             if workspace.workingExpanded {
+                let workingDividers = rowDividers(of: sections.working, followedByAnotherRegion: hasSettled)
                 ForEach(sections.working, id: \.stableID) { session in
                     sessionRow(session)
+                        .sidebarRowDivider(workingDividers[session.stableID] ?? SidebarRowDivider.none)
                 }
             }
         }
@@ -258,19 +270,65 @@ struct IOSChatList: View {
         }
     }
 
+    /// Where the line under a row goes (`docs/inbox.md` §10): every row has one, Pinned's last row
+    /// and a region's last row get the stronger one where another region follows, and the list's
+    /// last row has none.
+    private func topDividers(of listed: [HermesSession], pinnedCount: Int,
+                             hasMarkAll: Bool, hasWorking: Bool, hasSettled: Bool) -> [String: SidebarRowDivider] {
+        var dividers: [String: SidebarRowDivider] = [:]
+        for (index, session) in listed.enumerated() {
+            let divider: SidebarRowDivider
+            if index < listed.count - 1 {
+                // Pinned and Main are regions of their own, with no header between them.
+                divider = index + 1 == pinnedCount ? .section : .line
+            } else if hasMarkAll {
+                divider = .line
+            } else {
+                divider = hasWorking || hasSettled ? .section : .none
+            }
+            dividers[session.stableID] = divider
+        }
+        return dividers
+    }
+
+    /// Rows inside one region: a line between them, the stronger one on the last when another
+    /// region follows, and none on the list's last row.
+    private func rowDividers(of rows: [HermesSession], followedByAnotherRegion: Bool) -> [String: SidebarRowDivider] {
+        var dividers: [String: SidebarRowDivider] = [:]
+        for (index, session) in rows.enumerated() {
+            let divider: SidebarRowDivider = index < rows.count - 1 ? .line : (followedByAnotherRegion ? .section : .none)
+            dividers[session.stableID] = divider
+        }
+        return dividers
+    }
+
+    /// Whether the Settled region has a header to draw (`settledRegion`).
+    private var settledRegionShown: Bool {
+        guard let settled = workspace.settled else { return false }
+        return (settled.isAvailable && settled.list.total != 0) || settled.revealed != nil
+    }
+
+    /// Settled's rows as the list shows them: open, its pages; folded, only a settled chat revealed
+    /// from search, if one is. The revealed chat is first when its page doesn't hold it.
+    private func settledRows(_ settled: SettledChats) -> [HermesSession] {
+        var rows = settled.isExpanded ? settled.list.rows : []
+        if let revealed = settled.revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
+            rows.insert(revealed, at: 0)
+        }
+        return rows
+    }
+
     @ViewBuilder
     private var settledRegion: some View {
         @Bindable var settled = workspace.settled
-        let revealed = settled.revealed
-        if (settled.isAvailable && settled.list.total != 0) || revealed != nil {
+        if settledRegionShown {
             InboxRegionHeader(title: String(localized: "Settled"), count: settled.list.total, isExpanded: $settled.isExpanded,
                               showsActivity: settled.hasActivity)
-            let rows = settled.isExpanded ? settled.list.rows : []
-            if let revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
-                settledRow(revealed)
-            }
+            let rows = settledRows(settled)
+            let dividers = rowDividers(of: rows, followedByAnotherRegion: false)
             ForEach(rows, id: \.stableID) { session in
                 settledRow(session)
+                    .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
             }
             if settled.isExpanded {
                 if settled.isLoading {

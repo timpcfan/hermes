@@ -515,6 +515,11 @@ def seed():
     session_row("api_1760_long", "Refactor the authentication middleware before the next beta ships", "api_server",
                 NOW - 70 * 60, NOW - 45 * 60, "Walk the auth middleware and split it before the beta",
                 model="anthropic/claude-sonnet-4.6")
+    # The list hides empty chats by default (`InboxScope.hidesEmpty`), so the long title needs a turn
+    # of its own to be seen.
+    add_message("api_1760_long", "user", "Walk the auth middleware and split it before the beta", timestamp=NOW - 46 * 60)
+    add_message("api_1760_long", "assistant", "It splits cleanly into token checks and session handling. I'll start with the token checks.",
+                timestamp=NOW - 45 * 60)
     t = NOW - 26 * 60
     add_message("api_1760_welcome", "user", "Help me migrate my app to Swift 6 concurrency. What changed recently?", timestamp=t)
     add_message("api_1760_welcome", "assistant", "Let me check the latest release notes first.", timestamp=t + 2,

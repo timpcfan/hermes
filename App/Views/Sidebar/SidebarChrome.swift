@@ -98,6 +98,44 @@ struct SidebarRowInsets: ViewModifier {
     }
 }
 
+/// The hairline under a list row (`docs/inbox.md` §10): every row has one, a region's last row
+/// gets the stronger one when another region follows, and the list's last row has none. The
+/// iPhone's lists ask for them; the split view's sidebar leaves them off.
+enum SidebarRowDivider: Equatable {
+    case none
+    case line
+    case section
+}
+
+extension View {
+    /// Draws the row's divider under its content, edge to edge, in the theme's quiet line colours.
+    func sidebarRowDivider(_ divider: SidebarRowDivider) -> some View {
+        modifier(SidebarRowDividerModifier(divider: divider))
+    }
+}
+
+struct SidebarRowDividerModifier: ViewModifier {
+    let divider: SidebarRowDivider
+    @Environment(\.displayScale) private var displayScale
+
+    func body(content: Content) -> some View {
+        content
+            // A region's line gets air above it, so the break reads even before its colour does.
+            .padding(.bottom, divider == .section ? 6 : 0)
+            .overlay(alignment: .bottom) {
+                if divider != .none {
+                    Rectangle()
+                        .fill(divider == .section ? Theme.separator : Theme.hairline)
+                        // One physical pixel, a thread at every scale.
+                        .frame(height: 1 / max(displayScale, 1))
+                        // The row's insets stay inside; the line runs the list's whole width.
+                        .padding(.horizontal, -SidebarMetrics.rowInsets.leading)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+}
+
 /// New Chat, Tasks, Skills; All Bots, New Bot: a glyph and a label.
 struct SidebarNavRow: View {
     let title: LocalizedStringKey

@@ -13,7 +13,7 @@ struct IOSBotList: View {
         Group {
             if let roster = workspace.roster {
                 List {
-                    BotRosterSections(roster: roster, workspace: workspace)
+                    BotRosterSections(roster: roster, workspace: workspace, showsRowDividers: true)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)

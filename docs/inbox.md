@@ -765,6 +765,13 @@ result or a link opens the same chat here as there.
   (`LiveActivity.runningStart`), else the session's `last_active`; the earliest fallback wins, so a
   streaming reply doesn't restart the clock. Only a running row redraws each second
   (`TimelineView`).
+- **The list's lines** (`SidebarRowDivider`): every chat row has a one-physical-pixel
+  `Theme.hairline` under it, running the list's whole width. Pinned's last row and each region's
+  last row get a slightly stronger `Theme.separator` line with 6 pt of air above it when another
+  region follows (Pinned → Main, then Working and Settled, whose headers stay); the list's last
+  row has none. The group chats and Bots rows draw the same two lines (`showsRowDividers`): the
+  breaks sit where the group chats end, where the pinned Bots end, and before Hidden. The split
+  view's sidebar (iPad and Mac) passes nothing and looks as before.
 - **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
   and Mute, the same context menu, and the same Rename, Delete and error alerts. A waiting chat
   offers only Delete. Settled rows keep Un-settle.

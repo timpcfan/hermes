@@ -6,6 +6,9 @@ import SwiftUI
 struct BotRosterSections: View {
     let roster: BotRoster
     @Bindable var workspace: BotWorkspace
+    /// The iPhone's list draws a hairline under its rows and a stronger one between regions; the
+    /// split view's sidebar keeps its rows plain (`docs/inbox.md` §10).
+    var showsRowDividers = false
 
     @State private var showsHidden = false
     @State private var actionError: HermesError?
@@ -24,22 +27,30 @@ struct BotRosterSections: View {
     var body: some View {
         let visible = roster.visibleBots.filter { Self.matches($0, query) }
         let hidden = roster.hiddenBots.filter { Self.matches($0, query) }
+        let rooms = roster.groupRooms.rooms.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+        let hasHiddenRegion = !hidden.isEmpty
+        let hiddenRowsShown = showsHidden || !query.isEmpty
         Group {
-            let rooms = roster.groupRooms.rooms.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
             if !visible.isEmpty || !rooms.isEmpty {
                 SidebarSectionTitle(title: String(localized: "Your Bots"))
+                let roomLines = roomDividers(rooms, followedByAnotherRegion: !visible.isEmpty || hasHiddenRegion)
                 ForEach(rooms) { room in
                     groupRow(room)
+                        .sidebarRowDivider(showsRowDividers ? roomLines[room.id] ?? SidebarRowDivider.none : .none)
                 }
+                let visibleBotDividers = botDividers(visible, hasHiddenRegion: hasHiddenRegion)
                 ForEach(visible) { bot in
                     botRow(bot)
+                        .sidebarRowDivider(showsRowDividers ? visibleBotDividers[bot.name] ?? SidebarRowDivider.none : .none)
                 }
             }
-            if !hidden.isEmpty {
+            if hasHiddenRegion {
                 hiddenToggle(count: hidden.count)
-                if showsHidden || !query.isEmpty {
+                if hiddenRowsShown {
+                    let hiddenBotDividers = botDividers(hidden, hasHiddenRegion: false)
                     ForEach(hidden) { bot in
                         botRow(bot)
+                            .sidebarRowDivider(showsRowDividers ? hiddenBotDividers[bot.name] ?? SidebarRowDivider.none : .none)
                     }
                 }
             }
@@ -49,6 +60,34 @@ struct BotRosterSections: View {
         } message: { error in
             Text(error.errorDescription ?? "")
         }
+    }
+
+    /// Group chats come before the Bots: a line between them, and the stronger one on the last
+    /// when a Bot or the Hidden region follows (`docs/inbox.md` §10).
+    private func roomDividers(_ rooms: [GroupRoom], followedByAnotherRegion: Bool) -> [String: SidebarRowDivider] {
+        var dividers: [String: SidebarRowDivider] = [:]
+        for (index, room) in rooms.enumerated() {
+            let divider: SidebarRowDivider = index < rooms.count - 1 ? .line : (followedByAnotherRegion ? .section : .none)
+            dividers[room.id] = divider
+        }
+        return dividers
+    }
+
+    /// A line between Bots, the stronger one where the pinned ones end and where the Hidden region
+    /// begins; the list's last row has none.
+    private func botDividers(_ bots: [BotProfile], hasHiddenRegion: Bool) -> [String: SidebarRowDivider] {
+        var dividers: [String: SidebarRowDivider] = [:]
+        let pinned = bots.prefix { $0.meta.isPinned }.count
+        for (index, bot) in bots.enumerated() {
+            let divider: SidebarRowDivider
+            if index < bots.count - 1 {
+                divider = index + 1 == pinned ? .section : .line
+            } else {
+                divider = hasHiddenRegion ? .section : .none
+            }
+            dividers[bot.name] = divider
+        }
+        return dividers
     }
 
     // MARK: Rows
