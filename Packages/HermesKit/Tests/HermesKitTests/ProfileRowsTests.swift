@@ -269,4 +269,26 @@ struct ProfileRowsTests {
         #expect(scope.withoutProfile.profile == nil)
         #expect(scope.profile == "money")
     }
+
+    // MARK: Profile filter
+
+    @Test func filterListsEveryProfileHermesListsWithChatsOrNot() {
+        let rows = [Self.session("s1", profile: "money"), Self.session("s2")]
+        // `scout` has no chat: Hermes' list still names it. Duplicates go, the gateway's own leads.
+        let listed = ["writer", "default", "scout", "money", "writer"]
+        #expect(ProfileRows.filterChoices(listed: listed, rows: rows, home: "default", picked: nil)
+                == ["default", "money", "scout", "writer"])
+        // The gateway's own profile leads even when Hermes' list leaves it out.
+        #expect(ProfileRows.filterChoices(listed: ["money"], rows: [], home: "work", picked: nil) == ["work", "money"])
+        #expect(ProfileRows.filterChoices(listed: [], rows: rows, home: nil, picked: nil) == ["default"])
+    }
+
+    @Test func filterFallsBackToTheChatsProfilesWithoutHermesList() {
+        let rows = [Self.session("s1", profile: "money"), Self.session("s2"), Self.session("s3", profile: "art")]
+        #expect(ProfileRows.filterChoices(listed: nil, rows: rows, home: "default", picked: nil) == ["default", "art", "money"])
+        // The picked profile stays listed, so the menu can show it checked.
+        #expect(ProfileRows.filterChoices(listed: nil, rows: rows, home: "default", picked: "travel")
+                == ["default", "art", "money", "travel"])
+        #expect(ProfileRows.filterChoices(listed: ["money"], rows: [], home: "default", picked: "default") == ["default", "money"])
+    }
 }

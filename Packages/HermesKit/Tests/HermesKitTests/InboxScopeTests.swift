@@ -83,4 +83,21 @@ struct InboxScopeTests {
         let empty = try JSONDecoder().decode(InboxScope.self, from: Data("{}".utf8))
         #expect(empty == .standard)
     }
+
+    @Test func theSourcesFilterChangesSourcesAndTheStatesThatNarrowMain() {
+        #expect(InboxScope.standard.sourceChanges.isEmpty)
+        var scope = InboxScope.standard
+        scope.profile = "money"
+        scope.hidesEmpty = false
+        // The profile has its own filter, and showing empty chats narrows nothing.
+        #expect(scope.sourceChanges.isEmpty)
+        scope.set(.telegram, shown: false)
+        scope.set(.scheduled, shown: true)
+        #expect(scope.sourceChanges == [.source(.telegram, shown: false), .source(.scheduled, shown: true)])
+        var narrowed = InboxScope.standard
+        narrowed.unreadOnly = true
+        #expect(narrowed.sourceChanges == [.unread])
+        narrowed.needsYouOnly = true
+        #expect(narrowed.sourceChanges == [.unread, .needsYou])
+    }
 }

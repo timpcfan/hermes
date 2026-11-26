@@ -113,12 +113,12 @@ struct IOSChatList: View {
         .background(Theme.canvas)
     }
 
-    /// One profile at a time (`InboxScope.profile`): All Profiles, or one of the profiles the list
-    /// holds. It stays visible without Bot Mode, where All and the gateway's profile are the only
-    /// choices and the filter changes nothing.
+    /// One profile at a time (`InboxScope.profile`): All Profiles, or any profile Hermes lists, one
+    /// without chats included. Picked, the filter turns blue. It stays visible without Bot Mode,
+    /// where All and the gateway's profile are the only choices and the filter changes nothing.
     private var profileFilter: some View {
         let picked = workspace.inboxScope.profile
-        let profiles = ProfileRows.profiles(in: workspace.allSessions, home: workspace.bot.profileName)
+        let profiles = profileChoices
         return Menu {
             Picker("Profile", selection: Binding(get: { workspace.inboxScope.profile },
                                                  set: { workspace.inboxScope.profile = $0 })) {
@@ -131,36 +131,55 @@ struct IOSChatList: View {
         } label: {
             filterLabel(picked ?? String(localized: "All Profiles"))
         }
-        .filterMenu()
+        .filterMenu(isActive: picked != nil)
         .accessibilityLabel("Profile")
         .accessibilityValue(picked ?? String(localized: "All Profiles"))
         .accessibilityIdentifier("chat.profileFilter")
     }
 
-    /// The source groups the list holds (`InboxScope.hiddenSources`).
+    /// The profiles the filter offers: Hermes' whole list once the roster has it, else the
+    /// profiles the chats come from (`ProfileRows.filterChoices`). The chats are read only without
+    /// Hermes' list, so a refresh of the list doesn't redraw the header.
+    private var profileChoices: [String] {
+        let listed = workspace.roster.flatMap { $0.hasLoaded ? $0.profiles.map(\.name) : nil }
+        return ProfileRows.filterChoices(listed: listed, rows: listed == nil ? workspace.allSessions : [],
+                                         home: workspace.bot.profileName, picked: workspace.inboxScope.profile)
+    }
+
+    /// The source groups the list holds (`InboxScope.hiddenSources`), and Unread and Needs You,
+    /// which narrow Main. Any of them changed, the filter turns blue: the list says it is narrowed
+    /// without a line above it.
     private var sourceFilter: some View {
-        Menu {
-            ForEach(InboxSourceGroup.allCases, id: \.self) { group in
-                Toggle(isOn: Binding {
-                    workspace.inboxScope.shows(group)
-                } set: { shown in
-                    workspace.inboxScope.set(group, shown: shown)
-                }) {
-                    Label(group.title, systemImage: group.symbol)
+        let scope = workspace.inboxScope
+        return Menu {
+            Section {
+                ForEach(InboxSourceGroup.allCases, id: \.self) { group in
+                    Toggle(isOn: Binding {
+                        workspace.inboxScope.shows(group)
+                    } set: { shown in
+                        workspace.inboxScope.set(group, shown: shown)
+                    }) {
+                        Label(group.title, systemImage: group.symbol)
+                    }
                 }
             }
-            if !workspace.inboxScope.isStandard {
-                Divider()
-                Button("Show Everything", systemImage: "line.3.horizontal.decrease.circle") {
-                    workspace.inboxScope = .standard
+            Section("Only") {
+                Toggle("Unread", isOn: $workspace.inboxScope.unreadOnly)
+                Toggle("Needs You", isOn: $workspace.inboxScope.needsYouOnly)
+            }
+            if !scope.isStandard {
+                Section {
+                    Button("Show Everything", systemImage: "line.3.horizontal.decrease.circle") {
+                        workspace.inboxScope = .standard
+                    }
                 }
             }
         } label: {
-            filterLabel(sourceLabel)
+            filterLabel(sourceWords.joined(separator: " · "))
         }
-        .filterMenu()
+        .filterMenu(isActive: !scope.sourceChanges.isEmpty)
         .accessibilityLabel("Sources")
-        .accessibilityValue(sourceLabel)
+        .accessibilityValue(sourceWords.joined(separator: ", "))
         .accessibilityIdentifier("chat.sourceFilter")
     }
 
@@ -175,15 +194,26 @@ struct IOSChatList: View {
         }
     }
 
-    private var sourceLabel: String {
-        let hidden = workspace.inboxScope.hiddenSources
-        if hidden.isEmpty || hidden == InboxScope.standard.hiddenSources {
-            return String(localized: "All sources")
+    /// What the Sources filter says: Unread and Needs You while either narrows Main, then which
+    /// sources it holds ("No Telegram", "5 sources"), or "All sources" when nothing else needs
+    /// saying. The state shows in its words as well as its blue.
+    private var sourceWords: [String] {
+        let scope = workspace.inboxScope
+        var words: [String] = []
+        if scope.unreadOnly { words.append(String(localized: "Unread")) }
+        if scope.needsYouOnly { words.append(String(localized: "Needs You")) }
+        // Named against the standard, which already leaves Scheduled out: hiding Telegram reads
+        // "No Telegram", not "5 sources".
+        let hidden = scope.hiddenSources
+        let dropped = hidden.subtracting(InboxScope.standard.hiddenSources)
+        if dropped.isEmpty {
+            if words.isEmpty { words.append(String(localized: "All sources")) }
+        } else if dropped.count == 1, let only = dropped.first {
+            words.append(String(localized: "No \(only.title)"))
+        } else {
+            words.append(String(localized: "\(InboxSourceGroup.allCases.count - hidden.count) sources"))
         }
-        if hidden.count == 1, let only = hidden.first {
-            return String(localized: "No \(only.title)")
-        }
-        return String(localized: "\(InboxSourceGroup.allCases.count - hidden.count) sources")
+        return words
     }
 
     // MARK: Sessions
@@ -192,9 +222,6 @@ struct IOSChatList: View {
     private var sessionSections: some View {
         let sections = workspace.inboxSections
         let top = sections.pinned + sections.main
-        if !workspace.inboxScope.isStandard {
-            FilteredLine(workspace: workspace)
-        }
         let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
         ForEach(listed, id: \.stableID) { session in
             sessionRow(session)
@@ -412,7 +439,11 @@ struct IOSChatList: View {
     @ViewBuilder
     private var stateView: some View {
         if workspace.scopeHoldsNothing {
-            CaughtUpState(sources: ())
+            if let profile = workspace.inboxScope.profile, workspace.listsEveryProfile, !hasChats(in: profile) {
+                CaughtUpState(profile: profile)
+            } else {
+                CaughtUpState(sources: ())
+            }
         } else if workspace.inboxScope.narrowsMain {
             if workspace.inboxSessions.isEmpty {
                 CaughtUpState(scope: workspace.inboxScope)
@@ -439,18 +470,25 @@ struct IOSChatList: View {
             }
         }
     }
+
+    /// Whether any chat in the list ran in the profile. Read only while the list holds nothing, so
+    /// the walk never runs as rows draw.
+    private func hasChats(in profile: String) -> Bool {
+        let home = workspace.bot.profileName
+        return workspace.allSessions.contains { ProfileRows.profileName(of: $0, home: home) == profile }
+    }
 }
 
 extension View {
-    /// The two filters under the title: the system's bordered capsule, in the quiet colour
-    /// (`docs/inbox.md` §10).
-    fileprivate func filterMenu() -> some View {
+    /// The two filters under the title: the system's bordered capsule, in the quiet colour, or
+    /// tinted blue while it narrows the list (`docs/inbox.md` §10).
+    fileprivate func filterMenu(isActive: Bool) -> some View {
         menuStyle(.button)
             .menuIndicator(.hidden)
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
             .controlSize(.small)
-            .tint(Theme.secondaryText)
+            .tint(isActive ? Theme.link : Theme.secondaryText)
     }
 }
 

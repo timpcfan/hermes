@@ -716,17 +716,28 @@ result or a link opens the same chat here as there.
   `workspace.inboxSections` with Pinned, Main, Working and Settled (`§2a`), and the same
   `ChatListSnapshot` first frame and paging, so a long history costs no more here than in the
   sidebar.
-- **Profile** is one choice at a time (`InboxScope.profile`): All Profiles or a profile the list
-  holds. **Sources** toggles the source groups (`InboxScope.hiddenSources`). A non-standard choice
-  shows "Filtered: …" above the rows and keeps "Show Everything" in the menu.
+- **Profile** is one choice at a time (`InboxScope.profile`): All Profiles or any profile Hermes
+  lists (the roster's `profiles.list`, the gateway's own first and the rest by name), chats or not;
+  without a roster list (no Bot Mode, nothing read yet) the profiles the chats come from
+  (`ProfileRows.filterChoices`). **Sources** toggles the source groups (`InboxScope.hiddenSources`)
+  and, under Only, Unread and Needs You. A filter that narrows the list is tinted blue (`Theme.link`):
+  Profile while one is picked, Sources while a group differs from the standard or Unread or Needs
+  You is on (`InboxScope.sourceChanges`). Its words say the same, so the state isn't colour alone:
+  "Unread", "Needs You · No Telegram", "5 sources", or "All sources" when nothing narrows it. No
+  "Filtered: …" line goes above the rows in this layout; "Show Everything" stays in the Sources
+  menu while anything differs from the standard. A picked profile without chats says so ("No chats
+  in scout"), not that the sources hold nothing.
 - **A row** (`IOSChatRow`): the profile's avatar at 34 pt on the left — its Bot's photo or drawn
   face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
   the unread dot on its corner. Then the title and pin, and a second line of source · profile ·
   project (`ChatRowSubtitle`; `git_repo_root`'s folder name, absent outside a repository). The
   device is never named.
-- **The trailing state** is one of four (`ChatRowState`): a dashed green ring and the running time,
-  a green check and Done, an orange mark and Needs you, or a red mark, Failed and the reason in red
-  on its own line. A waiting first message reads as running. The running time comes from the
+- **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
+  mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
+  green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
+  unread); once read it shows only how long ago it ended (`ChatRowAgo`: "now", "5m", "2h", "3d",
+  "2w", "4mo", "1y"), from the session's `ended_at`, else its `last_active`, and redraws only when
+  those words change. A waiting first message reads as running. The running time comes from the
   attached conversation's turn (`live.turn.startedAt`), else the moment the message went out here
   (`lastSentAt` for a waiting chat), else the first sight of the chat running this launch
   (`LiveActivity.runningStart`), else the session's `last_active`; the earliest fallback wins, so a

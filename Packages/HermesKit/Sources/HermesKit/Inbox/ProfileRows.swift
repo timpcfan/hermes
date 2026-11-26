@@ -61,6 +61,18 @@ public enum ProfileRows {
         return [own] + names.sorted()
     }
 
+    /// The Profile filter's choices (`docs/inbox.md` §10): every profile Hermes lists, with chats
+    /// or without, once the roster has its list (`listed`); without one (no Bot Mode, or nothing
+    /// read yet), the profiles the rows come from. The gateway's own comes first, then by name, and
+    /// the picked one stays listed so the menu can show it checked.
+    public static func filterChoices(listed: [String]?, rows: [HermesSession], home: String?, picked: String?) -> [String] {
+        let own = home ?? "default"
+        var names = listed.map { Set($0) } ?? Set(rows.map { profileName(of: $0, home: home) })
+        if let picked { names.insert(picked) }
+        names = names.filter { !$0.isEmpty && $0 != own }
+        return [own] + names.sorted()
+    }
+
     /// The row's mark: "money", or "paimon · hermesapp" when it ran in a repository.
     public static func badge(profile: String, project: String?) -> String {
         guard let project else { return profile }
