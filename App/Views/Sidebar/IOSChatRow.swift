@@ -64,9 +64,10 @@ struct IOSChatRow: View {
         .accessibilityLabel(spoken)
     }
 
-    /// The chat's model and effort, when the gateway serves either.
+    /// The chat's model, when the gateway serves one. The reasoning level stays out of the row
+    /// (`docs/inbox.md` §10): beside the profile it read as noise.
     private var modelLine: String? {
-        ChatRowSubtitle.modelLine(model: session.model, effort: session.reasoningEffort)
+        ChatRowSubtitle.modelLine(model: session.model, effort: nil)
     }
 
     private var title: some View {
@@ -96,16 +97,16 @@ struct IOSChatRow: View {
                 .foregroundStyle(Theme.tertiaryText)
                 .accessibilityHidden(true)
             Text(subtitle)
-                .font(.caption)
+                .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            // The model and effort close the same line (`docs/inbox.md` §10): the profile reads
-            // from the left edge, the model sits flush right.
+            // The model closes the same line (`docs/inbox.md` §10): the profile reads from the
+            // left edge, the model sits flush right.
             if let modelLine {
                 Spacer(minLength: 8)
                 Text(modelLine)
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(Theme.tertiaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
