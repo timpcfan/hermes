@@ -513,10 +513,13 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
 ### Paging
 
 The list loads 40 rows first, then a page at a time while the end is on screen
-(`BotWorkspace.listPaging`, `ChatListPaging`). A refresh starts a new generation: a page asked for
-before it lands on nothing, so its rows, read against the old list, can't come back after the fresh
-ones. Every profile's list (§9) pages the same way, through the merged order: Hermes reads each
-profile's newest rows and merges them, so the app asks for `limit + offset` per profile
+(`BotWorkspace.listPaging`, `ChatListPaging`). The end is a row below Settled: two loading rows on
+iPhone and iPad, nothing drawn on a Mac. A refresh reads at most 200 chats, so on a longer list
+that row comes back after each one; on a Mac nothing stands below Settled meanwhile, and the next
+page loads when the end comes on screen all the same. A refresh starts a new generation: a page
+asked for before it lands on nothing, so its rows, read against the old list, can't come back after
+the fresh ones. Every profile's list (§9) pages the same way, through the merged order: Hermes
+reads each profile's newest rows and merges them, so the app asks for `limit + offset` per profile
 (`BackendClient.profileSessions` over-fetches, capped at 400) and pages by the merged offset.
 Settled pages on its own (`SettledList`, §2a), with the same generation rule.
 
@@ -621,6 +624,10 @@ inbox's regions, `--cross-profile` for every profile's chats, §9) and a real He
   Working. The filter's Telegram off and Unread on: "Filtered: No Telegram · Unread ✕", Main only
   unread chats, Pinned and Working unchanged; ✕ shows everything. Quit and relaunch: Main keeps
   its order.
+- Paging on a Mac (`backend.py --inbox-gtd --many-chats 150 --busy 4`, more chats than a refresh
+  reads): scrolled to the end, nothing stands below "Settled 37" while the older chats load, and
+  they still come in above Working, the last ones included. iPad and iPhone keep the two loading
+  rows there.
 - Unit tests: `InboxTests` (counting, read marks null / 0 / time, mute expiry, the line with partial
   reads, pill priority, the messages below the pill, activity, quotes, row times and their order,
   compaction summaries, Bot faces, group mentions, last lines and the `LastLineBook`),
