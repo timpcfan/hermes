@@ -115,6 +115,10 @@ right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
 
 ## 2. The rows
 
+On iPhone at a compact width the list is the Chat tab's own screen and its rows are drawn by
+`IOSChatRow` (§10). The table below is the split view's sidebar, on iPad and the Mac and in a wide
+iPad window.
+
 Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMetrics`).
 
 | State | Line 1 | Line 2 | Trailing |
@@ -696,3 +700,50 @@ While Bot Mode is connected, the list holds every profile's chats, not only the 
 - **The mock**: `backend.py --cross-profile` seeds researcher, writer and ops chats (some in
   repositories, one settled per profile, one id shared with the gateway's own) and serves the
   endpoint; without it the endpoint answers 404 as an older Hermes does.
+
+## 10. The iPhone's Chat tab (this fork)
+
+At a compact width `MainView` shows `IOSMainView` instead of the split view: Chat, Bot and Settings
+tabs over a floating glass capsule, and a round compose button beside it. iPad and Mac keep the
+split view unchanged. The selection still lives in `BotWorkspace`, so a notification, a search
+result or a link opens the same chat here as there.
+
+- **Chat tab** (`IOSChatList`): "Hermes" with the gateway's connection dot and name beside it, a
+  round search button, then the Profile and Sources filters as capsules. The list below is the same
+  `workspace.inboxSections` with Pinned, Main, Working and Settled (`§2a`), and the same
+  `ChatListSnapshot` first frame and paging, so a long history costs no more here than in the
+  sidebar.
+- **Profile** is one choice at a time (`InboxScope.profile`): All Profiles or a profile the list
+  holds. **Sources** toggles the source groups (`InboxScope.hiddenSources`). A non-standard choice
+  shows "Filtered: …" above the rows and keeps "Show Everything" in the menu.
+- **A row** (`IOSChatRow`): the profile's avatar at 34 pt on the left — its Bot's photo or drawn
+  face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
+  the unread dot on its corner. Then the title and pin, and a second line of source · profile ·
+  project (`ChatRowSubtitle`; `git_repo_root`'s folder name, absent outside a repository). The
+  device is never named.
+- **The trailing state** is one of four (`ChatRowState`): a dashed green ring and the running time,
+  a green check and Done, an orange mark and Needs you, or a red mark, Failed and the reason in red
+  on its own line. A waiting first message reads as running. The running time comes from the
+  attached conversation's turn (`live.turn.startedAt`), else the moment the message went out here
+  (`lastSentAt` for a waiting chat), else the first sight of the chat running this launch
+  (`LiveActivity.runningStart`), else the session's `last_active`; the earliest fallback wins, so a
+  streaming reply doesn't restart the clock. Only a running row redraws each second
+  (`TimelineView`).
+- **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
+  and Mute, the same context menu, and the same Rename, Delete and error alerts. A waiting chat
+  offers only Delete. Settled rows keep Un-settle.
+- **Search** is the round button: a page with the same `workspace.searchText`, chips and
+  `SearchResultsSection` as the sidebar (`docs/search.md`). Picking a result opens its chat and
+  closes the page.
+- **Compose** starts a new chat with the existing flow, profile picker included. The tab bar goes
+  away while a chat, Bot chat, group or Settings page is pushed; Back brings the list and the bar
+  back.
+- **Bot tab** (`IOSBotList`) is the existing All Bots roster (`BotRosterSections`) with no filters;
+  its compose button offers New Bot and New Group Chat. **Settings** reuses `SettingsView` without
+  its Done button, and its Hermes on <bot> group adds Skills and Tasks after Apps and Tools; the
+  sidebar's old Tasks, Skills and All Bots rows, the gateway switcher and the Chats/Bots switch do
+  not appear in this layout.
+- **The mock**: `backend.py --inbox-gtd --inbox-demo --cross-profile` seeds all four states
+  (Working's cycle, the approval that waits, the finished rows, and "Nightly log rotation", whose
+  failed turn is unread so its row says Failed), the profiles' faces and projects, and the settled
+  chats.

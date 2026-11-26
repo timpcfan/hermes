@@ -665,7 +665,19 @@ struct MainView: View {
     @SceneStorage("window.onList") private var storedOnList = false
 
     var body: some View {
-        splitView
+        Group {
+            #if os(iOS)
+            // iPhone: the tabs (BRIEF ios-tab-layout). iPad and every wider iOS window keep the
+            // split view exactly as it was.
+            if horizontalSizeClass == .compact {
+                IOSMainView(workspace: workspace, onListChanged: { storedOnList = $0 })
+            } else {
+                splitView
+            }
+            #else
+            splitView
+            #endif
+        }
             // Replies' pictures from the gateway itself show by themselves (`WebLink.isOnGateway`).
             .environment(\.gatewayHosts, workspace.bot.hosts)
             .modifier(BotSheets(workspace: workspace))

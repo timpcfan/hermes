@@ -418,6 +418,17 @@ def seed_gtd():
         G.add_message(sid, "user", f"{title}, please.", timestamp=started)
         G.add_message(sid, "assistant", "On it, here is what I found.", timestamp=started + 60)
     G.session_row("empty_gtd", None, "api_server", now - 3 * hour, now - 3 * hour, "")
+    # A scheduled run whose turn stopped: the row's Failed state and its reason line.
+    failed_at = now - 6 * 60
+    G.session_row("gtd_failed", "Nightly log rotation", "api_server", failed_at, failed_at + 30, "")
+    G.add_message("gtd_failed", "user",
+                  "[Cronjob \"Nightly log rotation\" output — scheduled job, not the user.]", timestamp=failed_at)
+    G.add_message("gtd_failed", "assistant",
+                  "Provider authentication failed: the gateway's API key was rejected (401).",
+                  timestamp=failed_at + 30, display_kind="failed_turn")
+    # The failed turn is what the person hasn't seen: an unread count makes the app read the rows
+    # and mark the row Failed.
+    G.SESSIONS["gtd_failed"]["_last_read_at"] = failed_at
     for k, (sid, title) in enumerate([("gtd_deploy", "Deploy hk3 nginx"), ("gtd_review", "Review my recent work"),
                                       ("gtd_migrate", "Migrate the board to Swift 6")]):
         started = now - (k + 1) * 30 * 60

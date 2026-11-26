@@ -186,35 +186,33 @@ code field. The Mac reads the pasteboard when asked.
 - Chat toolbar: the centred model picker (a Bot Chat shows the Bot's title instead) and a
   trailing New Chat (a Bot Chat has Routines and a … menu). iPad and Mac add the Inspector button
   ([inspector.md](inspector.md)). Leading is the system's: the back button of a pushed chat on
-  iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there,
-  except the gateway menu on iPhone's chat list.
-- iPhone's chat list leads its top bar with the gateway menu (`server.rack`), which shows at rest
-  and keeps its size at the largest text sizes; its items are the iPad and Mac header's. A large
-  title opens no menu until it collapses, so the title menu is only the second way in. VoiceOver
-  reads it as "Gateway, <name>" with the hint "Switches gateways, or adds or pairs one." Its touch
-  target is the system toolbar's, the same as the Settings gear's, not a frame of its own.
-- iPhone's chat list says how the connection is doing (`ConnectionStatus.line`, "Connected ·
-  Hermes 0.9.2") in the subtitle under the large title. The system draws that subtitle on one
-  line, so at the accessibility text sizes (AX1 to AX5) it stopped mid-word. From AX1 up the
-  subtitle stays empty and the status is the list's first row instead (`navStatusRow`, frames in
-  `screens/iphone/navigation-ax5.elyx` and `navigation-ax3.elyx`): `ConnectionStatusLabel`, the
-  dot and the whole line wrapping between words, above the Chats / Bots switch, or above Tasks
-  on a gateway without Bot Mode. The row hides while a search has text in it, as the switch and
-  the Tasks and Skills rows do. It isn't a button, and VoiceOver reads it as one element, the
-  whole line. `ConnectionStatusPlacement` (HermesKit) makes the choice. At those sizes the label
-  sets its dot at 11 pt (every other status dot is 7 pt) beside the first line, not the middle
-  of the block, 10 pt from the words; the iPad sidebar footer draws the same label the same way
-  (`screens/ipad/navigation-ax5.elyx`). Below AX1 nothing changes, so the Mac's footer looks as
-  before. A shorter line at those sizes lost: it dropped the version or the reason
-  where reading is hardest and needed a second place for the rest.
+  iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there.
+- iPhone's Chat tab carries its own header instead of a large title (`IOSChatList.header`):
+  "Hermes" in 28 pt bold, the connection dot and the gateway's name beside it, and a round search
+  button trailing. The name is one line and truncates; the old gateway menu (`server.rack`) is
+  gone from the compact iPhone. Settings → Hermes Gateways adds and edits gateways, but this
+  layout has no entry for switching the active gateway or for Pair a Device yet (DELIVERY);
+  VoiceOver reads the dot and the name as one element, the whole status line
+  (`ConnectionStatus.line`). Under it sit the two filter pills, Profile and Sources.
+- The iPad sidebar footer (`ConnectionStatusLabel`, at the accessibility sizes the whole line
+  wraps: `screens/ipad/navigation-ax5.elyx`) and the Mac source list footer keep their connection
+  line unchanged. `ConnectionStatusPlacement` and the `navStatusRow` frames belonged to the old
+  iPhone sidebar and no longer render at a compact width.
 - Not built yet: the toolbar shrinking while scrolling (frame `chatReplyMinimized`).
-- One `NavigationSplitView` (`MainView` in `RootView`; balanced, sidebar 240–380 pt, ideally 290)
-  on every platform. The sidebar floats as inset glass by default on the current SDK. iPad in
+- iPad and Mac show one `NavigationSplitView` (`MainView` in `RootView`; balanced, sidebar
+  240–380 pt, ideally 290). The sidebar floats as inset glass by default on the current SDK. iPad in
   portrait, or a window under 700 pt, hides the sidebar so the detail runs full width: the
   system's sidebar button brings it back beside the detail, and picking something puts it away.
-  The Inspector beside a chat and the Board hide it the same way. In a compact width (iPhone,
-  narrow iPad windows) it collapses to a stack: the chat list is the root and what is picked
-  pushes over it (`preferredCompactColumn`, driven by `CompactNavigation` in HermesKit).
+  The Inspector beside a chat and the Board hide it the same way. A narrow iPad window still
+  collapses to a stack (`preferredCompactColumn`, driven by `CompactNavigation` in HermesKit).
+- iPhone at a compact width shows `IOSMainView` instead: Chat, Bot and Settings tabs over a
+  floating glass capsule, a round compose button beside it, and the picked chat, Bot chat or group
+  pushed in a `NavigationStack` with the bar hidden (`docs/inbox.md` §10). Settings keeps its own
+  stack. The tab bar's Chat tab carries the chat list's header — "Hermes", the connection dot and
+  the gateway's name, the search button, and the Profile and Sources filters — so the root list's
+  old gateway menu, connection subtitle, Chats/Bots switch and Tasks and Skills rows do not appear
+  there. The selection stays in `BotWorkspace`: a notification, a search result or a link pushes
+  the same screen the split view would show.
 - Detail-page actions float in a bottom bar (Task detail: Run Now, Pause) attached with
   `safeAreaBar(edge: .bottom)`.
 - Mac Settings: a page pushed inside a Settings tab (Setup's feature pages, Hermes's voice, a
@@ -233,36 +231,39 @@ code field. The Mac reads the pasteboard when asked.
 
 ### Navigation map
 
-One `NavigationSplitView` serves every platform: on iPhone it collapses to a stack whose root is
-the chat list and whose chats are pushed; on iPad it is a sidebar and a detail with the system
-sidebar toggle; on the Mac it is a source list, a unified toolbar, menus and shortcuts. The design
-frames are `navigation.elyx` in `screens/iphone`, `screens/ipad` and `screens/mac`; the drawer
-frames (`drawer`, `drawerBots`…) stay in the design project only as a record, each captioned with
-its new home. The iPhone used to show the list as a drawer that slid over the chat; the last
-column says where each item lives in the code now.
+iPad and Mac use one `NavigationSplitView`: on iPad a sidebar and a detail with the system sidebar
+toggle; on the Mac a source list, a unified toolbar, menus and shortcuts. iPhone uses the tab
+layout (`IOSMainView`, `docs/inbox.md` §10): its Chat tab is the root list and what it picks
+pushes over it. The table's iPhone column below describes the split view's collapsed stack, which
+the tab layout replaces; its Chat tab keeps the root list's rows and states, and its Settings tab
+keeps the settings pages. The design frames are `navigation.elyx` in `screens/iphone`,
+`screens/ipad` and `screens/mac`; the drawer frames (`drawer`, `drawerBots`…) stay in the design
+project only as a record, each captioned with its new home. The iPhone used to show the list as a
+drawer that slid over the chat; the last column says where each item lives in the code now.
 
-"Root" below is the iPhone root list; "toolbar" on the Mac is the window's unified toolbar.
+"Root" below is the split view's compact root list, and for iPhone the Chat tab; "toolbar" on the
+Mac is the window's unified toolbar.
 
 | Item | iPhone | iPad | Mac | Design | Code |
 |---|---|---|---|---|---|
 | Open the chat list | The system back button of a pushed chat, and swipe back | The system sidebar toggle | The system toggle in the source list's titlebar, ⌃⌘S | `backButton`; `ipadNavSplit` bar; `macNavWindow` tools | `MainView` (`RootView`); `SidebarCommands` (`HermesApp`) |
 | Unread count outside the list | On the back button | No badge on the system toggle (as in Mail): the Chats / Bots switch and rows in the sidebar, and the app icon badge | Dock badge (unchanged) | `backButton`, `ipadNavPortrait` | `BackButtonCount` (`SidebarView`), from `UnreadStore.unreadElsewhere` |
-| New Chat | Trailing in the root's bottom toolbar, and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `SidebarView.compose`; `ChatScreen.sessionToolbar`; `HermesCommands` |
-| New Bot, New Group Chat | The compose pull-down in the Bots root's bottom toolbar | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `SidebarView.compose`, `SidebarView.navigationRows`; `HermesCommands` |
+| New Chat | The round button beside the tab bar, and trailing in the pushed chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar, ⌘N, File menu | `rootBottomBar`, `chatToolbarPushed`, `ipadNavSplit` actions, `macNavWindow` actions | `IOSTabBar.compose`; `ChatScreen.sessionToolbar`; `HermesCommands` |
+| New Bot, New Group Chat | The round button's menu on the Bot tab | Rows in Bots mode | Rows in Bots mode, ⇧⌘N, File menu | `rootBottomBarBots`, `macSidebarBots` | `IOSTabBar.compose`; `SidebarView.navigationRows`; `HermesCommands` |
 | Model picker (a Bot Chat shows its title) | Centered in the pushed chat's toolbar | Centered in the detail toolbar | Centered in the toolbar | `chatToolbarPushed`, `botToolbarPushed` | `ChatScreen.sessionToolbar`, `BotChatViews` |
 | Routines, … menu (Bot Chat) | Trailing in the pushed Bot Chat's toolbar | Trailing in the detail toolbar | Trailing in the toolbar; Routines ⌥⌘R | `botToolbarPushed` | `BotChatViews` |
 | Inspector | Not on iPhone | Detail toolbar, before New Chat | Toolbar, before New Chat; Chat menu | `ipadNavSplit` actions, `macNavWindow` actions | `ChatScreen.inspectorToolbarItem` |
-| Chats / Bots switch and counts | The switch as the root's first row, under the large title | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
-| Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The root's large title names the gateway; a `server.rack` menu leads the root's top bar, and the collapsed title opens the same menu | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `GatewayToolbarMenu`, `CompactListChrome` and `GatewayMenuContent` (`SidebarView`); `BotSwitcher` |
-| Connection status | The subtitle under the large title; from AX1 up the root's first row, above the Chats / Bots switch | The sidebar footer | The source list footer | `navChats`; `navStatusRow`, `navChatsAx` | `CompactListChrome`, `SidebarView.rowContent` (`ConnectionStatusLabel`, `ConnectionStatusPlacement`); `SidebarFooter` |
-| Settings | Gear trailing in the root's top bar | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `SidebarView.toolbar`; `SidebarFooter` |
+| Chats / Bots switch and counts | The Chat and Bot tabs | Top of the sidebar | Top of the source list; ⌘1, ⌘2, View menu | `navChats`, `navBots`, `Toggles.modeSwitch` | `IOSTabBar`; `SidebarModeSwitcher` (`SidebarView.rowContent`, `SidebarView.header`) |
+| Gateway name, switcher, Add Gateway, Pair a Device, Edit Gateways | The Chat tab's header names the gateway; Add Gateway and Edit Gateways live in Settings → Hermes Gateways. Switching and Pair a Device have no entry in this layout (DELIVERY) | The sidebar header | The source list header; ⌃⌘1-9 | `navChats` header | `IOSChatList.header`; `GatewayMenuContent` (`SidebarView`), `SettingsList`; `BotSwitcher` |
+| Connection status | The dot and the gateway's name beside the Chat tab's title | The sidebar footer | The source list footer | `navChats` | `IOSChatList.header` (`ConnectionStatus`); `SidebarFooter` |
+| Settings | The Settings tab | Gear in the sidebar footer | The app menu, ⌘,; the gear in the source list footer | `rootHeader` | `IOSTabBar`; `SettingsView`; `SidebarFooter` |
 | Default list (this fork: the inbox) | Pinned, then Main (idle, finished, failed, waiting on you, returned to the top), then Working while something runs, then Settled folded with its count (`docs/inbox.md` §2a) | The same | The same | `navChats`, `macNavWindow` (adapted to t3code's sidebar, no design frame) | `InboxSections`, `BotWorkspace.inboxSections`; `SidebarView.sessionSections`, `InboxRegionHeader` |
 | Sources (This App, Telegram, Discord, Terminal, Editor, Scheduled, Other Platforms), Hide Empty Chats | The filter menu; Scheduled off and empty chats hidden by default; a narrowed list fills the button and shows "Filtered: …  ✕" at the top | The sidebar's filter button | The titlebar filter, View ▸ Filter | `inboxFilterMenu`, `macNavMenuView` submenu (adapted) | `InboxScope`, `InboxFilterMenuContent`, `InboxFilterButton`, `FilteredLine`; `CaughtUpState(sources:)` |
 | Unread, Needs You (narrow Main only) | In the filter menu, with counts | The filter menu | The filter menu and View ▸ Filter | `inboxFilterMenu`, `rootBottomBarFiltered` | `InboxScope.narrowsIn`, `InboxFilterMenuContent`; `CaughtUpState(scope:)` |
 | Mark All as Read | Last item of the filter menu, and at the end of the Unread list | The same | The same, and View ▸ Filter | `inboxFilterMenu` | `InboxFilterMenuContent`; `SidebarView.sessionSections` |
-| Search chats | `.searchable` in the root's bottom toolbar; the regions give way to flat results with filter chips (All, Chats, Bots, Tasks); settled results are a shade quieter and say Settled | The sidebar's search field, the same chips | The source list's field, ⌥⌘F, the same chips | `navSearch`, `macSearch` | `CompactListChrome`, `SidebarView.toolbar`; `SearchField`; `SearchResultsSection`, `SearchChips`, `SearchPlaceLine` |
+| Search chats | The round button on the Chat tab opens a search page with the sidebar's chips (All, Chats, Bots, Tasks); picking a result opens it and closes the page | The sidebar's search field, the same chips | The source list's field, ⌥⌘F, the same chips | `navSearch`, `macSearch` | `IOSChatList.header`, `IOSSearchPage`; `SearchField`; `SearchResultsSection`, `SearchChips`, `SearchPlaceLine` |
 | Quick Open | ⌘K with a hardware keyboard only | ⌘K | ⌘K palette, File menu | `macSearch` | `HermesCommands` (unchanged) |
-| Tasks, Skills | Rows at the top of the root; push | Sidebar rows | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` | `SidebarView.navigationRows` |
+| Tasks, Skills | Settings → Hermes on <bot>, after Apps and Tools; push | Sidebar rows, and the same Settings rows | Source list rows; ⇧⌘1, ⇧⌘2, View menu | `navChats` | `SettingsPageRow` (`SettingsView`); `SidebarView.navigationRows` |
 | Projects, Board | Removed in this fork (`docs/projects.md`) | Removed | Removed | – | – |
 | Bots roster, groups, All Bots | The Bots root: All Bots pushes the grid, then the roster | Sidebar rows | Source list rows | `navBots`, `macSidebarBots` | `BotRosterSections` |
 | Pinned chats | Pinned at the top of the inbox; a pinned chat that runs moves to Working with its pin | The same | The same | `navChats` | `InboxSections.partition` |
@@ -293,8 +294,8 @@ Hard to place:
 - **The unread count on iPad with the sidebar hidden:** the system sidebar toggle has no badge,
   and the direction rules out a custom toggle. As in Mail and Notes, the toggle stays plain; the
   count shows in the sidebar it opens (the Chats / Bots switch and the rows) and on the app icon.
-- **New Chat in a pushed iPhone chat:** the root's bottom toolbar has it, as in Mail and Messages.
-  It stays trailing in the chat's toolbar too, so a new chat is one tap from a chat.
+- **New Chat in a pushed iPhone chat:** the tab bar is hidden there, so the round button is not
+  reachable; New Chat stays trailing in the chat's toolbar, so it is one tap from a chat.
 - **Plugin suggestions:** they stay in Get Started and Settings; the list has no room for them.
 - **Routines and … in a Bot Chat** stay in its toolbar on the Mac too, not in a menu only.
 
@@ -389,7 +390,7 @@ it selected on iPhone).
 
 - Sidebar rows in Bots mode, in order: All Bots, New Bot (⇧⌘N), New Group Chat (when the gateway
   has group chats), Tasks (⇧⌘1), Skills (⇧⌘2), then the roster. On iPhone New Bot and New Group
-  Chat are in the compose pull-down of the root's bottom toolbar instead.
+  Chat are in the round button's menu on the Bot tab instead.
 - All Bots is a selection, not an action: it's highlighted while the grid shows, and no roster row is
   highlighted then.
 - In the code it's the empty selection: `BotWorkspace.selection` is a `SidebarItem?` (`.session`,

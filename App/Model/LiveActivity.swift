@@ -38,6 +38,10 @@ final class LiveActivity {
     /// §2a). Unlike `lines` it changes only when a chat starts, stops or starts waiting, never
     /// with each streamed word, so the list isn't rebuilt while a reply streams.
     private(set) var inbox = InboxActivity()
+    /// When this launch first saw each running chat run, for a row's duration. A fallback: a chat
+    /// the app is attached to has the turn's real start, and a session carries the prompt's time
+    /// in `lastActive`. Read beside a row's own line, so it isn't observed itself.
+    @ObservationIgnored private var runningSince: [String: Date] = [:]
     /// What each chat was doing at the last change, for the inbox's return times.
     @ObservationIgnored private var phases: [String: InboxReturns.Phase] = [:]
     /// Bots whose reply just landed: their face is happy for 2 s (`docs/bot-faces.md` §9).
@@ -86,9 +90,17 @@ final class LiveActivity {
             live: Set(next.filter { $0.value != .failed }.keys),
             needsYou: Set(next.filter { $0.value == .needsYou }.keys)
         )
-        if activity != inbox { inbox = activity }
+        if activity != inbox {
+            let now = Date()
+            runningSince = runningSince.filter { activity.live.contains($0.key) }
+            for key in activity.live where runningSince[key] == nil { runningSince[key] = now }
+            inbox = activity
+        }
         workspace?.noteActivity(next)
     }
+
+    /// When this launch first saw `key` running, while it still runs.
+    func runningStart(for key: String) -> Date? { runningSince[key] }
 
     // MARK: Reading
 
