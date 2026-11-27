@@ -551,6 +551,7 @@ final class MonitoringRequestsModel {
     // MARK: - Changes
 
     func apply() {
+        freezesNextPage = false
         page = 1
         notice = nil
         freezeIfNeeded()
@@ -578,6 +579,7 @@ final class MonitoringRequestsModel {
     }
 
     func clearFilters() {
+        freezesNextPage = false
         searchText = ""
         appliedSearch = ""
         status = .all
