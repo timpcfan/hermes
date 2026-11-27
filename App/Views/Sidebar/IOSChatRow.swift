@@ -19,10 +19,15 @@ struct IOSChatRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
 
+    /// The width a pinned row's pin takes on both lines, so a pinned chat's title and its face
+    /// start at the same x (`docs/inbox.md` §10).
+    private static let pinWidth: CGFloat = 10
+
     var body: some View {
         let row = ChatRowReading(session: session, workspace: workspace)
         VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                pinSlot
                 title(row)
                 Spacer(minLength: 0)
                 ChatRowStatusBadge(state: row.state, startedAt: row.startedAt)
@@ -41,30 +46,44 @@ struct IOSChatRow: View {
         .accessibilityLabel(row.spoken)
     }
 
-    private func title(_ row: ChatRowReading) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            if session.pinned {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.warning)
-                    .accessibilityHidden(true)
-            }
-            Text(session.displayTitle)
-                // The Bots tab's title size (`InboxMetrics.unreadTitleFont`), up to two lines: a
-                // long title wraps instead of pushing the status on the right out of its corner.
-                .font(InboxMetrics.unreadTitleFont)
-                .fixedSize(horizontal: false, vertical: true)
-                // Running fades the title, as the design draws it: the status on the right is the
-                // thing to read while Hermes works.
-                .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
-                .lineLimit(2)
+    /// The pin, in a slot of its own on line one. Line two leaves the same slot empty
+    /// (`pinGutter`), which is what keeps a pinned chat's two lines flush (`pinWidth`).
+    @ViewBuilder private var pinSlot: some View {
+        if session.pinned {
+            Image(systemName: "pin.fill")
+                .font(.caption2)
+                .foregroundStyle(Theme.warning)
+                .frame(width: Self.pinWidth)
+                .accessibilityHidden(true)
         }
+    }
+
+    /// Line two's half of a pinned row's pin slot: as wide as the pin, and invisible.
+    @ViewBuilder private var pinGutter: some View {
+        if session.pinned {
+            Color.clear
+                .frame(width: Self.pinWidth, height: 1)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func title(_ row: ChatRowReading) -> some View {
+        Text(session.displayTitle)
+            // The Bots tab's title size (`InboxMetrics.unreadTitleFont`), up to two lines: a
+            // long title wraps instead of pushing the status on the right out of its corner.
+            .font(InboxMetrics.unreadTitleFont)
+            .fixedSize(horizontal: false, vertical: true)
+            // Running fades the title, as the design draws it: the status on the right is the
+            // thing to read while Hermes works.
+            .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
+            .lineLimit(2)
     }
 
     /// Line two: the profile's face at a thumbnail's size, then its name, then the model flush
     /// right (`docs/inbox.md` §10). The source's glyph isn't drawn — the profile takes its place.
     private func subtitleLine(_ row: ChatRowReading) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 8) {
+            pinGutter
             ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: false,
                               size: InboxMetrics.rowFaceSize)
             Text(row.profile)
