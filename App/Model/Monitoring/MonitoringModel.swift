@@ -336,7 +336,7 @@ final class MonitoringModel {
         }
         #endif
         let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        try store.save(settings, token: normalized.isEmpty ? nil : normalized)
+        try store.save(settings, token: settings.auth == .bearer && !normalized.isEmpty ? normalized : nil)
         invalidateConnection()
         self.settings = Self.debugAdjusted(try store.load())
         usesDebugConnection = Self.debugOverride != nil
