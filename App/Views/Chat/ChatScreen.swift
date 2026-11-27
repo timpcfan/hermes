@@ -23,6 +23,9 @@ struct ChatScreen: View {
     // same however high the composer sits, so the lift never feeds back into itself.
     @State private var contentHeight: CGFloat = 0
     @State private var barHeight: CGFloat = 0
+    #if os(macOS)
+    @State private var titleBarHeight: CGFloat = 52
+    #endif
     @State private var composerHeight: CGFloat = 0
     @State private var chipsHeight: CGFloat = 0
     @State private var lift: CGFloat = 0
@@ -104,6 +107,15 @@ struct ChatScreen: View {
             // the toolbar and composer); the chat's own content starts fresh for each one.
             content
                 .id(ObjectIdentifier(conversation))
+            #if os(macOS)
+            // The Mac's title bar is a bar of its own, as the iPhone's is: messages scrolled up
+            // under it are blurred out and the title stays clear (`docs/chat.md` §4). The system's
+            // scroll edge effect doesn't reach this window's chat, so it's drawn here: above the
+            // messages, below the banners and the find bar.
+            MacTitleBarBacking(height: titleBarHeight)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(edges: .top)
+            #endif
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0; refitLift() }
         .safeAreaBar(edge: .bottom) {
@@ -131,6 +143,8 @@ struct ChatScreen: View {
         #if os(macOS)
         .toolbar { toolbar }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        // How tall the title bar is, for the backing drawn under it (`MacTitleBarBacking`).
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { titleBarHeight = $0 }
         #endif
         .overlay(alignment: .topTrailing) {
             #if os(iOS)
@@ -760,6 +774,39 @@ struct ChatScreen: View {
         }
     }
 }
+
+#if os(macOS)
+/// The Mac's title bar over the chat: the canvas over a blur, solid behind the title and fading
+/// out just below the bar, so a message scrolled up under it is softened out of the way instead of
+/// crossing the title (`docs/chat.md` §4). Nothing in it takes a click.
+private struct MacTitleBarBacking: View {
+    let height: CGFloat
+
+    /// How far below the bar the backing fades out.
+    static let fade: CGFloat = 14
+
+    var body: some View {
+        let total = height + Self.fade
+        let solid = height / total
+        let mask = LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: solid),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top, endPoint: .bottom
+        )
+        ZStack {
+            Rectangle().fill(.regularMaterial)
+            Theme.canvas.opacity(0.94)
+        }
+        .mask(mask)
+        .frame(height: total)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+#endif
 
 /// Sent, finished and needs-you taps. Changes within one chat count, not a switch to another chat
 /// with other counts (the screen stays as chats change).
