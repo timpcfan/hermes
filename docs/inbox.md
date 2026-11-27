@@ -116,22 +116,28 @@ right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
 ## 2. The rows
 
 A chat's row has one shape: `SidebarChatRow` in the split view's sidebar (iPad and the Mac) and
-`IOSChatRow` in the iPhone's Chat tab (§10). Both read the same `ChatRowReading`, so the title, the
-line under it and the state can't say different things; only the sizes differ. The sidebar's are the
-iPhone's at a sidebar's size: a 32 pt face, a 15 pt semibold title and a 13 pt detail line, in a row
-at least 64 pt tall (`SidebarMetrics.chatFaceSize`, `chatTitleFont`…), so a 240 pt-wide sidebar still
-holds a two-line title. The iPad's type grows with Dynamic Type; the Mac's stays at 15/13 pt.
+`IOSChatRow` in the iPhone's Chat tab (§10). Both read the same `ChatRowReading`, so the profile, the
+title and the state can't say different things; the sizes differ. The sidebar's row has three lines
+(`SidebarMetrics`):
+
+1. the face at 20 pt beside the profile's name, in 13 pt, with the state at the line's end;
+2. the title, 15 pt semibold, up to two lines;
+3. the source's glyph and name at 13 pt, with the model flush right.
+
+The iPad's type grows with Dynamic Type; the Mac's stays at those sizes. A 240 pt-wide sidebar holds
+all three lines without the face taking a column of its own; only a long model name is cut.
 
 - The face (`ChatProfileAvatar`): the profile's Bot photo or drawn face when it has one, otherwise
   its first letter on the name's stable colour; the unread dot sits on its corner.
+- The profile's name: 13 pt, secondary, one line; beside a long state ("Needs you") it gives up a
+  little size rather than its last letters.
 - The title and the pin, one or two lines: a long title wraps and the row grows, while the state
   keeps its top corner. A running chat's title is secondary text.
-- The detail line: the source's glyph, then source · profile · project (`ChatRowSubtitle`; the
-  project is `git_repo_root`'s folder name, absent outside a repository), one line cut at the tail.
-  When Hermes serves a model for the chat, its name closes the line flush right in tertiary text
-  (`ChatRowSubtitle.modelLine`); the provider prefix goes, a long model name is cut, the reasoning
-  level is not shown, and without a model the line ends at the profile. A narrow row cuts the
-  profile before the model.
+- Line three's left: the source's glyph, then just the source — "app", "terminal", "telegram"
+  (`ChatRowSubtitle.platformName`); it's short enough to never truncate. Hermes' model closes the
+  line flush right in tertiary text (`ChatRowSubtitle.modelLine`); the provider prefix goes, a long
+  model name is cut at the tail, the reasoning level is not shown, and without a model the line ends
+  at the source. The project (`git_repo_root`'s folder name) has no line of its own in the sidebar.
 - The state (`ChatRowState`, §10's trailing state): a dashed green ring and the running time, an
   orange mark and Needs you, or a red mark, Failed and the reason in red on its own line; an unread
   chat that finished is a green check and Done, a read one how long ago it ended.

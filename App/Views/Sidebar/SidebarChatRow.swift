@@ -36,6 +36,10 @@ struct SidebarChatRow: View {
                     .font(SidebarMetrics.chatDetailFont.weight(.medium))
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
+                    // A short name ("default") stays whole beside a long state ("Needs you") by
+                    // giving up a little size rather than its last letters (`docs/inbox.md` §2).
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
                 Spacer(minLength: 6)
                 ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
                                    font: SidebarMetrics.chatDetailFont.weight(.semibold))
@@ -50,8 +54,9 @@ struct SidebarChatRow: View {
                 Text(SidebarChatRow.sourceText(session))
                     .font(SidebarMetrics.chatDetailFont)
                     .foregroundStyle(Theme.tertiaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    // A source word is short ("app", "terminal"): it never gives up letters, the
+                    // long model name beside it truncates first (`docs/inbox.md` §2).
+                    .fixedSize(horizontal: true, vertical: false)
                 // The model closes the line, flush right (`docs/inbox.md` §2).
                 if let modelLine = row.modelLine {
                     Spacer(minLength: 8)
@@ -60,7 +65,6 @@ struct SidebarChatRow: View {
                         .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .layoutPriority(1)
                         .accessibilityHidden(true)
                 }
             }
