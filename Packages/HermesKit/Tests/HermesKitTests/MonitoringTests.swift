@@ -296,6 +296,26 @@ struct MonitoringSettingsTests {
         #expect(try MonitoringConnection(settings: settings, token: "secret").token == nil)
     }
 
+    @Test func savedPollingPreferenceSurvivesTheStagedTokenEnvelope() throws {
+        let fixture = try SettingsFixture()
+        defer { fixture.cleanUp() }
+        var settings = MonitoringSettings.initial
+        settings.enabled = true
+        settings.baseURL = "https://monitor.example.com"
+        settings.auth = .bearer
+        settings.liveUpdates = false
+        try fixture.store.save(settings, token: "fixture-monitor-token")
+        #expect(try fixture.store.load() == settings)
+        #expect(try fixture.store.storedToken() == "fixture-monitor-token")
+        let data = try Data(contentsOf: fixture.store.fileURL)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["liveUpdates"] as? Bool == false)
+        #expect((object["credentialAccount"] as? String)?.hasPrefix("monitoring-credential-") == true)
+        #expect(!String(decoding: data, as: UTF8.self).contains("fixture-monitor-token"))
+        let legacy = Data(#"{"enabled":false,"name":"Legacy","baseURL":"","auth":"none"}"#.utf8)
+        #expect(try JSONDecoder().decode(MonitoringSettings.self, from: legacy).liveUpdates)
+    }
+
     @Test func savesAndLoadsWithoutTheTokenInTheFile() throws {
         let fixture = try SettingsFixture()
         defer { fixture.cleanUp() }
