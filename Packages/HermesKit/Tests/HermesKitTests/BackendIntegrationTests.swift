@@ -89,7 +89,9 @@ struct BackendIntegrationTests {
             }
             if !answer.isEmpty { break }
         }
-        #expect(answer.contains("approved: `once`"))
+        // The gateway path's approved answer (the mock's `chats.py`), which runs the tool and
+        // reports the build; the approval request and the response are the contract.
+        #expect(answer.contains("succeeded in 41.2 s"))
     }
 
     /// A model picked after another client closed the chat's session runs the very next message:
@@ -196,6 +198,32 @@ struct BackendIntegrationTests {
         #expect(try await client.readMark(storedSessionID: chat.resolvedID, profile: bot.name) == .markedUnread)
         try await client.markRead(storedSessionID: chat.resolvedID, profile: bot.name)
         #expect(try await client.readMark(storedSessionID: chat.resolvedID, profile: bot.name).readUntil != nil)
+    }
+
+    /// A sidebar delete, the app's path (`BotWorkspace.delete`): fenced by default, plain on the
+    /// mock's `--plain-edits` (Hermes without fences, 2026-10-16) — and the chat is gone either way.
+    @Test func sessionDeletesAndIsGone() async throws {
+        let (client, socket) = try await connect()
+        defer { Task { await socket.close() } }
+        let created = try await socket.request("session.create", ["title": .string("delete me")])
+        let stored = try #require(created["stored_session_id"]?.stringValue)
+        try await client.deleteSession(storedSessionID: stored, profile: "default")
+        // The row is gone: its detail refuses, and the next list doesn't carry it.
+        do {
+            _ = try await client.readMark(storedSessionID: stored, profile: "default")
+            Issue.record("the session still answers after the delete")
+        } catch let failure as BackendClient.Failure {
+            if case .http(404, _) = failure {
+                // The detail refusing is the delete taking hold; any other answer is not.
+            } else {
+                Issue.record("the detail answered \(failure) after the delete")
+            }
+        } catch {
+            Issue.record("the detail answered \(error) after the delete")
+        }
+        let listed = try await socket.request("session.list", ["profile": .string("default"), "include_hidden": .bool(true), "limit": .number(200)])
+        let ids: [String] = if case .array(let rows)? = listed["sessions"] { rows.compactMap { $0["id"]?.stringValue } } else { [] }
+        #expect(!ids.contains(stored))
     }
 
     @Test func badTokenIsRejected() async throws {
