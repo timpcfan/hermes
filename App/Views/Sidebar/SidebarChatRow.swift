@@ -1,85 +1,95 @@
 import HermesKit
 import SwiftUI
 
-/// A chat in the split view's sidebar, on iPad and the Mac: the iPhone's row (`IOSChatRow`) at a
-/// sidebar's size (`docs/inbox.md` §2). The profile's face with the unread dot on its corner, the
-/// pin and a title that wraps to two lines, where the chat came from with the model it ran with at
-/// the line's end, and what it is doing in the top corner.
+/// A chat in the split view's sidebar, on iPad and the Mac: three lines (`docs/inbox.md` §2).
 ///
-/// No last-message preview: the sidebar's rows are about which chat and what state, and the
-/// person reads the conversation itself (`docs/inbox.md` §2). The words and the state come from the
-/// shared `ChatRowReading`, so the two lists can't say different things.
+/// ```
+/// [•] default                                    2h
+///     Fix the RSS feed dates
+///     app                                  qwen4-max
+/// ```
+///
+/// Line one is whose chat it is — the profile's face at thumbnail size and its name — with the
+/// state in the corner. Line two is the title, which wraps to two lines. Line three is where the
+/// chat came from, with the model that ran it at the line's end. No last-message preview: the
+/// sidebar's rows are about which chat and what state.
+///
+/// The words and the state come from the shared `ChatRowReading`, so the two lists can't say
+/// different things.
 struct SidebarChatRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
 
     var body: some View {
         let row = ChatRowReading(session: session, workspace: workspace)
-        HStack(alignment: .top, spacing: 10) {
-            ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: row.isUnread,
-                              size: SidebarMetrics.chatFaceSize)
-            VStack(alignment: .leading, spacing: SidebarMetrics.chatLineSpacing) {
-                HStack(alignment: .top, spacing: 8) {
-                    title(row)
-                    Spacer(minLength: 0)
-                    ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
-                                       font: SidebarMetrics.chatDetailFont.weight(.semibold))
-                        .padding(.top, 1)
+        VStack(alignment: .leading, spacing: SidebarMetrics.chatLineSpacing) {
+            HStack(alignment: .center, spacing: 6) {
+                if session.pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: SidebarMetrics.chatGlyphSize))
+                        .foregroundStyle(Theme.warning)
+                        .accessibilityHidden(true)
                 }
-                subtitleLine(row)
-                if case .failed(let reason) = row.state {
-                    Text(reason)
-                        .font(SidebarMetrics.chatDetailFont)
-                        .foregroundStyle(Theme.danger)
-                        .lineLimit(1)
-                }
+                ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: row.isUnread,
+                                  size: SidebarMetrics.chatFaceSize)
+                Text(row.profile)
+                    .font(SidebarMetrics.chatDetailFont.weight(.medium))
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
+                                   font: SidebarMetrics.chatDetailFont.weight(.semibold))
             }
-        }
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.spoken)
-    }
-
-    private func title(_ row: ChatRowReading) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            if session.pinned {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.warning)
+            title(row)
+                .padding(.top, 1)
+            HStack(spacing: 4) {
+                Image(systemName: InboxSourceGroup(source: session.source).symbol)
+                    .font(.system(size: SidebarMetrics.chatGlyphSize))
+                    .foregroundStyle(Theme.tertiaryText)
                     .accessibilityHidden(true)
-            }
-            Text(session.displayTitle)
-                .font(SidebarMetrics.chatTitleFont)
-                .fixedSize(horizontal: false, vertical: true)
-                // While Hermes works the status in the corner is the thing to read.
-                .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
-                .lineLimit(2)
-        }
-    }
-
-    private func subtitleLine(_ row: ChatRowReading) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: InboxSourceGroup(source: session.source).symbol)
-                .font(.system(size: SidebarMetrics.chatGlyphSize))
-                .foregroundStyle(Theme.tertiaryText)
-                .accessibilityHidden(true)
-            Text(row.subtitle)
-                .font(SidebarMetrics.chatDetailFont)
-                .foregroundStyle(Theme.secondaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            // The model closes the same line, flush right (`docs/inbox.md` §2): the profile gives
-            // way first, so a narrow sidebar keeps the model whole.
-            if let modelLine = row.modelLine {
-                Spacer(minLength: 8)
-                Text(modelLine)
+                Text(SidebarChatRow.sourceText(session))
                     .font(SidebarMetrics.chatDetailFont)
                     .foregroundStyle(Theme.tertiaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(1)
-                    .accessibilityHidden(true)
+                // The model closes the line, flush right (`docs/inbox.md` §2).
+                if let modelLine = row.modelLine {
+                    Spacer(minLength: 8)
+                    Text(modelLine)
+                        .font(SidebarMetrics.chatDetailFont)
+                        .foregroundStyle(Theme.tertiaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.top, 2)
+            if case .failed(let reason) = row.state {
+                Text(reason)
+                    .font(SidebarMetrics.chatDetailFont)
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(1)
+                    .padding(.top, 1)
             }
         }
+        .padding(.vertical, 7)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(row.spoken)
+    }
+
+    /// Line three's left side: where the chat came from — "app", "terminal", "telegram". The
+    /// profile already speaks for itself on line one, so it isn't repeated here.
+    static func sourceText(_ session: HermesSession) -> String {
+        ChatRowSubtitle.platformName(session.source) ?? ""
+    }
+
+    private func title(_ row: ChatRowReading) -> some View {
+        Text(session.displayTitle)
+            .font(SidebarMetrics.chatTitleFont)
+            .fixedSize(horizontal: false, vertical: true)
+            // While Hermes works the status in the corner is the thing to read.
+            .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
+            .lineLimit(2)
     }
 }
