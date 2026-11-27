@@ -122,7 +122,7 @@ title and the state can't say different things; the sizes differ. The sidebar's 
 
 1. the face at 20 pt beside the profile's name, in 13 pt, with the state at the line's end;
 2. the title, 15 pt semibold, up to two lines;
-3. the source's glyph and name at 13 pt, with the model flush right.
+3. the source's glyph and name at 12 pt, with the model flush right.
 
 The iPad's type grows with Dynamic Type; the Mac's stays at those sizes. A 240 pt-wide sidebar holds
 all three lines without the face taking a column of its own; only a long model name is cut.
@@ -135,9 +135,11 @@ all three lines without the face taking a column of its own; only a long model n
   keeps its top corner. A running chat's title is secondary text.
 - Line three's left: the source's glyph, then just the source — "app", "terminal", "telegram"
   (`ChatRowSubtitle.platformName`); it's short enough to never truncate. Hermes' model closes the
-  line flush right in tertiary text (`ChatRowSubtitle.modelLine`); the provider prefix goes, a long
-  model name is cut at the tail, the reasoning level is not shown, and without a model the line ends
-  at the source. The project (`git_repo_root`'s folder name) has no line of its own in the sidebar.
+  line flush right in tertiary text at the same 12 pt (`ChatRowSubtitle.modelLine`); the provider
+  prefix goes, the reasoning level is not shown, and without a model the line ends at the source. At
+  240 pt "app" and "claude-sonnet-4.6" fit whole; behind the longer "terminal" the model name is cut
+  at the tail, so the source word keeps its letters. The project (`git_repo_root`'s folder name) has
+  no line of its own in the sidebar.
 - The state (`ChatRowState`, §10's trailing state): a dashed green ring and the running time, an
   orange mark and Needs you, or a red mark, Failed and the reason in red on its own line; an unread
   chat that finished is a green check and Done, a read one how long ago it ended.

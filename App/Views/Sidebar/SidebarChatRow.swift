@@ -52,16 +52,18 @@ struct SidebarChatRow: View {
                     .foregroundStyle(Theme.tertiaryText)
                     .accessibilityHidden(true)
                 Text(SidebarChatRow.sourceText(session))
-                    .font(SidebarMetrics.chatDetailFont)
+                    .font(SidebarMetrics.chatMetaFont)
                     .foregroundStyle(Theme.tertiaryText)
                     // A source word is short ("app", "terminal"): it never gives up letters, the
                     // long model name beside it truncates first (`docs/inbox.md` §2).
                     .fixedSize(horizontal: true, vertical: false)
-                // The model closes the line, flush right (`docs/inbox.md` §2).
+                // The model closes the line, flush right (`docs/inbox.md` §2). In a 240 pt sidebar a
+                // long id is cut at the tail rather than shrinking: one row at 10.7 pt and the next
+                // at 13 pt reads as a mistake.
                 if let modelLine = row.modelLine {
                     Spacer(minLength: 8)
                     Text(modelLine)
-                        .font(SidebarMetrics.chatDetailFont)
+                        .font(SidebarMetrics.chatMetaFont)
                         .foregroundStyle(Theme.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)

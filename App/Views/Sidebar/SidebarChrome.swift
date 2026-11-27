@@ -43,6 +43,10 @@ enum SidebarMetrics {
     /// lines, and 13 pt detail on two lines of its own (`docs/inbox.md` §2).
     static let chatFaceSize: CGFloat = 20
     static let chatRowHeight: CGFloat = 64
+    /// Line three — the source and the model. 12 pt: a step under the profile's 13 pt, and small
+    /// enough that "app" + "claude-sonnet-4.6" fit a 240 pt sidebar whole. Behind the longer
+    /// "terminal" the model name is cut at the tail, which is the narrowest sidebar's price.
+    static let chatMetaFont: Font = .system(size: 12)
     static let chatGlyphSize: CGFloat = 11
     static let chatLineSpacing: CGFloat = 3
     #if os(macOS)
