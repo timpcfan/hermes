@@ -15,6 +15,9 @@ import UIKit
 final class AppModel {
     private(set) var bots: [BotConfiguration] = []
     private(set) var workspaces: [UUID: BotWorkspace] = [:]
+    /// The app-wide Xunxin link (`docs/monitoring.md`): one monitor service for the whole app,
+    /// independent of every gateway, Bot and window.
+    let monitoring = MonitoringModel()
     /// Which gateway each window shows (`docs/connecting-and-voice.md` §8).
     private(set) var windows = WindowGateways()
     /// The gateway used last: the one app-wide places use (Settings, Talk, the menu bar extra,

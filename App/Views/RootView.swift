@@ -286,6 +286,13 @@ struct RootView: View {
                     .presentationDetents([.large])
                     #endif
             }
+        case .monitoring:
+            MonitoringView(model: app.monitoring, allowsDismiss: true)
+                #if os(macOS)
+                .frame(minWidth: 720, idealWidth: 860, minHeight: 600, idealHeight: 760)
+                #else
+                .presentationSizing(.page)
+                #endif
         }
     }
 
@@ -628,6 +635,8 @@ struct RootView: View {
             router.sheet = .quickOpen
         } else if defaults.string(forKey: "HERMES_OPEN") == "settings" {
             router.sheet = .settings
+        } else if defaults.string(forKey: "HERMES_OPEN") == "stats" {
+            router.sheet = .monitoring
         } else if defaults.string(forKey: "HERMES_OPEN") == "add-gateway" {
             router.sheet = .addGateway
         }

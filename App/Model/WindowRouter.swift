@@ -18,12 +18,15 @@ enum WindowSheet: Identifiable {
     case scanner
     /// ⌘K: jump to a chat, Bot, place or gateway.
     case quickOpen
+    /// Stats, over the window on iPad and Mac.
+    case monitoring
 
     var id: String {
         switch self {
         case .addGateway: "add"
         case .editGateway(let bot): "edit-\(bot.id)"
         case .settings: "settings"
+        case .monitoring: "monitoring"
         case .pairing(let botID): "pairing-\(botID)"
         case .connect(let link, _): "connect-\(link.gateway.absoluteString)"
         case .scanner: "scanner"

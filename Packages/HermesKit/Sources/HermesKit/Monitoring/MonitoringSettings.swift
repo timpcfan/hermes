@@ -9,16 +9,44 @@ public struct MonitoringSettings: Codable, Sendable, Equatable {
     /// assumed (on an iPhone it would point at the phone).
     public var baseURL: String
     public var auth: MonitoringAuthMode
+    /// Live updates when the service speaks SSE. A saved polling-mode connection turns this off;
+    /// an older settings file without the key means live.
+    public var liveUpdates: Bool
 
     public static let initial = MonitoringSettings(
         enabled: false, name: "Xunxin monitor", baseURL: "", auth: .none
     )
 
-    public init(enabled: Bool, name: String, baseURL: String, auth: MonitoringAuthMode) {
+    public init(
+        enabled: Bool, name: String, baseURL: String, auth: MonitoringAuthMode, liveUpdates: Bool = true
+    ) {
         self.enabled = enabled
         self.name = name
         self.baseURL = baseURL
         self.auth = auth
+        self.liveUpdates = liveUpdates
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, name, baseURL, auth, liveUpdates
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        name = try values.decode(String.self, forKey: .name)
+        baseURL = try values.decode(String.self, forKey: .baseURL)
+        auth = try values.decode(MonitoringAuthMode.self, forKey: .auth)
+        liveUpdates = try values.decodeIfPresent(Bool.self, forKey: .liveUpdates) ?? true
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(enabled, forKey: .enabled)
+        try values.encode(name, forKey: .name)
+        try values.encode(baseURL, forKey: .baseURL)
+        try values.encode(auth, forKey: .auth)
+        try values.encode(liveUpdates, forKey: .liveUpdates)
     }
 
     /// A saved name never shows as blank.

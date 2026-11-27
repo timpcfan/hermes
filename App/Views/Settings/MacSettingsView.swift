@@ -8,13 +8,15 @@ import SwiftUI
 /// narrower than all the tabs need (`SettingsTabsFit`); the window follows the selected one.
 struct MacSettingsView: View {
     let updater: Updater
+    @Environment(AppModel.self) private var app
     @State private var tabsFit = SettingsTabsFit(titles: MacSettingsView.tabTitles)
 
     /// The tabs' titles, in order, for `SettingsTabsFit`.
     static var tabTitles: [String] {
         var titles = [
             String(localized: "General"), String(localized: "Gateways"), String(localized: "Setup"),
-            String(localized: "Apps & Tools"), String(localized: "Passwords"), String(localized: "Memory"), String(localized: "Chat"),
+            String(localized: "Apps & Tools"), String(localized: "Passwords"), String(localized: "Memory"),
+            statsString("Monitoring service"), String(localized: "Chat"),
             String(localized: "Voice & Audio"), String(localized: "Developer"),
         ]
         #if HERMES_PUSH
@@ -60,6 +62,12 @@ struct MacSettingsView: View {
                 MacMemoryPane()
                     .frame(width: width(880), height: 600)
             }
+            Tab(statsString("Monitoring service"), systemImage: "chart.bar.xaxis", value: "monitoring") {
+                NavigationStack {
+                    MonitoringSettingsView(model: app.monitoring)
+                }
+                .frame(width: width(Self.paneWidth), height: 620)
+            }
             Tab("Chat", systemImage: "bubble.left", value: "chat") {
                 ChatPane()
                     .frame(width: width(Self.paneWidth))
@@ -68,25 +76,29 @@ struct MacSettingsView: View {
                 MacVoicePane()
                     .frame(width: width(Self.paneWidth), height: 600)
             }
-            Tab("Developer", systemImage: "hammer", value: "developer") {
-                // As tall as its one section (`macSettingsDeveloper`); the gallery it opens in
-                // Debug builds scrolls inside that.
-                NavigationStack {
-                    Form { WidgetDeveloperSection() }
-                        .formStyle(.grouped)
-                        .scrollDisabled(true)
-                        .fixedSize(horizontal: false, vertical: true)
+            // Two tabs in one group: TabView's builder holds ten items, and Monitoring made
+            // eleven.
+            Group {
+                Tab("Developer", systemImage: "hammer", value: "developer") {
+                    // As tall as its one section (`macSettingsDeveloper`); the gallery it opens in
+                    // Debug builds scrolls inside that.
+                    NavigationStack {
+                        Form { WidgetDeveloperSection() }
+                            .formStyle(.grouped)
+                            .scrollDisabled(true)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(width: width(Self.paneWidth))
                 }
-                .frame(width: width(Self.paneWidth))
+                #if HERMES_PUSH
+                Tab("Notifications", systemImage: "bell", value: "notifications") {
+                    // As tall as `macSettingsNotifications` draws it, scrolling when its gateways or
+                    // larger text need more; without a height it kept the previous tab's.
+                    NavigationStack { NotificationSettingsView() }
+                        .frame(width: width(Self.paneWidth), height: 750)
+                }
+                #endif
             }
-            #if HERMES_PUSH
-            Tab("Notifications", systemImage: "bell", value: "notifications") {
-                // As tall as `macSettingsNotifications` draws it, scrolling when its gateways or
-                // larger text need more; without a height it kept the previous tab's.
-                NavigationStack { NotificationSettingsView() }
-                    .frame(width: width(Self.paneWidth), height: 750)
-            }
-            #endif
         }
         .preferredColorScheme(appearance.colorScheme)
         .background(SettingsWindowProbe { tabsFit.check($0) })
@@ -96,6 +108,10 @@ struct MacSettingsView: View {
             if DebugFlags.setup != nil { pane = "setup" }
             if DebugFlags.passwords != nil { pane = "passwords" }
             if DebugFlags.browser != nil { pane = "apps" }
+            #if DEBUG
+            // `-HERMES_MONITOR_SETTINGS YES` opens Monitoring (screenshots).
+            if UserDefaults.standard.bool(forKey: "HERMES_MONITOR_SETTINGS") { pane = "monitoring" }
+            #endif
         }
     }
 }

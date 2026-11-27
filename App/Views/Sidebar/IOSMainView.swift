@@ -2,9 +2,9 @@
 import HermesKit
 import SwiftUI
 
-/// The iPhone's root (BRIEF ios-tab-layout): the system's tab bar with Chats, Bots and Settings,
-/// and the compose button beside it. iPad and Mac keep the split view in `MainView`; this file is
-/// only compiled for iOS and only shown at a compact width.
+/// The iPhone's root (BRIEF ios-tab-layout): the system's tab bar with Chats, Bots, Stats and
+/// Settings, and the compose button beside it. iPad and Mac keep the split view in `MainView`;
+/// this file is only compiled for iOS and only shown at a compact width.
 ///
 /// The tab bar is the system's own, untouched: it shrinks as a list scrolls down and hides under a
 /// pushed screen. A picked chat, Bot chat, group or page pushes over its tab's list with the
@@ -15,6 +15,8 @@ struct IOSMainView: View {
     @Bindable var workspace: BotWorkspace
     /// The window was left on the list (not in a pushed screen), kept with the window.
     var onListChanged: (Bool) -> Void = { _ in }
+
+    @Environment(AppModel.self) private var app
 
     @State private var tab = IOSMainTab.chats
     /// What the bar itself shows. The compose circle is a tab in form only (iOS 27's prominent
@@ -83,6 +85,7 @@ struct IOSMainView: View {
             TabView(selection: $barSelection) {
                 chatsTab
                 botsTab
+                statsTab
                 settingsTab
                 Tab(composeTitle, systemImage: composeSymbol, value: IOSMainTab.compose, role: .prominent) {
                     // Never shown: picking the circle acts instead (`pickingCompose`).
@@ -94,6 +97,7 @@ struct IOSMainView: View {
             TabView(selection: $tab) {
                 chatsTab
                 botsTab
+                statsTab
                 settingsTab
             }
         }
@@ -108,6 +112,19 @@ struct IOSMainView: View {
     private var botsTab: some TabContent<IOSMainTab> {
         Tab("Bots", systemImage: "person.2", value: IOSMainTab.bots) {
             stack(.bots, path: $botPath) { IOSBotList(workspace: workspace) }
+        }
+    }
+
+    /// The bottom tab is `Stats` in every language (USER-SCOPE-3), so its name is a `String`:
+    /// SwiftUI shows that verbatim instead of looking it up in the catalog, while the page inside
+    /// keeps its own localized title (统计).
+    private static let statsTabTitle = "Stats"
+
+    /// Stats is the monitor link, not a gateway's page: it opens with no chat connection and
+    /// never changes which list the sidebar is on.
+    private var statsTab: some TabContent<IOSMainTab> {
+        Tab(Self.statsTabTitle, systemImage: "chart.bar.xaxis", value: IOSMainTab.stats) {
+            MonitoringView(model: app.monitoring)
         }
     }
 
@@ -175,6 +192,8 @@ struct IOSMainView: View {
     /// The compose circle: a new chat on Chats and Settings (which moves to Chats to show it), and
     /// on Bots the popover with New Bot and New Group Chat.
     private func compose() {
+        // Stats has no compose of its own; a new chat is a Chats screen, so go there first.
+        if tab == .stats { tab = .chats }
         // A second tap on the circle closes its panel rather than opening it again: the panel sits
         // over the only thing the person can still tap.
         if isChoosingNew {
@@ -245,7 +264,9 @@ struct IOSMainView: View {
             popToRoot()
             return
         }
-        if tab == .settings {
+        // Neither Settings nor Stats carries a chat screen: a selection they didn't make opens
+        // over the list that does.
+        if tab == .settings || tab == .stats {
             switch workspace.selection {
             case .bot, .group: tab = .bots
             default: tab = .chats
@@ -279,7 +300,7 @@ struct IOSMainView: View {
 /// The tabs, in the order the bar shows them. `compose` is the round button beside the bar from
 /// iOS 27: a tab only in form, so it is never the selection.
 enum IOSMainTab: Hashable {
-    case chats, bots, settings, compose
+    case chats, bots, stats, settings, compose
 }
 
 /// The round button over a list's bottom-right corner, above the tab bar, on iOS 26 (from iOS 27
@@ -330,7 +351,7 @@ struct IOSComposeButton: View {
             .glassButton()
             .disabled(workspace.roster?.isConnected != true)
             .accessibilityIdentifier("tab.compose")
-        case .settings, .compose:
+        case .stats, .settings, .compose:
             EmptyView()
         }
     }

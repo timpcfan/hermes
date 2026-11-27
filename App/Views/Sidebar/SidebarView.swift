@@ -309,14 +309,19 @@ struct SidebarView: View {
             .background(KeptListAnchor())
             #endif
         DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2")
+        // Stats is the app-wide monitor link, not a gateway page: it opens over the window and
+        // leaves the sidebar's selection where it was.
+        SidebarNavRow(title: statsString("Stats"), symbol: "chart.bar.xaxis") {
+            router?.sheet = .monitoring
+        }
     }
 
     /// The rows above the list's own (the mode switcher and navigation rows), so states centre in
     /// the space below them.
     private var navigationHeight: CGFloat {
         let switcher: CGFloat = isCompact && workspace.roster != nil ? 46 : 0
-        guard botRoster == nil else { return switcher + CGFloat(isCompact ? 3 : 4) * SidebarMetrics.rowHeight }
-        return switcher + 2 * SidebarMetrics.rowHeight
+        guard botRoster == nil else { return switcher + CGFloat(isCompact ? 4 : 5) * SidebarMetrics.rowHeight }
+        return switcher + 3 * SidebarMetrics.rowHeight
     }
 
     // MARK: Sessions

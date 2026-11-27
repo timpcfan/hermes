@@ -81,6 +81,12 @@ private struct SettingsList: View {
                 AppearanceSection()
                 ChatSettingsSection()
 
+                // The Xunxin monitor link is the app's own, so it's here even with no gateway
+                // (`docs/monitoring.md` §5).
+                Section(header: Text(statsString("Monitoring service"))) {
+                    MonitoringSettingsRow()
+                }
+
                 // Talk, voice messages, Listen and dictation (`docs/voice.md` §6).
                 Section {
                     VoiceSettingsRow(workspace: app.currentWorkspace)
@@ -144,6 +150,7 @@ private struct SettingsList: View {
 /// A page of iPad Settings, picked in the sidebar.
 private enum SettingsPane: Hashable {
     case setup, apps, skills, tasks, memory, passwords, browser
+    case monitoring
     case general, chat, voice, notifications, developer
 
     /// The page a `-HERMES_*` flag opens (screenshots).
@@ -305,6 +312,12 @@ private struct SettingsSplitView: View {
                 }
             }
 
+            Section(header: Text(statsString("Monitoring service"))) {
+                SettingsRowLabel(symbol: "chart.bar.xaxis", title: statsString("Xunxin link"))
+                    .accessibilityHint(statsString("The monitor service Stats reads"))
+                    .settingsSidebarRow(SettingsPane.monitoring, selection: pane)
+            }
+
             Section {
                 SettingsRowLabel(symbol: "gearshape", title: "General")
                     .settingsSidebarRow(SettingsPane.general, selection: pane)
@@ -367,6 +380,8 @@ private struct SettingsSplitView: View {
                 .formStyle(.grouped)
                 .navigationTitle("Chat")
                 .navigationBarTitleDisplayMode(.inline)
+        case (.monitoring, _):
+            MonitoringSettingsView(model: app.monitoring)
         case (.voice, _):
             VoiceSettingsView(workspace: app.currentWorkspace)
         #if HERMES_PUSH
@@ -490,15 +505,30 @@ private struct TasksSettingsRow: View {
 /// summary ("2 things to set up"). `compact` is the iPad sidebar's smaller summary.
 struct SettingsRowLabel: View {
     let symbol: String
-    let title: LocalizedStringKey
+    let title: Text
     var summary: String?
     var compact = false
+
+    init(symbol: String, title: LocalizedStringKey, summary: String? = nil, compact: Bool = false) {
+        self.symbol = symbol
+        self.title = Text(title)
+        self.summary = summary
+        self.compact = compact
+    }
+
+    /// A title already read from a table (Stats' own copy comes from `Stats`).
+    init(symbol: String, title: String, summary: String? = nil, compact: Bool = false) {
+        self.symbol = symbol
+        self.title = Text(verbatim: title)
+        self.summary = summary
+        self.compact = compact
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             GlyphTile(symbol: symbol, ink: true, size: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundStyle(Theme.primaryText)
+                title.foregroundStyle(Theme.primaryText)
                 if let summary {
                     Text(summary)
                         .font(compact ? .caption2 : .caption)

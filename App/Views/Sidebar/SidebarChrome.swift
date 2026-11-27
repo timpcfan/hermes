@@ -148,11 +148,34 @@ struct SidebarRowDividerModifier: ViewModifier {
 
 /// New Chat, Tasks, Skills; All Bots, New Bot: a glyph and a label.
 struct SidebarNavRow: View {
-    let title: LocalizedStringKey
+    let title: Text
     let symbol: String
     var isSelected = false
     var shortcut: String?
     let action: () -> Void
+
+    init(
+        title: LocalizedStringKey, symbol: String, isSelected: Bool = false,
+        shortcut: String? = nil, action: @escaping () -> Void
+    ) {
+        self.title = Text(title)
+        self.symbol = symbol
+        self.isSelected = isSelected
+        self.shortcut = shortcut
+        self.action = action
+    }
+
+    /// A title already read from a table (Stats' own copy comes from `Stats`).
+    init(
+        title: String, symbol: String, isSelected: Bool = false,
+        shortcut: String? = nil, action: @escaping () -> Void
+    ) {
+        self.title = Text(verbatim: title)
+        self.symbol = symbol
+        self.isSelected = isSelected
+        self.shortcut = shortcut
+        self.action = action
+    }
 
     // The glyph grows with its label on iPhone and iPad, up to 1.6 times, so "New Chat" keeps
     // its one line at the largest sizes.
@@ -171,13 +194,13 @@ struct SidebarNavRow: View {
                     .foregroundStyle(SidebarMetrics.glyphColor)
                     .frame(width: glyphSize, height: glyphSize)
                     .accessibilityHidden(true)
-                Text(title)
+                title
                     .font(SidebarMetrics.navFont)
                     .foregroundStyle(Theme.primaryText)
                 Spacer(minLength: 0)
             }
         }
-        .help(shortcut.map { Text("\(Text(title)) (\($0))") } ?? Text(title))
+        .help(shortcut.map { Text("\(title) (\($0))") } ?? Text("\(title)"))
     }
 }
 
