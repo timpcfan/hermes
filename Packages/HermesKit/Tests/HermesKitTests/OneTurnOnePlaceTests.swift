@@ -282,4 +282,49 @@ struct OneTurnOnePlaceTests {
         let after = SessionMessage(id: 21, role: "assistant", content: .text("Switched."), timestamp: at(-40))
         #expect(assistantTurns(TranscriptBuilder.build([notice, after])).last?.startedAt == at(-40))
     }
+
+    // MARK: A rebuild while the turn runs
+
+    /// A page loaded above rebuilds the chat while the reply streams: the stored part of the
+    /// running turn comes back among the rows under the live turn's own id (`LiveTurn(continuing:)`
+    /// keeps it), and the live row follows. The transcript then drew the turn twice — same id,
+    /// same steps, same "Thinking…" — because a row is drawn live by its id (`TurnRow.isLive`).
+    @Test func aRebuildDuringTheTurnKeepsTheTurnInOnePlace() {
+        let messages = rows(withReply: false)
+        var stored = TranscriptBuilder.build(messages)
+        TranscriptBuilder.markMidTurn(&stored, messages: messages, now: now)
+        let joined = LiveTurn.joining(stored, sessionID: "rt", startedAt: at(-259))
+        // What the rebuild leaves in `items`: the stored rows again, the running turn among them.
+        let rebuilt = TranscriptBuilder.build(messages)
+        var rows = LiveTurn.rows(rebuilt, droppingStoredCopyOf: joined.live.turn.id)
+        rows.append(.assistant(joined.live.turn))
+        let turns = rows.compactMap { if case .assistant(let turn) = $0 { turn } else { nil } }
+        #expect(turns.map(\.id) == ["tm9", "tm11"])
+        #expect(turns.last?.isWorking == true) // the live one, still working
+        #expect(Set(rows.map(\.id)).count == rows.count) // no id drawn twice
+        // A chat opened after it ended has no live turn: its stored copy stays.
+        #expect(LiveTurn.rows(rebuilt, droppingStoredCopyOf: nil) == rebuilt)
+    }
+
+    // MARK: A message that is only pictures
+
+    /// A message that is only pictures has no words, so `InflightTurn.reading` has none to match
+    /// its stored row by. It read as nothing stored, the stored part was settled as done, and a
+    /// second turn started below it with the same reply (`beginRemoteTurn`).
+    @Test func aMessageThatIsOnlyPicturesFindsItsStoredRow() {
+        let inflight = InflightTurn(user: "", startedAt: at(-2))
+        let stored: [TranscriptItem] = [.user(UserEntry(id: "m294143", text: "", imagePlaceholderCount: 1, timestamp: at(-3)))]
+        #expect(inflight.isStored(in: stored))
+        // An older message isn't this turn's.
+        let older: [TranscriptItem] = [.user(UserEntry(id: "m1", text: "", imagePlaceholderCount: 1, timestamp: at(-300)))]
+        #expect(!inflight.isStored(in: older))
+        // A hidden send has no bubble to be found.
+        #expect(!InflightTurn(user: "", displayKind: "hidden", startedAt: at(-2)).isStored(in: stored))
+        // Nothing stored yet.
+        #expect(!inflight.isStored(in: []))
+        // A message with words still matches by them, not by being the last one.
+        let words = InflightTurn(user: "Look at this", startedAt: at(-2))
+        let other: [TranscriptItem] = [.user(UserEntry(id: "m2", text: "Something else", timestamp: at(-3)))]
+        #expect(!words.isStored(in: other))
+    }
 }
