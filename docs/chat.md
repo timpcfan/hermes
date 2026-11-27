@@ -1131,12 +1131,13 @@ Check with the mock: "video links".
   the Mac, Routines is hidden outside a Bot's chat rather than left out. With a
   set for each, a switch between the two rebuilt the window's whole toolbar and laid it out
   again, much of the switch's time on the Mac. The Mac also replaces an item whose views change
-  kind, so there each item keeps one: the title switches between the chat's title and the Bot's
-  title inside one stack, and Routines, ··· and New Chat are always in the toolbar, each hidden
+  kind, so there each item keeps one: the chat's title and the Bot's title are two items, and
+  Routines, ··· and New Chat are always in the toolbar, each item hidden
   where it doesn't belong. The chat's title is its name and, under it, its profile
-  (`ChatHeaderTitle`): bold, one line, truncated at the tail, leading on iPhone and iPad and
-  centred on the Mac; it is not a control. The model and its reasoning are the composer's chip
-  ([composer.md](composer.md) §1).
+  (`ChatHeaderTitle`): bold, one line, truncated at the tail, plain text at the leading edge on
+  every platform, the Mac's beside the sidebar's edge; it is not a control. A Bot's chat keeps
+  its title centred on the Mac. The model and its
+  reasoning are the composer's chip ([composer.md](composer.md) §1).
 - **Haptics** (Settings → Haptics): a light tap when a message is sent, a success tap when a reply
   finishes, and a warning tap when an approval arrives; none per token.
 - **Sizes.** The transcript is at most 760 pt wide (`Theme.readableWidth`), centred on iPad and
@@ -1148,7 +1149,7 @@ Check with the mock: "video links".
     the same 240 pt glass panel with a deeper shadow, its own top row holding the filter and the
     button. It puts away an Inspector over the chat, and that panel puts it away in turn. Picking a
     chat, clicking the chat, Esc or the button puts it away. VoiceOver moves into it as it shows,
-    and the chat's centred title steps aside so no toolbar draws over its glass. Growing the window
+    and the chat's title steps aside so no toolbar draws over its glass. Growing the window
     past 700 pt brings the sidebar back beside the chat, unless the person hid it there.
   - Under 840 pt the Inspector opens over the chat, under the toolbar (`docs/inspector.md` §1).
   - The toolbar keeps what fits (`macNarrowToolbar`): a Bot Chat drops Routines, which stays in

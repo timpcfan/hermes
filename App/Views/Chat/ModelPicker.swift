@@ -24,7 +24,7 @@ struct ChatHeaderTitle: View {
     }
 
     var body: some View {
-        VStack(alignment: stackAlignment, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(Theme.primaryText)
@@ -35,13 +35,17 @@ struct ChatHeaderTitle: View {
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
         }
-        .multilineTextAlignment(textAlignment)
+        .multilineTextAlignment(.leading)
+        // Every platform reads the chat's name from the leading edge, where the chat itself starts.
         #if os(iOS)
-        // iPhone and iPad read the chat's name from the leading edge, where the chat itself starts.
         // The bar sizes its title by the title's ideal width and centres it: asking for more than
         // the bar has makes it give the title all the room between the buttons, so a short name
         // starts at the leading edge too, not only one long enough to fill the bar.
         .frame(idealWidth: Self.greedyWidth, maxWidth: .infinity, alignment: .leading)
+        #else
+        // The Mac's toolbar gives a leading item its ideal width: a long name stops short of the
+        // trailing buttons and is cut at its tail rather than pushed into the » overflow.
+        .frame(maxWidth: Self.macMaxWidth, alignment: .leading)
         #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title), \(profile)"))
@@ -51,23 +55,10 @@ struct ChatHeaderTitle: View {
     #if os(iOS)
     /// Wider than any bar, so the bar clamps the title to the room it has (`body`).
     private static let greedyWidth: CGFloat = 2_000
+    #else
+    /// The widest the Mac's title gets, about the transcript's half.
+    private static let macMaxWidth: CGFloat = 380
     #endif
-
-    private var stackAlignment: HorizontalAlignment {
-        #if os(macOS)
-        .center
-        #else
-        .leading
-        #endif
-    }
-
-    private var textAlignment: TextAlignment {
-        #if os(macOS)
-        .center
-        #else
-        .leading
-        #endif
-    }
 }
 
 /// The composer's model-and-reasoning chip (`docs/composer.md` §1, `docs/sessions-and-models.md`
