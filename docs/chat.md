@@ -1021,7 +1021,9 @@ Check with the mock: "video links".
   edge effect doesn't reach the chat, so the title bar is a bar of its own (`MacTitleBarBacking`):
   the canvas over a blur behind the title, fading out 14 pt below it, so a message scrolled up under
   it is softened out of the way instead of crossing the title. It sits above the messages and below
-  the banners and the find bar, and takes no clicks.
+  the banners and the find bar, and takes no clicks. It's never shorter than the toolbar (52 pt):
+  the measured top inset reads 0 or 2 for a while as a window opens or comes back, and a bar that
+  followed it vanished, the messages crossing the title again.
 - **Loading.** A chat whose messages are on their way shows its shape after a beat (`chatSkeleton`):
   your message as a bubble on the right, replies as lines, newest at the bottom where the
   transcript puts them. It holds still, and fades as the chat fades in; a fast load shows nothing.
