@@ -249,9 +249,13 @@ private struct MonitoringExitCard: View {
                 ? statsString("1 consecutive failure")
                 : statsString("\(failures) consecutive failures"))
         }
-        parts.append(exit.tunnels == 1
-            ? statsString("1 active tunnel")
-            : statsString("\(exit.tunnels) active tunnels"))
+        if let tunnels = exit.tunnels {
+            parts.append(tunnels == 1
+                ? statsString("1 active tunnel")
+                : statsString("\(tunnels) active tunnels"))
+        } else {
+            parts.append(statsString("Active tunnels unknown"))
+        }
         parts.append(statsString("\(exit.servedToday) served today (inferred)"))
         if let host = exit.host { parts.append(host) }
         return parts.joined(separator: " · ")

@@ -553,4 +553,3 @@ struct MonitoringRequestDetailView: View {
         return "\(floor)\(tps.formatted(.number.precision(.fractionLength(1)))) tok/s"
     }
 }
-

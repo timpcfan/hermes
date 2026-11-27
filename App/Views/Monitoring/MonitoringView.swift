@@ -320,10 +320,14 @@ private struct MonitoringOverviewView: View {
         guard presentation.relayState == .live else { return presentation.relayState.title }
         guard let reachable = snapshot.failover.reachable else { return statsString("Unknown") }
         guard reachable else { return statsString("Unreachable") }
-        let tunnels = snapshot.failover.tunnels ?? 0
-        let count = tunnels == 1
-            ? statsString("1 active tunnel")
-            : statsString("\(tunnels) active tunnels")
+        let count: String
+        if let tunnels = snapshot.failover.tunnels {
+            count = tunnels == 1
+                ? statsString("1 active tunnel")
+                : statsString("\(tunnels) active tunnels")
+        } else {
+            count = statsString("Active tunnels unknown")
+        }
         guard let lastUsed = snapshot.failover.lastUsed else { return count }
         return count + statsString(" · last used \(lastUsed)")
     }

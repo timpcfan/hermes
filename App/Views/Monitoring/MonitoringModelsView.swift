@@ -46,13 +46,12 @@ struct MonitoringModelsView: View {
     /// Every bucket the service names, in hour order. A model that didn't report one still gets
     /// its empty slot, shown as —.
     private func buckets(for model: MonitoringModelItem) -> [MonitoringModelBucket] {
-        let hours = snapshot.models.bucketHours.isEmpty
-            ? Array(stride(from: 0, to: 24, by: 3))
-            : snapshot.models.bucketHours.sorted()
-        let byHour = Dictionary(uniqueKeysWithValues: model.buckets.map { ($0.hour, $0) })
+        let width = min(24, max(1, snapshot.models.bucketHours))
+        let hours = Array(stride(from: 0, to: 24, by: width))
+        let byHour = Dictionary(model.buckets.map { ($0.hour, $0) }, uniquingKeysWith: { _, latest in latest })
         return hours.map { hour in
             byHour[hour] ?? MonitoringModelBucket(JSONValue.object([
-                "hour": .number(Double(hour))
+                "h": .number(Double(hour))
             ]))
         }
     }
