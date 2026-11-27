@@ -100,6 +100,7 @@ final class MonitoringModel {
     }
 
     private static func debugAdjusted(_ loaded: MonitoringSettings) -> MonitoringSettings {
+        #if DEBUG
         guard let raw = debugOverride else { return loaded }
         // A development target is a separate no-auth connection, never a credential alias.
         return MonitoringSettings(
@@ -107,6 +108,9 @@ final class MonitoringModel {
             name: UserDefaults.standard.string(forKey: "HERMES_MONITOR_NAME") ?? MonitoringSettings.initial.name,
             baseURL: raw, auth: .none
         )
+        #else
+        return loaded
+        #endif
     }
 
     // MARK: - State

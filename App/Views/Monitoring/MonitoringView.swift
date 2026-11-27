@@ -67,6 +67,8 @@ struct MonitoringView: View {
                     #endif
             }
         }
+        // A replacement connection cannot leave a pushed model detail holding the old payload.
+        .id(model.connectionGeneration)
         .onAppear {
             isVisible = true
             model.setConsumer(consumerID, active: scenePhase != .background && windowIsVisible)
@@ -86,7 +88,10 @@ struct MonitoringView: View {
             requests.setVisible(false)
             model.setConsumer(consumerID, active: false)
         }
-        .onChange(of: model.connectionGeneration) { selectedFlight = nil }
+        .onChange(of: model.connectionGeneration) {
+            selectedFlight = nil
+            showsSettings = false
+        }
         .sheet(item: $selectedFlight) { flight in
             MonitoringRequestDetailView(
                 flight: flight, timezone: model.snapshot?.timezone ?? "+00:00"
