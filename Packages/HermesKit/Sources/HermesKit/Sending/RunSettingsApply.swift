@@ -7,6 +7,10 @@ import Foundation
 /// on the new runtime, before the caller submits its prompt: a picked model must run the very next
 /// message, not the one after it. A set that didn't take is never recorded as applied, and a model
 /// that will not run this message is said plainly (`notice`).
+///
+/// A model pick carries the chat's level, level changed or not: Hermes re-reads the level from the
+/// new model's own config as it swaps the model, so one set on its own would be gone the moment
+/// the pick landed.
 public enum RunSettingsApply {
     /// The runtime a resume gave back, and the settings Hermes reports for it.
     public struct Reattach: Equatable, Sendable {
@@ -99,13 +103,17 @@ public enum RunSettingsApply {
         /// on the runtime Hermes gave back.
         func applyOnce() async -> Bool {
             if !modelApplied, let model = wanted.model, confirmationMessage == nil {
-                let value = "\(model.model) --provider \(model.provider)"
-                let answer = await setConfig("model", value)
+                let answer = await setConfig("model", Self.switchValue(model, effort: wanted.effort))
                 if case .sessionNotFound = answer, await resume() { return true }
                 switch answer {
                 case .applied:
                     modelApplied = true
                     effective.model = model
+                    // A swap makes Hermes re-read the level from the new model's own config, so what
+                    // the session ran before it says nothing about now: it runs the level that rode
+                    // along, or with Auto the new model's own.
+                    effective.effort = wanted.effort
+                    effortApplied = true
                 case .confirmRequired(let message):
                     confirmationMessage = message
                 case .sessionNotFound, .failed:
@@ -136,6 +144,15 @@ public enum RunSettingsApply {
             runtime: runtime, applied: effective, modelApplied: modelApplied,
             effortApplied: effortApplied, confirmationMessage: confirmationMessage, notice: notice
         )
+    }
+
+    /// The `config.set {key: "model"}` value for a pick. The chat's level rides with the model
+    /// (`--reasoning <level>`, hermes-agent v0.21.6+): Hermes applies it after the swap, and
+    /// together with it when the swap is queued for the next turn.
+    public static func switchValue(_ model: ModelSelection, effort: ReasoningEffort?) -> String {
+        var value = "\(model.model) --provider \(model.provider)"
+        if let effort { value += " --reasoning \(effort.rawValue)" }
+        return value
     }
 
     /// The sentence for a model that didn't take: the one picked, and the one the message runs on.
