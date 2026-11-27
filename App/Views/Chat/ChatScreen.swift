@@ -784,10 +784,14 @@ private struct MacTitleBarBacking: View {
 
     /// How far below the bar the backing fades out.
     static let fade: CGFloat = 14
+    /// The unified toolbar's height. The measured inset can read 0 or 2 for a while (a window
+    /// opening or coming back, the title bar hidden in full screen until the pointer reaches it),
+    /// and the bar followed it down to nothing: the messages ran across the title again.
+    static let toolbarHeight: CGFloat = 52
 
     var body: some View {
-        let total = height + Self.fade
-        let solid = height / total
+        let total = max(height, Self.toolbarHeight) + Self.fade
+        let solid = (total - Self.fade) / total
         let mask = LinearGradient(
             stops: [
                 .init(color: .black, location: 0),
