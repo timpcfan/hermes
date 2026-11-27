@@ -36,6 +36,30 @@ successful amounts and marks them stale; a first failure shows unavailable. The 
 credential, auth, timeout, availability or invalid-response problem by local error kind and never
 shows the upstream body.
 
+### Usage, pace and the balance trend
+
+The same card adds the account's real spend today, the average of the window's complete days before
+today, the service's projected emptying day and the balance's path. `today` carries the service's
+day, `used_usd` since 00:00, `tokens`, `requests` and the epoch of the successful usage read;
+`avg_daily_usd` and `forecast` (`window_days`, `avg_daily_usd`, `days_left`, `projected_empty_at`)
+come from the service, never from the app's own estimate. A partial today never enters the average,
+and `days_left` is zero when the balance is at or below zero. `usage_error` names a failed usage
+read while `today` and `forecast` keep the last success; a balance read's own failure does not
+clear them. Only the contract's error codes are typed, and the card never shows the upstream body.
+
+Every new value is optional: a missing or malformed one is unknown and reads `—`, never zero. An
+older service sends none of these fields, and the card then shows only the balance. With no
+complete day to average, `forecast` is null and the card says there is no forecast rather than
+inventing a pace.
+
+`trend` holds the recorded days (`points`: `day`, `balance_usd`, `spent_usd`), the service's forward
+days (`projection`: `day`, `balance_usd`) and `depletion_day`. The card draws the recorded days as
+a solid line, the projection as a dashed continuation from the last recorded day, and marks the
+depletion day only when a projection gives the line an end; it also says when the balance is
+expected to run out. `topup_detected` adds a note that the history isn't one continuous drawdown.
+An empty or missing history draws nothing at all, and a malformed point is dropped rather than
+guessed. The vertical scale starts at zero and follows the window's own peak.
+
 ## 2. Requests
 
 The default first page follows accepted snapshot high-water changes. Search, filters, sorting and

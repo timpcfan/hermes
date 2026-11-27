@@ -692,6 +692,77 @@
     "stale": false,
     "error": null,
     "refresh_seconds": 60,
-    "stale_after_seconds": 180.0
+    "stale_after_seconds": 180.0,
+    "usage_error": null,
+    "today": {
+      "day": "2026-11-27",
+      "used_usd": 12.34,
+      "tokens": 1234567,
+      "requests": 78,
+      "updated_at": 1795735829.8399518
+    },
+    "avg_daily_usd": 9.87,
+    "forecast": {
+      "window_days": 7,
+      "avg_daily_usd": 9.87,
+      "days_left": 12.9,
+      "projected_empty_at": 1796000000.0
+    },
+    "trend": {
+      "window_days": 7,
+      "topup_detected": false,
+      "points": [
+        {
+          "day": "2026-11-21",
+          "balance_usd": 1281.0,
+          "spent_usd": 3.2
+        },
+        {
+          "day": "2026-11-22",
+          "balance_usd": 1272.0,
+          "spent_usd": 9.0
+        },
+        {
+          "day": "2026-11-23",
+          "balance_usd": 1263.0,
+          "spent_usd": 9.0
+        },
+        {
+          "day": "2026-11-24",
+          "balance_usd": 1254.0,
+          "spent_usd": 9.0
+        },
+        {
+          "day": "2026-11-25",
+          "balance_usd": 1245.0,
+          "spent_usd": 9.0
+        },
+        {
+          "day": "2026-11-26",
+          "balance_usd": 1241.0,
+          "spent_usd": 4.0
+        },
+        {
+          "day": "2026-11-27",
+          "balance_usd": 1234.56789,
+          "spent_usd": 6.43211
+        }
+      ],
+      "projection": [
+        {
+          "day": "2026-11-28",
+          "balance_usd": 1226.0
+        },
+        {
+          "day": "2026-11-29",
+          "balance_usd": 1218.0
+        },
+        {
+          "day": "2026-11-30",
+          "balance_usd": 1210.0
+        }
+      ],
+      "depletion_day": "2026-12-10"
+    }
   }
 }

@@ -3277,6 +3277,116 @@
           }
         }
       }
+    },
+    "Today's spend": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日消耗"
+          }
+        }
+      }
+    },
+    "Since 00:00 today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日 00:00 起"
+          }
+        }
+      }
+    },
+    "7-day average": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 7 日日均"
+          }
+        }
+      }
+    },
+    "Complete days before today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不含今日的 7 个完整自然日"
+          }
+        }
+      }
+    },
+    "At the last 7 days' pace, about %@ days until the balance runs out (around %@).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按近 7 日均速，约 %@ 天后用完（预计 %@）。"
+          }
+        }
+      }
+    },
+    "No spend in the last 7 days, so there's no forecast.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 7 日无消耗，暂不预测。"
+          }
+        }
+      }
+    },
+    "Today's usage read failed; the last successful values are shown.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日用量采集失败，显示的是最后一次成功值。"
+          }
+        }
+      }
+    },
+    "Today's usage read failed; no value is shown until it succeeds.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日用量采集失败，成功前不显示数值。"
+          }
+        }
+      }
+    },
+    "Balance trend, last %lld days": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近 %lld 日余额走势"
+          }
+        }
+      }
+    },
+    "Projected to run out on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预计 %@ 用完"
+          }
+        }
+      }
+    },
+    "A top-up happened in this window, so the history line isn't continuous.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口内有充值，历史线不连续。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -48,6 +48,43 @@ struct MonitoringPresentation {
         return reachable ? qualify(.live) : .down
     }
 
+    /// The account's real spend today and the average of the window's complete days before it.
+    /// A missing value stays `—`: the card never turns an unknown into a zero.
+    var quotaTodaySpendText: String {
+        MonitoringFormat.signedDollars(snapshot.quota?.today?.usedUSD)
+    }
+
+    var quotaAverageDailyText: String {
+        MonitoringFormat.signedDollars(snapshot.quota?.avgDailyUSD ?? snapshot.quota?.forecast?.avgDailyUSD)
+    }
+
+    /// The service's own projection, stated with its basis and its uncertainty. Without one the
+    /// card says so — unless the usage read itself failed, where "no spend" would be a claim the
+    /// app can't make; the failure line says it instead.
+    var quotaForecastText: String? {
+        if let forecast = snapshot.quota?.forecast,
+           let days = forecast.daysLeft,
+           let emptyAt = forecast.projectedEmptyAt {
+            let day = MonitoringFormat.monthDay(emptyAt, timezone: snapshot.timezone)
+            return statsString("At the last 7 days' pace, about \(MonitoringFormat.days(days)) days until the balance runs out (around \(day)).")
+        }
+        guard snapshot.quota?.usageErrorKind == nil else { return nil }
+        return statsString("No spend in the last 7 days, so there's no forecast.")
+    }
+
+    /// The balance's path, or nil when the service sent no history: the card draws no block at
+    /// all rather than an empty frame.
+    var quotaTrend: MonitoringQuotaTrendSummary? {
+        MonitoringQuotaTrendSummary(snapshot.quota?.trend)
+    }
+
+    /// The service's depletion day as a calendar date, or nil when it named no readable day.
+    var quotaDepletionText: String? {
+        guard let day = snapshot.quota?.trend?.depletionDay,
+              let text = MonitoringFormat.monthDay(day: day, timezone: snapshot.timezone) else { return nil }
+        return statsString("Projected to run out on \(text)")
+    }
+
     var canClaimNoInflight: Bool { traceState == .live && snapshot.hasKnownInflight && snapshot.inflight.isEmpty }
 
     func exitState(_ exit: MonitoringExit) -> MonitoringSourceState {
