@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Talks to the monitor service (`_brief/INTERFACES.md`): a scoped snapshot, a page of the day's
 /// requests and the live SSE stream. Every answer is checked for the scoped contract before it is
@@ -28,7 +29,7 @@ public actor MonitoringClient {
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 15
         // The token only ever goes to the server it was saved for.
-        return URLSession(configuration: configuration, delegate: SameOriginRedirects.shared, delegateQueue: nil)
+        return URLSession(configuration: configuration, delegate: MonitoringRedirects.shared, delegateQueue: nil)
     }
 
     // MARK: - Calls
@@ -59,13 +60,24 @@ public actor MonitoringClient {
     /// about every 3 s; the stream ends when the connection does, and the caller falls back to
     /// polling while it is gone.
     public nonisolated func snapshots() -> AsyncThrowingStream<MonitoringSnapshot, any Error> {
+        openSnapshots().stream
+    }
+
+    private nonisolated func openSnapshots() -> (
+        stream: AsyncThrowingStream<MonitoringSnapshot, any Error>, cancel: @Sendable () -> Void
+    ) {
         let request = makeRequest(path: "api/stream", query: [URLQueryItem(name: "scope", value: MonitoringSnapshot.scope)],
                                   accept: "text/event-stream", timeout: 30)
         let session = session
-        return AsyncThrowingStream { continuation in
-            let task = Task {
+        let (stream, continuation) = AsyncThrowingStream<MonitoringSnapshot, any Error>.makeStream()
+        let networkTask = Mutex<URLSessionTask?>(nil)
+        let task = Task {
+            await withTaskCancellationHandler {
                 do {
                     let (bytes, response) = try await session.bytes(for: request)
+                    networkTask.withLock { $0 = bytes.task }
+                    defer { bytes.task.cancel() }
+                    try Task.checkCancellation()
                     guard let http = response as? HTTPURLResponse else {
                         throw MonitoringClientFailure.notMonitoringService
                     }
@@ -93,9 +105,15 @@ public actor MonitoringClient {
                 } catch {
                     continuation.finish(throwing: Self.transportFailure(error))
                 }
+            } onCancel: {
+                networkTask.withLock { $0?.cancel() }
             }
-            continuation.onTermination = { _ in task.cancel() }
         }
+        continuation.onTermination = { _ in task.cancel() }
+        return (stream, {
+            task.cancel()
+            continuation.finish(throwing: CancellationError())
+        })
     }
 
     /// The settings screen's three checks, bounded so a silent service can't hold the form. All
@@ -104,7 +122,7 @@ public actor MonitoringClient {
     public func check(timeout: Duration = .seconds(8)) async -> MonitoringConnectionCheck {
         async let snapshot = checkStep(timeout: timeout) { try await self.snapshot() }
         async let recent = checkStep(timeout: timeout) { try await self.recent(MonitoringRequestQuery(size: 1)) }
-        async let stream = checkStep(timeout: timeout) { try await self.firstStreamSnapshot(timeout: timeout) }
+        async let stream = checkStep(timeout: timeout) { try await self.firstStreamSnapshot() }
         return await MonitoringConnectionCheck(snapshot: snapshot, recent: recent, stream: stream)
     }
 
@@ -123,18 +141,15 @@ public actor MonitoringClient {
 
     /// The first snapshot on a fresh SSE handshake, then the stream is let go: a connection check
     /// proves the service sends frames without leaving a stream reading behind.
-    private func firstStreamSnapshot(timeout: Duration) async throws -> MonitoringSnapshot {
-        let stream = snapshots()
-        let task = Task { () throws -> MonitoringSnapshot in
-            for try await snapshot in stream { return snapshot }
-            throw MonitoringClientFailure.streamEnded
+    private func firstStreamSnapshot() async throws -> MonitoringSnapshot {
+        let opened = openSnapshots()
+        defer { opened.cancel() }
+        for try await snapshot in opened.stream {
+            try Task.checkCancellation()
+            return snapshot
         }
-        do {
-            return try await withMonitoringTimeout(timeout) { try await task.value }
-        } catch {
-            task.cancel()
-            throw error
-        }
+        try Task.checkCancellation()
+        throw MonitoringClientFailure.streamEnded
     }
 
     // MARK: - URLs and headers

@@ -37,7 +37,7 @@ public struct MonitoringSnapshot: Sendable, Equatable {
         guard let root = JSONValue.parse(data), root.objectFields != nil else {
             throw MonitoringContractError.notJSON
         }
-        guard let schema = root["schema_version"]?.integerValue else {
+        guard let schema = root["schema_version"]?.strictMonitoringInteger else {
             // A server that ignores `scope` answers the website's global payload, which has no
             // schema: never show it as Xunxin's.
             throw MonitoringContractError.legacyPayload
@@ -51,12 +51,30 @@ public struct MonitoringSnapshot: Sendable, Equatable {
         guard scope == Self.scope else {
             throw MonitoringContractError.wrongScope(scope)
         }
+        try validateMonitoringMetadata(root)
+        for key in ["trace", "failover", "today", "models", "recent_day"] {
+            try requireMonitoringObject(root[key], key)
+        }
+        for key in ["exits", "recent", "events"] { try requireMonitoringArray(root[key], key) }
+        try requireMonitoringArray(root["inflight"], "inflight", nullable: true)
+        guard root["snapshot_at"]?.finiteMonitoringNumber != nil else {
+            throw MonitoringContractError.malformed("snapshot_at")
+        }
+        guard case .array(let capabilities) = root["capabilities"],
+              capabilities.allSatisfy({ $0.stringValue != nil }) else {
+            throw MonitoringContractError.malformed("capabilities")
+        }
+        for key in ["requests", "ok", "err", "canceled"] {
+            try requireMonitoringCount(root["today"]?[key], "today.\(key)")
+        }
+        try requireMonitoringCount(root["recent_day"]?["n"], "recent_day.n")
+        try requireMonitoringArray(root["models"]?["items"], "models.items")
         self.schemaVersion = schema
         self.scope = scope
         day = root["day"]?.stringValue ?? ""
         timezone = root["timezone"]?.stringValue ?? "+00:00"
         snapshotAt = root["snapshot_at"]?.doubleValue
-        capabilities = root["capabilities"]?.arrayElements.compactMap(\.stringValue) ?? []
+        self.capabilities = root["capabilities"]?.arrayElements.compactMap(\.stringValue) ?? []
         freshness = root["freshness"].flatMap(MonitoringFreshness.init)
         now = root["now"]?.doubleValue
         trace = MonitoringTrace(root["trace"])
@@ -189,7 +207,7 @@ public struct MonitoringExit: Sendable, Equatable, Identifiable {
     public var milliseconds: Double?
     public var consecutiveFailures: Int?
     public var lastChange: Double?
-    public var tunnels: Int
+    public var tunnels: Int?
     /// Requests the exit carried today, inferred from the tunnel log.
     public var servedToday: Int
     public var history: [MonitoringProbeSample]
@@ -206,7 +224,7 @@ public struct MonitoringExit: Sendable, Equatable, Identifiable {
         milliseconds = value["ms"]?.doubleValue
         consecutiveFailures = value["consec_fail"]?.integerValue
         lastChange = value["last_change"]?.doubleValue
-        tunnels = value["tunnels"]?.integerValue ?? 0
+        tunnels = value["tunnels"]?.integerValue
         servedToday = value["served_today"]?.integerValue ?? 0
         history = value["hist"]?.arrayElements.map(MonitoringProbeSample.init) ?? []
     }
@@ -265,12 +283,13 @@ public struct MonitoringToday: Sendable, Equatable {
 
 public struct MonitoringModels: Sendable, Equatable {
     public var bucketCount: Int
-    public var bucketHours: [Int]
+    /// The width of each bucket in hours, as sent by the service.
+    public var bucketHours: Int
     public var items: [MonitoringModelItem]
 
     public init(_ value: JSONValue?) {
         bucketCount = value?["buckets"]?.integerValue ?? 8
-        bucketHours = value?["bucket_hours"]?.arrayElements.compactMap(\.integerValue) ?? []
+        bucketHours = value?["bucket_hours"]?.integerValue ?? 3
         items = value?["items"]?.arrayElements.map(MonitoringModelItem.init) ?? []
     }
 }
@@ -300,7 +319,7 @@ public struct MonitoringModelItem: Sendable, Equatable, Identifiable {
         requests = value["n"]?.integerValue ?? 0
         ok = value["ok"]?.integerValue ?? 0
         error = value["err"]?.integerValue ?? 0
-        canceled = value["canceled"]?.integerValue ?? 0
+        canceled = value["cxl"]?.integerValue ?? value["canceled"]?.integerValue ?? 0
         cost = value["cost"]?.doubleValue
         pricedRequests = value["cost_n"]?.integerValue ?? 0
         unknownCosts = value["cost_unknown"]?.integerValue ?? value["cost_miss"]?.integerValue ?? 0
@@ -336,11 +355,11 @@ public struct MonitoringModelBucket: Sendable, Equatable, Identifiable {
     public var id: Int { hour }
 
     public init(_ value: JSONValue) {
-        hour = value["hour"]?.integerValue ?? 0
+        hour = value["h"]?.integerValue ?? value["hour"]?.integerValue ?? 0
         requests = value["n"]?.integerValue ?? 0
         ok = value["ok"]?.integerValue ?? 0
         error = value["err"]?.integerValue ?? 0
-        canceled = value["canceled"]?.integerValue ?? 0
+        canceled = value["cxl"]?.integerValue ?? value["canceled"]?.integerValue ?? 0
         cost = value["cost"]?.doubleValue
         pricedRequests = value["cost_n"]?.integerValue ?? 0
         ttftP50 = value["ttft"]?.doubleValue ?? value["ttft_p50"]?.doubleValue
@@ -358,12 +377,13 @@ public struct MonitoringModelBucket: Sendable, Equatable, Identifiable {
 }
 
 public struct MonitoringPricing: Sendable, Equatable {
-    public var at: String?
+    /// Epoch seconds of the last pricing update; nil when unavailable.
+    public var at: Double?
     public var error: String?
     public var models: Int
 
     public init(_ value: JSONValue) {
-        at = value["at"]?.stringValue
+        at = value["at"]?.doubleValue
         error = value["err"]?.stringValue
         models = value["n"]?.integerValue ?? 0
     }
@@ -413,7 +433,10 @@ public struct MonitoringFlight: Sendable, Equatable, Identifiable {
     public var detour: [String]
 
     public init(_ value: JSONValue) {
-        id = value["id"]?.stringValue ?? value["id"]?.doubleValue.map { String(Int64($0)) } ?? "?"
+        id = value["id"]?.stringValue ?? value["id"]?.doubleValue.flatMap { number in
+            guard number.rounded(.towardZero) == number, let id = Int64(checking: number) else { return nil }
+            return String(id)
+        } ?? "?"
         source = value["src"]?.stringValue
         time = value["t"]?.stringValue
         start = value["start"]?.doubleValue
@@ -573,7 +596,7 @@ public struct MonitoringRecentPage: Sendable, Equatable {
         guard let root = JSONValue.parse(data), root.objectFields != nil else {
             throw MonitoringContractError.notJSON
         }
-        guard let schema = root["schema_version"]?.integerValue else {
+        guard let schema = root["schema_version"]?.strictMonitoringInteger else {
             throw MonitoringContractError.legacyPayload
         }
         guard schema == MonitoringSnapshot.schemaVersion else {
@@ -585,6 +608,16 @@ public struct MonitoringRecentPage: Sendable, Equatable {
         guard scope == MonitoringSnapshot.scope else {
             throw MonitoringContractError.wrongScope(scope)
         }
+        try validateMonitoringMetadata(root)
+        for key in ["n_day", "n_now", "upto", "newer", "newer_all", "total", "cost_n", "cost_none", "page", "size", "pages"] {
+            try requireMonitoringCount(root[key], key)
+        }
+        guard let page = root["page"]?.strictMonitoringInteger, page >= 1,
+              let size = root["size"]?.strictMonitoringInteger, (1...200).contains(size),
+              root["sort"]?.stringValue != nil else {
+            throw MonitoringContractError.malformed("pagination")
+        }
+        try requireMonitoringArray(root["items"], "items")
         schemaVersion = schema
         self.scope = scope
         timezone = root["timezone"]?.stringValue ?? "+00:00"
@@ -599,8 +632,8 @@ public struct MonitoringRecentPage: Sendable, Equatable {
         pricedCount = root["cost_n"]?.integerValue ?? 0
         unpricedCount = root["cost_none"]?.integerValue ?? 0
         dayCost = root["day_cost"]?.doubleValue
-        page = root["page"]?.integerValue ?? 1
-        size = root["size"]?.integerValue ?? 0
+        self.page = root["page"]?.integerValue ?? 1
+        self.size = root["size"]?.integerValue ?? 0
         pages = root["pages"]?.integerValue ?? 1
         sort = root["sort"]?.stringValue ?? "new"
         items = root["items"]?.arrayElements.map(MonitoringFlight.init) ?? []
@@ -608,9 +641,59 @@ public struct MonitoringRecentPage: Sendable, Equatable {
     }
 }
 
+// MARK: - Required endpoint structure
+
+private func validateMonitoringMetadata(_ root: JSONValue) throws {
+    guard root["error"] == nil || root["error"] == .null else {
+        throw MonitoringContractError.malformed("error envelope")
+    }
+    guard let day = root["day"]?.stringValue, day.utf8.count == 10,
+          day.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil else {
+        throw MonitoringContractError.malformed("day")
+    }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .gmt
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.isLenient = false
+    guard let date = formatter.date(from: day), formatter.string(from: date) == day else {
+        throw MonitoringContractError.malformed("day")
+    }
+    guard let timezone = root["timezone"]?.stringValue, MonitoringTime.offsetSeconds(timezone) != nil else {
+        throw MonitoringContractError.malformed("timezone")
+    }
+}
+
+private func requireMonitoringObject(_ value: JSONValue?, _ field: String) throws {
+    guard value?.objectFields != nil else { throw MonitoringContractError.malformed(field) }
+}
+
+private func requireMonitoringArray(_ value: JSONValue?, _ field: String, nullable: Bool = false) throws {
+    if nullable, value == .null { return }
+    guard case .array(let elements) = value, elements.allSatisfy({ $0.objectFields != nil }) else {
+        throw MonitoringContractError.malformed(field)
+    }
+}
+
+private func requireMonitoringCount(_ value: JSONValue?, _ field: String) throws {
+    guard let count = value?.strictMonitoringInteger, count >= 0 else {
+        throw MonitoringContractError.malformed(field)
+    }
+}
+
 // MARK: - Tolerant JSON reading
 
 extension JSONValue {
+    var strictMonitoringInteger: Int? {
+        guard case .number(let value) = self, value.rounded(.towardZero) == value else { return nil }
+        return Int(checking: value)
+    }
+
+    var finiteMonitoringNumber: Double? {
+        guard case .number(let value) = self, value.isFinite else { return nil }
+        return value
+    }
+
     var objectFields: [String: JSONValue]? {
         if case .object(let value) = self { value } else { nil }
     }

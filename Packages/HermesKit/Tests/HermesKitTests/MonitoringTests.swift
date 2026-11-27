@@ -20,7 +20,7 @@ private func snapshotJSON(
      "now":\(snapshotAt),
      "trace":{"ok":true},"failover":{"reachable":true,"tunnels":0},
      "exits":[],"today":{"requests":0,"ok":0,"err":0,"canceled":0},
-     "models":{"buckets":8,"bucket_hours":[0,3,6,9,12,15,18,21],"items":[]},
+     "models":{"buckets":8,"bucket_hours":3,"items":[]},
      "inflight":[],"recent":[],"recent_day":{"day":"\(day)","n":0,"upto":0},"events":[]
      \(extra.isEmpty ? "" : ",\(extra)")}
     """
@@ -421,7 +421,7 @@ struct MonitoringSessionTests {
         let session = MonitoringSession(
             transport: transport,
             configuration: MonitoringSessionConfiguration(connection: try Self.connection()),
-            timing: Self.fastTiming
+            timing: MonitoringTiming(pollInterval: .seconds(1), jitter: 0)
         )
         recorder.watch(session)
         await session.start()

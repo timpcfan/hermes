@@ -101,6 +101,9 @@ public actor MonitoringSession {
     private var generation = 0
     private var state: MonitoringConnectionState = .idle
     private var hasSnapshot = false
+    private var latestSnapshot: MonitoringSnapshot?
+    private var refreshSequence = 0
+    private var streamProgress = ContinuousClock.now
 
     public init(
         transport: any MonitoringTransport,
@@ -139,6 +142,8 @@ public actor MonitoringSession {
         refreshTask?.cancel()
         refreshTask = nil
         hasSnapshot = false
+        latestSnapshot = nil
+        refreshSequence += 1
         emit(.idle)
     }
 
@@ -148,8 +153,10 @@ public actor MonitoringSession {
         guard runTask != nil else { return }
         refreshTask?.cancel()
         let generation = self.generation
+        refreshSequence += 1
+        let sequence = refreshSequence
         refreshTask = Task { [weak self] in
-            await self?.readOnce(generation)
+            await self?.readOnce(generation, refreshSequence: sequence)
         }
     }
 
@@ -166,6 +173,7 @@ public actor MonitoringSession {
         setState(.connecting, generation: generation)
 
         await readOnce(generation, initial: true)
+        guard isCurrent(generation), !state.hasStopped else { return }
 
         var retry = 0
         while isCurrent(generation) {
@@ -205,13 +213,29 @@ public actor MonitoringSession {
     }
 
     private func streamUntilEnded(_ generation: Int) async -> StreamOutcome {
+        streamProgress = .now
+        return await withTaskGroup(of: StreamOutcome.self) { group in
+            group.addTask { await self.consumeStream(generation) }
+            group.addTask { await self.watchStream(generation) }
+            let outcome = await group.next() ?? .cancelled
+            group.cancelAll()
+            // The consumer terminates before polling or another socket is allowed to start.
+            return outcome
+        }
+    }
+
+    private func consumeStream(_ generation: Int) async -> StreamOutcome {
+        guard isCurrent(generation) else { return .cancelled }
         do {
             for try await snapshot in transport.snapshots() {
                 guard isCurrent(generation) else { return .cancelled }
-                apply(snapshot, generation: generation)
-                if state != .live { setState(.live, generation: generation) }
+                let advanced = latestSnapshot?.serverTime.map { (snapshot.serverTime ?? -.infinity) > $0 } ?? true
+                if apply(snapshot, generation: generation) {
+                    if advanced { streamProgress = .now }
+                    if state != .live { setState(.live, generation: generation) }
+                }
             }
-            return .ended(MonitoringClientFailure.streamEnded)
+            return Task.isCancelled ? .cancelled : .ended(MonitoringClientFailure.streamEnded)
         } catch is CancellationError {
             return .cancelled
         } catch {
@@ -220,11 +244,24 @@ public actor MonitoringSession {
         }
     }
 
+    private func watchStream(_ generation: Int) async -> StreamOutcome {
+        // The live stale limit and default polling beat are both ten seconds. Pings and older
+        // snapshots cannot extend this deadline; tests shorten the same timing together.
+        let interval = max(timing.pollInterval, .milliseconds(1))
+        while isCurrent(generation) {
+            let remaining = ContinuousClock.now.duration(to: streamProgress + interval)
+            if remaining <= .zero { return .ended(MonitoringClientFailure.timedOut) }
+            if !(await sleep(remaining, generation: generation)) { return .cancelled }
+        }
+        return .cancelled
+    }
+
     /// Polls snapshots until it's time to try the stream again (returns true), the session stops
     /// (false), or the service turns out to speak another contract (sets `.incompatible`).
     private func poll(_ generation: Int) async -> Bool {
         var failures = 0
         var polls = 0
+        let reason = state.reason ?? "Live updates are unavailable for this connection."
         while isCurrent(generation) {
             if polls > 0, configuration.allowsStreaming, polls % max(1, timing.streamRetryEveryPolls) == 0 {
                 return true
@@ -236,6 +273,7 @@ public actor MonitoringSession {
                 guard isCurrent(generation) else { return false }
                 failures = 0
                 apply(snapshot, generation: generation)
+                setState(.polling(reason: reason), generation: generation)
             } catch {
                 guard isCurrent(generation) else { return false }
                 if let failure = fatalFailure(error) {
@@ -257,13 +295,13 @@ public actor MonitoringSession {
         return false
     }
 
-    private func readOnce(_ generation: Int, initial: Bool = false) async {
+    private func readOnce(_ generation: Int, initial: Bool = false, refreshSequence: Int? = nil) async {
         do {
             let snapshot = try await transport.snapshot()
-            guard isCurrent(generation) else { return }
+            guard isCurrent(generation), refreshSequence == nil || refreshSequence == self.refreshSequence else { return }
             apply(snapshot, generation: generation)
         } catch {
-            guard isCurrent(generation) else { return }
+            guard isCurrent(generation), refreshSequence == nil || refreshSequence == self.refreshSequence else { return }
             if let failure = fatalFailure(error) {
                 setState(.incompatible(reason: failure), generation: generation)
                 return
@@ -277,10 +315,19 @@ public actor MonitoringSession {
 
     // MARK: - State
 
-    private func apply(_ snapshot: MonitoringSnapshot, generation: Int) {
-        guard isCurrent(generation) else { return }
+    @discardableResult
+    private func apply(_ snapshot: MonitoringSnapshot, generation: Int) -> Bool {
+        guard isCurrent(generation) else { return false }
+        if let latest = latestSnapshot {
+            guard snapshot.day >= latest.day else { return false }
+            if let previousTime = latest.serverTime {
+                guard let time = snapshot.serverTime, time >= previousTime else { return false }
+            }
+        }
         hasSnapshot = true
+        latestSnapshot = snapshot
         continuation.yield(.snapshot(snapshot, receivedAt: now()))
+        return true
     }
 
     private func setState(_ next: MonitoringConnectionState, generation: Int) {
@@ -296,7 +343,7 @@ public actor MonitoringSession {
     }
 
     private func isCurrent(_ generation: Int) -> Bool {
-        self.generation == generation && runTask != nil
+        self.generation == generation && runTask != nil && !Task.isCancelled
     }
 
     /// A stream that ended while snapshots work falls back to polling; one that never had a
