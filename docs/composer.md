@@ -73,7 +73,10 @@ name and, before it, its reasoning as `cellularbars` with whole bars lit (`symbo
 never written on the chip; it is the chip's accessibility value and the picker's. Tapping it opens
 the picker: on iPhone a sheet with the model list and the reasoning controls pinned under it (the
 Auto switch and the seven-tick slider, Off…Max, whose ticks sit under the thumb's stops); on the
-Mac a two-column popover, the models on the left and Auto plus the seven levels on the right.
+Mac a two-column popover, the models on the left and Auto plus the seven levels on the right. A
+model row names the model, the id the gateway sends with under it (`anthropic/claude-sonnet-4.6`),
+then the provider and price: both platforms show that id, so two models whose names read alike can
+be told apart.
 Picking a level leaves the picker open, picking a model closes it. Off is unavailable for a model
 whose `can_disable_reasoning` is false, and a model that doesn't reason disables the reasoning
 controls and says why. While a turn runs the chip keeps only its reasoning glyph (unlit, dimmed

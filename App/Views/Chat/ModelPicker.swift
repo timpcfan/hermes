@@ -272,6 +272,7 @@ struct ModelPickerView: View {
                             ForEach(models, id: \.self) { model in
                                 macRow(
                                     title: ModelNames.display(model),
+                                    model: model,
                                     subtitle: [provider.name, provider.isCurrent && model == options?.model ? String(localized: "Default") : nil, provider.pricing?[model].flatMap(shortPrice)].compactMap { $0 }.joined(separator: " · "),
                                     isSelected: conversation.model == ModelSelection(provider: provider.slug, model: model),
                                     isDisabled: provider.isUnavailable(model)
@@ -336,10 +337,16 @@ struct ModelPickerView: View {
             .padding(.horizontal, 12)
             .frame(height: 30)
         }
-        .frame(width: 300, height: 380)
+        .frame(width: 320, height: 380)
     }
 
-    private func macRow(title: String, subtitle: String?, isSelected: Bool, isDisabled: Bool = false, action: @escaping () -> Void) -> some View {
+    /// One row of the popover's model column. `model` is the id the gateway sends with
+    /// (`anthropic/claude-sonnet-4.6`), under the name it's read as, so the Mac shows what the
+    /// iPhone has always shown and the person can tell two models apart whose names read alike.
+    private func macRow(
+        title: String, model: String? = nil, subtitle: String?,
+        isSelected: Bool, isDisabled: Bool = false, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "checkmark")
@@ -349,10 +356,17 @@ struct ModelPickerView: View {
                     Text(title)
                         .font(.callout)
                         .foregroundStyle(isDisabled ? Theme.tertiaryText : Theme.primaryText)
+                    if let model, !model.isEmpty, model != title {
+                        Text(model)
+                            .font(.caption)
+                            .foregroundStyle(isDisabled ? Theme.tertiaryText : Theme.secondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
+                            .font(.caption2)
+                            .foregroundStyle(Theme.tertiaryText)
                             .lineLimit(1)
                     }
                 }
