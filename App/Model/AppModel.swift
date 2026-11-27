@@ -113,8 +113,12 @@ final class AppModel {
         monitoringRouters[router.windowID] = MonitoringRouter(router)
         router.monitoringCoverageChanged = { [weak self, weak router] in
             guard let self, let router else { return }
+            let workspace = self.workspace(in: router.windowID)
+            let wasReading = workspace.map { self.isWorkspaceUncovered($0.id) }
             self.monitoringReading.setCovered(router.monitoringCoversChat, window: router.windowID)
-            self.workspace(in: router.windowID)?.monitoringCoverageChanged()
+            if let workspace, let wasReading, wasReading != self.isWorkspaceUncovered(workspace.id) {
+                workspace.monitoringCoverageChanged()
+            }
         }
         router.monitoringCoverageChanged?()
     }
@@ -178,8 +182,11 @@ final class AppModel {
         if updated.lastUsed != windows.lastUsed {
             UserDefaults.standard.set(updated.lastUsed?.uuidString, forKey: PreferenceKey.selectedBot)
         }
+        let reading = Set(workspaces.keys.filter { isWorkspaceUncovered($0) })
         windows = updated
-        for workspace in workspaces.values { workspace.monitoringCoverageChanged() }
+        for (id, workspace) in workspaces where reading.contains(id) != isWorkspaceUncovered(id) {
+            workspace.monitoringCoverageChanged()
+        }
         keepShownGatewaysConnected()
     }
 

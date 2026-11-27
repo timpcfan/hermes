@@ -43,10 +43,19 @@ final class WindowRouter {
     /// Names this window to `AppModel`, which keeps the gateway each window shows.
     let windowID = UUID()
     var sheet: WindowSheet? {
-        didSet { monitoringCoverageChanged?() }
+        didSet {
+            let wasCovered: Bool
+            if case .monitoring = oldValue { wasCovered = true }
+            else { wasCovered = monitoringTabIsSelected }
+            if wasCovered != monitoringCoversChat { monitoringCoverageChanged?() }
+        }
     }
     var monitoringTabIsSelected = false {
-        didSet { monitoringCoverageChanged?() }
+        didSet {
+            guard oldValue != monitoringTabIsSelected else { return }
+            if case .monitoring = sheet { return }
+            monitoringCoverageChanged?()
+        }
     }
     @ObservationIgnored var monitoringCoverageChanged: (() -> Void)?
 

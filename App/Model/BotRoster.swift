@@ -162,6 +162,7 @@ final class BotRoster {
     @ObservationIgnored private var sharingRead: Set<String> = []
     @ObservationIgnored private var readThrottle = ReadThrottle()
     @ObservationIgnored private var trailingRead: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var shareableRead: [String: Double] = [:]
     #if os(macOS)
     @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
     #endif
@@ -1977,7 +1978,10 @@ final class BotRoster {
             watermarks[name] = active
             UserDefaults.standard.set(watermarks, forKey: Self.watermarkKey(botID))
         }
-        if share { shareRead(bot) }
+        if share {
+            shareableRead[name] = max(shareableRead[name] ?? 0, active)
+            shareRead(bot)
+        }
     }
 
     /// Tells Hermes the Bot Chat was read (the mark Hermes Desktop keeps), so the person's other
@@ -1995,9 +1999,13 @@ final class BotRoster {
                 try? await Task.sleep(for: .seconds(wait))
                 guard let self, !Task.isCancelled else { return }
                 self.trailingRead[name] = nil
-                // What came since, behind other apps, wasn't seen: only the read already made goes then.
+                // A foreground Stats screen is not reading this Bot. Only a still-visible chat
+                // may advance beyond the activity already read before this task was queued.
+                let isReading = Self.isInFront && self.openBot == name
+                    && self.workspace?.isReadingDetail == true
                 guard let bot = self.bot(named: name),
-                      Self.isInFront || (bot.chatActivity?.timeIntervalSince1970 ?? 0) <= active + 0.5 else { return }
+                      isReading || (bot.chatActivity?.timeIntervalSince1970 ?? 0)
+                        <= max(active, self.shareableRead[name] ?? 0) + 0.5 else { return }
                 self.shareRead(bot)
             }
             return

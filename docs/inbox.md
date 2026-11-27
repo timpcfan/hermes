@@ -331,7 +331,10 @@ search).
 - Read follows what's been on screen. On the gateway when the newest message has been on screen
   for a second, or on a jump to the end (`TranscriptView.markRead`): chats and Bot Chats alike,
   also while a Bot works on screen (at most every 10 s, `ReadThrottle`, the last carrying what came
-  meanwhile). Opening a chat at its newest message reads it all at once; opening it partway up
+  meanwhile). A pending trailing Bot read checks uncovered reading demand again when it wakes.
+  With every reading window behind Stats, it may share activity already seen, but cannot advance
+  over a newer reply; a local-only background read does not authorize sharing it. Opening a chat at
+  its newest message reads it all at once; opening it partway up
   reads nothing until you reach the end.
 - Only where someone can be reading: the app in front, on the Mac the window in front
   (`controlActiveState`) with the screen unlocked and awake (`ScreenLock`). A window behind
@@ -346,7 +349,10 @@ search).
   kept on the device) and goes when it answers, after 5 s, 15 s, 45 s, up to every 5 minutes;
   marks only move forward, and a waiting mark is dropped once new messages came into its chat
   (sending it then would mark them read unseen).
-- Mark as Unread (menu, swipe, ⇧⌘U); opening the chat clears it.
+- Mark as Unread (menu, swipe, ⇧⌘U); opening the chat clears it. Pairing, Settings, router
+  registration and window activation preserve that reminder when effective reading demand has
+  not changed. Stats removes only its covered window's demand; another visible uncovered window
+  on the same gateway keeps reading, and closing Stats restores the returning window's demand.
 
 ### The jump pill
 
