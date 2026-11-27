@@ -143,6 +143,7 @@ struct RootView: View {
         // gateway for nothing.
         .onAppear {
             app.windowOpened(router.windowID, showing: app.restoredGateway(storedGateway))
+            app.registerMonitoringRouter(router)
             if appearsActive { app.windowBecameActive(router.windowID) }
         }
         .onDisappear { app.windowClosed(router.windowID) }
@@ -224,6 +225,7 @@ struct RootView: View {
         .focusedSceneValue(\.windowRouter, router)
         // Outermost, so sheets inherit them too.
         .environment(router)
+        .environment(\.monitoringWindowIsVisible, !isMinimized && scenePhase != .background)
         .pausesMotionWhenAway()
         #if HERMES_PUSH
         .pushPresentation()
@@ -286,6 +288,13 @@ struct RootView: View {
                     .presentationDetents([.large])
                     #endif
             }
+        case .monitoring:
+            MonitoringView(model: app.monitoring, allowsDismiss: true)
+                #if os(macOS)
+                .frame(minWidth: 720, idealWidth: 860, minHeight: 600, idealHeight: 760)
+                #else
+                .presentationSizing(.page)
+                #endif
         }
     }
 
@@ -628,6 +637,8 @@ struct RootView: View {
             router.sheet = .quickOpen
         } else if defaults.string(forKey: "HERMES_OPEN") == "settings" {
             router.sheet = .settings
+        } else if defaults.string(forKey: "HERMES_OPEN") == "stats" {
+            router.sheet = .monitoring
         } else if defaults.string(forKey: "HERMES_OPEN") == "add-gateway" {
             router.sheet = .addGateway
         }

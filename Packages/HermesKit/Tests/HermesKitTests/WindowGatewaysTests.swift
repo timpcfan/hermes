@@ -6,6 +6,21 @@ import Testing
 /// last-used one follows the latest switch or activation (`docs/connecting-and-voice.md` §8).
 @Suite("Window gateways")
 struct WindowGatewaysTests {
+    @Test func visibleReadingWindowsKeepTheirOwnIdentity() {
+        let gateway = UUID(), other = UUID(), first = UUID(), second = UUID()
+        var windows = WindowGateways()
+        windows.open(first, showing: gateway)
+        windows.open(second, showing: gateway)
+        #expect(windows.visibleWindows(showing: gateway) == [first, second])
+        windows.setVisible(false, window: first)
+        #expect(windows.visibleWindows(showing: gateway) == [second])
+        windows.show(other, in: second)
+        #expect(windows.visibleWindows(showing: gateway).isEmpty)
+        #expect(windows.visibleWindows(showing: other) == [second])
+        windows.close(second)
+        #expect(windows.visibleWindows(showing: other).isEmpty)
+    }
+
     let home = UUID()
     let work = UUID()
     let first = UUID()

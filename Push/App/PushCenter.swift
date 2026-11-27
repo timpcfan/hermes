@@ -650,7 +650,7 @@ final class PushCenter {
     var visibleChats: VisibleChats {
         guard let model else { return .none }
         return VisibleChats(isActive: isActive, gateways: model.windows.visibleGateways) { id in
-            guard let workspace = model.workspaces[id] else { return [] }
+            guard let workspace = model.workspaces[id], workspace.isReadingDetail else { return [] }
             if case .group(let room)? = workspace.selection { return [room] }
             let conversation = workspace.currentConversation
             return [conversation.sessionID, conversation.stableKey].compactMap { $0 }
@@ -916,6 +916,11 @@ final class PushCenter {
     }
 
     private func go(to destination: NoticeDestination?, _ notice: PushNotice, in workspace: BotWorkspace) {
+        // Gateway selection has already happened. Reveal only after routing the new selection,
+        // so restoring read demand cannot mark the previously covered chat as read.
+        defer {
+            if destination != nil { model?.revealMonitoringDestination(in: workspace.id) }
+        }
         switch destination {
         case .card(let card, let board, let projectID)?:
             workspace.openCard(card, board: board, projectID: projectID)

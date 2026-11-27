@@ -15,6 +15,9 @@ import UIKit
 final class AppModel {
     private(set) var bots: [BotConfiguration] = []
     private(set) var workspaces: [UUID: BotWorkspace] = [:]
+    /// The app-wide Xunxin link (`docs/monitoring.md`): one monitor service for the whole app,
+    /// independent of every gateway, Bot and window.
+    let monitoring = MonitoringModel()
     /// Which gateway each window shows (`docs/connecting-and-voice.md` §8).
     private(set) var windows = WindowGateways()
     /// The gateway used last: the one app-wide places use (Settings, Talk, the menu bar extra,
@@ -99,6 +102,36 @@ final class AppModel {
         }
     }
 
+    private final class MonitoringRouter {
+        weak var value: WindowRouter?
+        init(_ value: WindowRouter) { self.value = value }
+    }
+    @ObservationIgnored private var monitoringRouters: [UUID: MonitoringRouter] = [:]
+    private var monitoringReading = MonitoringReadingDemand()
+
+    func registerMonitoringRouter(_ router: WindowRouter) {
+        monitoringRouters[router.windowID] = MonitoringRouter(router)
+        router.monitoringCoverageChanged = { [weak self, weak router] in
+            guard let self, let router else { return }
+            let workspace = self.workspace(in: router.windowID)
+            let wasReading = workspace.map { self.isWorkspaceUncovered($0.id) }
+            self.monitoringReading.setCovered(router.monitoringCoversChat, window: router.windowID)
+            if let workspace, let wasReading, wasReading != self.isWorkspaceUncovered(workspace.id) {
+                workspace.monitoringCoverageChanged()
+            }
+        }
+        router.monitoringCoverageChanged?()
+    }
+
+    func isWorkspaceUncovered(_ gateway: UUID) -> Bool {
+        monitoringReading.isReading(visibleWindows: windows.visibleWindows(showing: gateway))
+    }
+
+    func revealMonitoringDestination(in gateway: UUID) {
+        guard let window = windows.mostRecentWindow, windows.gateway(in: window) == gateway else { return }
+        monitoringRouters[window]?.value?.revealMonitoringDestination()
+    }
+
     // MARK: - Windows
 
     /// The gateway a window shows: its own, or the last-used one until it has one.
@@ -127,6 +160,8 @@ final class AppModel {
 
     func windowClosed(_ window: UUID) {
         updateWindows { $0.close(window) }
+        monitoringReading.setCovered(false, window: window)
+        monitoringRouters[window] = nil
     }
 
     func windowBecameActive(_ window: UUID) {
@@ -147,7 +182,11 @@ final class AppModel {
         if updated.lastUsed != windows.lastUsed {
             UserDefaults.standard.set(updated.lastUsed?.uuidString, forKey: PreferenceKey.selectedBot)
         }
+        let reading = Set(workspaces.keys.filter { isWorkspaceUncovered($0) })
         windows = updated
+        for (id, workspace) in workspaces where reading.contains(id) != isWorkspaceUncovered(id) {
+            workspace.monitoringCoverageChanged()
+        }
         keepShownGatewaysConnected()
     }
 

@@ -222,6 +222,9 @@ struct MacWelcomeView: View {
             HStack(spacing: 12) {
                 Button("Connect to Another Gateway…") { router?.sheet = .addGateway }
                     .buttonBorderShape(.capsule)
+                // The monitor link is the app's own: it opens with no gateway at all.
+                Button(statsString("View Stats")) { router?.sheet = .monitoring }
+                    .buttonBorderShape(.capsule)
                 Button {
                     showsGetHermes = true
                 } label: {

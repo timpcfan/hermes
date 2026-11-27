@@ -250,6 +250,16 @@ struct WelcomeActions: View {
                 }
             }
             .frame(maxWidth: width)
+            // Stats reads the app-wide monitor link, so it works before any gateway is set up.
+            Button { router?.sheet = .monitoring } label: {
+                Label(statsString("View Stats"), systemImage: "chart.bar.xaxis")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(statsString("Opens the Xunxin monitor without a gateway"))
             Button(action: getHermes) {
                 HStack(spacing: 4) {
                     Text("New to Hermes Agent? Get it")

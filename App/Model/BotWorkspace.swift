@@ -240,7 +240,7 @@ final class BotWorkspace: Identifiable {
     func setShowsDetail(_ shows: Bool) {
         guard navigation.showsDetail != shows else { return }
         navigation.showsDetail = shows
-        if shows, let key = selectionUnreadKey { unread.noteOpening(key) }
+        if shows, isReadingDetail, let key = selectionUnreadKey { unread.noteOpening(key) }
         openSelection()
     }
 
@@ -259,8 +259,14 @@ final class BotWorkspace: Identifiable {
 
     /// The selected chat, Bot Chat or group chat, as far as it is on screen, is open: it never
     /// counts as unread and opening it clears a dot.
+    var isReadingDetail: Bool {
+        navigation.showsDetail && (app?.isWorkspaceUncovered(id) ?? true)
+    }
+
+    func monitoringCoverageChanged() { openSelection() }
+
     private func openSelection() {
-        let bot: String? = if navigation.showsDetail, case .bot(let name) = selection { name } else { nil }
+        let bot: String? = if isReadingDetail, case .bot(let name) = selection { name } else { nil }
         if roster?.openBot != bot { roster?.openBot = bot }
         if let key = unread.openKey {
             activity.opened(key)

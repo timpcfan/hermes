@@ -38,6 +38,13 @@ public struct WindowGateways: Equatable, Sendable {
 
     public func isOpen(_ window: UUID) -> Bool { windows[window] != nil }
 
+    /// Visible windows reading a gateway, before window-local presentation covers are applied.
+    public func visibleWindows(showing gateway: UUID) -> Set<UUID> {
+        Set(windows.compactMap { id, entry in
+            entry.isVisible && (entry.gateway ?? lastUsed) == gateway ? id : nil
+        })
+    }
+
     public var windowCount: Int { windows.count }
 
     /// The gateways open, visible windows show: a chat open on one of them is on screen

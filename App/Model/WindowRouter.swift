@@ -18,12 +18,15 @@ enum WindowSheet: Identifiable {
     case scanner
     /// ⌘K: jump to a chat, Bot, place or gateway.
     case quickOpen
+    /// Stats, over the window on iPad and Mac.
+    case monitoring
 
     var id: String {
         switch self {
         case .addGateway: "add"
         case .editGateway(let bot): "edit-\(bot.id)"
         case .settings: "settings"
+        case .monitoring: "monitoring"
         case .pairing(let botID): "pairing-\(botID)"
         case .connect(let link, _): "connect-\(link.gateway.absoluteString)"
         case .scanner: "scanner"
@@ -39,7 +42,32 @@ enum WindowSheet: Identifiable {
 final class WindowRouter {
     /// Names this window to `AppModel`, which keeps the gateway each window shows.
     let windowID = UUID()
-    var sheet: WindowSheet?
+    var sheet: WindowSheet? {
+        didSet {
+            let wasCovered: Bool
+            if case .monitoring = oldValue { wasCovered = true }
+            else { wasCovered = monitoringTabIsSelected }
+            if wasCovered != monitoringCoversChat { monitoringCoverageChanged?() }
+        }
+    }
+    var monitoringTabIsSelected = false {
+        didSet {
+            guard oldValue != monitoringTabIsSelected else { return }
+            if case .monitoring = sheet { return }
+            monitoringCoverageChanged?()
+        }
+    }
+    @ObservationIgnored var monitoringCoverageChanged: (() -> Void)?
+
+    var monitoringCoversChat: Bool {
+        if case .monitoring = sheet { return true }
+        return monitoringTabIsSelected
+    }
+
+    /// A destination requested outside Stats only dismisses this presentation.
+    func revealMonitoringDestination() {
+        if case .monitoring = sheet { sheet = nil }
+    }
     /// Runs once the current sheet has gone: for actions that bring up another of the
     /// window's sheets, which can't appear while this one is still leaving.
     @ObservationIgnored var afterDismiss: (() -> Void)?
@@ -161,6 +189,8 @@ extension FocusedValues {
 }
 
 extension EnvironmentValues {
+    /// Stats has its own shared demand; a minimized Mac window contributes none.
+    @Entry var monitoringWindowIsVisible = true
     /// A Mac window under 700 pt (`docs/chat.md` §4): toolbars keep only what fits.
     @Entry var windowIsNarrow = false
     /// The sidebar is over a narrow window's chat: the toolbar's centered item steps aside, so

@@ -123,7 +123,7 @@ final class UnreadStore {
     /// The chat on screen: never unread, and read as it's shown. A chat backed out of on iPhone
     /// stays selected under the list, but isn't on screen.
     var openKey: String? {
-        guard workspace?.navigation.showsDetail != false else { return nil }
+        guard workspace?.isReadingDetail != false else { return nil }
         return switch workspace?.selection {
         case .session(let key): key
         case .bot(let name): Self.botKey(name)
