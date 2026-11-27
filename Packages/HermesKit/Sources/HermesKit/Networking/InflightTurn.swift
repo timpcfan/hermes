@@ -57,6 +57,17 @@ public struct InflightTurn: Sendable, Equatable {
         let index: Int
         let storedAt: Date?
         switch reading(id: "") {
+        case .nothing where user.isEmpty && displayKind == nil:
+            // A message that is only pictures: its words are empty, so `reading` has none to
+            // match by. Its stored row is the chat's last message, and its time says whether it is
+            // this turn's (an earlier message is older than the turn). Without this the chat took
+            // it for the message the turn answers not being stored, settled the stored part as
+            // done, and started a second turn below it (`beginRemoteTurn`, `docs/chat.md` §2).
+            guard let startedAt,
+                  let found = items.lastIndex(where: { if case .user = $0 { true } else { false } }),
+                  case .user(let stored) = items[found], let storedAt = stored.timestamp
+            else { return false }
+            return storedAt >= startedAt.addingTimeInterval(-5)
         case .nothing:
             return false
         case .message(let entry):

@@ -344,6 +344,20 @@ public struct LiveTurn: Sendable, Equatable {
         return (Array(items.dropLast()), LiveTurn(continuing: stored, sessionID: sessionID, startedAt: startedAt))
     }
 
+    /// The rows without a stored copy of the running turn.
+    ///
+    /// A rebuild during the turn (a page loaded above, a reload) puts the stored part of that turn
+    /// back among the rows, under the live turn's own id: `LiveTurn(continuing:)` keeps the id it
+    /// carries on from. The live row is that turn, so the stored copy would show it a second time
+    /// (`docs/chat.md` §2, one turn in one place).
+    public static func rows(_ rows: [TranscriptItem], droppingStoredCopyOf liveID: String?) -> [TranscriptItem] {
+        guard let liveID else { return rows }
+        return rows.filter { item in
+            if case .assistant(let turn) = item { return turn.id != liveID }
+            return true
+        }
+    }
+
     /// The part of this turn Hermes has stored so far (it stores as it goes): the rows after
     /// `after`, the newest stored message from before the turn. `nil` while nothing of it is.
     public static func storedPart(of messages: [SessionMessage], after: Int?) -> AssistantTurn? {

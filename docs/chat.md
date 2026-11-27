@@ -180,6 +180,15 @@ stored after the newest row from before the turn. Never by words, and never by b
   again every 5 s until the reply's row is there; then the stored rows take over in place
   (`TurnPlacement`). The stored part is never drawn as a second turn still working elsewhere: that
   showed one turn twice, "Thinking… · 4m 19s" over its own narration above "Worked for 3m 57s".
+- A page loaded above rebuilds the chat while the reply streams: the stored part of the running
+  turn comes back among the rows under the live turn's own id (`LiveTurn(continuing:)` keeps it),
+  and the live row follows. The rows drop that stored copy (`LiveTurn.rows(_:droppingStoredCopyOf:)`):
+  drawn by its id, both rows read as the live turn and the chat showed one turn twice, same id and
+  same "Thinking…".
+- A message that is only pictures has no words to find its stored row by, so it is found by being
+  the chat's last message, at the turn's own time (`InflightTurn.isStored`). Read as nothing
+  stored, the stored part was settled as done and a second turn started below it with the same
+  reply.
 - A live header never outlives its run, and a reply the app stopped hearing recovers by itself.
   The turn can end unheard in normal use: Hermes reaps a session 20 s after its last socket left
   (`ws_orphan_reap_grace_s`), so a phone away while its reply ended re-attaches to a new runtime
