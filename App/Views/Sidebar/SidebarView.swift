@@ -695,10 +695,10 @@ private struct SessionRow: View {
     var body: some View {
         let item = SidebarItem.session(session.stableID)
         let isSelected = workspace.selection == item
-        SidebarRow(isSelected: isSelected, height: InboxMetrics.rowHeight) {
+        SidebarRow(isSelected: isSelected, height: SidebarMetrics.chatRowHeight) {
             workspace.pick(item)
         } label: {
-            ChatInboxRow(session: session, workspace: workspace)
+            SidebarChatRow(session: session, workspace: workspace)
         }
         #if DEBUG
         .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }

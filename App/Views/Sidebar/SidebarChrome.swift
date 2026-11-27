@@ -38,6 +38,21 @@ enum SidebarMetrics {
     static let sectionFont = Font.footnote.weight(.semibold)
     static let glyphColor = Theme.primaryText
     #endif
+    /// A chat in the sidebar (iPad and the Mac share one size): a 32 pt face, a 15 pt semibold
+    /// title that wraps to two lines, 13 pt detail, and a row at least 64 pt tall
+    /// (`docs/inbox.md` §2).
+    static let chatFaceSize: CGFloat = 32
+    static let chatRowHeight: CGFloat = 64
+    static let chatGlyphSize: CGFloat = 11
+    static let chatLineSpacing: CGFloat = 3
+    #if os(macOS)
+    static let chatTitleFont = Font.system(size: 15, weight: .semibold)
+    static let chatDetailFont = Font.system(size: 13)
+    #else
+    static let chatTitleFont = Font.subheadline.weight(.semibold)
+    static let chatDetailFont = Font.footnote
+    #endif
+
     /// The rows' inset from the sidebar's edges; the highlight sits inside it.
     static let listInset: CGFloat = 8
     static var rowInsets: EdgeInsets {
