@@ -17,6 +17,7 @@ struct IOSMainView: View {
     var onListChanged: (Bool) -> Void = { _ in }
 
     @Environment(AppModel.self) private var app
+    @Environment(WindowRouter.self) private var router
 
     @State private var tab = IOSMainTab.chats
     /// What the bar itself shows. The compose circle is a tab in form only (iOS 27's prominent
@@ -33,6 +34,7 @@ struct IOSMainView: View {
     @State private var windowWidth: CGFloat = 0
     /// The pencil opened its panel of profiles (`docs/inbox.md` §9).
     @State private var isChoosingProfile = false
+    @State private var monitoringCompose = MonitoringComposeHandoff()
 
     private var showsDetail: Bool { !chatPath.isEmpty || !botPath.isEmpty }
 
@@ -42,10 +44,13 @@ struct IOSMainView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
             .onChange(of: workspace.navigation.pushes) {
                 // A chat opened under the panel closes it, as a popover would.
+                monitoringCompose.cancel()
                 closeComposePanels()
                 pushSelection()
             }
             .onChange(of: workspace.navigation.pops) { popToRoot() }
+            .onDisappear { router.monitoringTabIsSelected = false }
+            .onAppear { router.monitoringTabIsSelected = tab == .stats }
             .onChange(of: showsDetail) { _, shows in
                 workspace.setShowsDetail(shows)
                 onListChanged(!shows)
@@ -56,6 +61,10 @@ struct IOSMainView: View {
             .onChange(of: tab) { _, newTab in
                 // The panel belongs to the tab it was opened on.
                 closeComposePanels()
+                if monitoringCompose.arrived(isChats: newTab == .chats) {
+                    isChoosingProfile = true
+                }
+                router.monitoringTabIsSelected = newTab == .stats
                 if barSelection != newTab { barSelection = newTab }
                 // The first screen's mode follows the tab the person picked, so iPad and Mac open
                 // where it was. A deep link into a Bot chat doesn't change it (the chat is the same
@@ -125,6 +134,15 @@ struct IOSMainView: View {
     private var statsTab: some TabContent<IOSMainTab> {
         Tab(Self.statsTabTitle, systemImage: "chart.bar.xaxis", value: IOSMainTab.stats) {
             MonitoringView(model: app.monitoring)
+                .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+                    if #available(iOS 27.0, *) {
+                        EmptyView()
+                    } else {
+                        IOSComposeButton(tab: .stats, workspace: workspace)
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 8)
+                    }
+                }
         }
     }
 
@@ -192,8 +210,19 @@ struct IOSMainView: View {
     /// The compose circle: a new chat on Chats and Settings (which moves to Chats to show it), and
     /// on Bots the popover with New Bot and New Group Chat.
     private func compose() {
-        // Stats has no compose of its own; a new chat is a Chats screen, so go there first.
-        if tab == .stats { tab = .chats }
+        if monitoringCompose.awaitsChats {
+            monitoringCompose.cancel()
+            closeComposePanels()
+            return
+        }
+        if tab == .stats {
+            if !workspace.newChatProfiles.isEmpty {
+                monitoringCompose.begin()
+                tab = .chats
+                return
+            }
+            tab = .chats
+        }
         // A second tap on the circle closes its panel rather than opening it again: the panel sits
         // over the only thing the person can still tap.
         if isChoosingNew {
@@ -313,7 +342,7 @@ struct IOSComposeButton: View {
 
     var body: some View {
         switch tab {
-        case .chats:
+        case .chats, .stats:
             if workspace.newChatProfiles.isEmpty {
                 Button("New Chat", systemImage: "square.and.pencil") {
                     Self.startNewChat(in: workspace)
@@ -351,7 +380,7 @@ struct IOSComposeButton: View {
             .glassButton()
             .disabled(workspace.roster?.isConnected != true)
             .accessibilityIdentifier("tab.compose")
-        case .stats, .settings, .compose:
+        case .settings, .compose:
             EmptyView()
         }
     }

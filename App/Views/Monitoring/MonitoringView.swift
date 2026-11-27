@@ -12,6 +12,8 @@ struct MonitoringView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @State private var consumerID = UUID()
+    @State private var isVisible = false
     @State private var section = MonitoringSection.overview
     @State private var requests: MonitoringRequestsModel
     @State private var showsSettings = false
@@ -64,15 +66,21 @@ struct MonitoringView: View {
                     #endif
             }
         }
-        .task { model.start() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                if model.isRunning { model.refresh() } else { model.start() }
-            } else if phase == .background {
-                model.stop()
-            }
+        .onAppear {
+            isVisible = true
+            model.setConsumer(consumerID, active: scenePhase != .background)
         }
-        .onDisappear { model.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            let active = isVisible && phase != .background
+            model.setConsumer(consumerID, active: active)
+            requests.setVisible(active && section == .requests)
+        }
+        .onDisappear {
+            isVisible = false
+            requests.setVisible(false)
+            model.setConsumer(consumerID, active: false)
+        }
+        .onChange(of: model.connectionGeneration) { selectedFlight = nil }
         .sheet(item: $selectedFlight) { flight in
             MonitoringRequestDetailView(
                 flight: flight, timezone: model.snapshot?.timezone ?? "+00:00"
@@ -238,7 +246,9 @@ private struct MonitoringOverviewView: View {
     let onAllRequests: () -> Void
     let onRequest: (MonitoringFlight) -> Void
 
-    private var policy: MonitoringFreshnessPolicy { .standard }
+    private var presentation: MonitoringPresentation {
+        model.presentation ?? MonitoringPresentation(snapshot: snapshot, receivedAt: nil, now: .now, state: .idle)
+    }
 
     var body: some View {
         ScrollView {
@@ -266,17 +276,17 @@ private struct MonitoringOverviewView: View {
                 )
                 healthRow(
                     statsString("Relay"),
-                    state: snapshot.failover.reachable == true ? .live : (snapshot.failover.reachable == false ? .down : .unknown),
+                    state: presentation.relayState,
                     detail: relayDetail
                 )
                 healthRow(
                     statsString("Live trace"),
-                    state: policy.traceState(snapshot),
+                    state: presentation.traceState,
                     detail: traceDetail
                 )
                 healthRow(
                     statsString("Usage file"),
-                    state: policy.usageState(snapshot),
+                    state: presentation.usageState,
                     detail: usageDetail
                 )
             }
@@ -296,6 +306,7 @@ private struct MonitoringOverviewView: View {
     }
 
     private var relayDetail: String {
+        guard presentation.relayState == .live else { return presentation.relayState.title }
         guard let reachable = snapshot.failover.reachable else { return statsString("Unknown") }
         guard reachable else { return statsString("Unreachable") }
         let tunnels = snapshot.failover.tunnels ?? 0
@@ -307,7 +318,7 @@ private struct MonitoringOverviewView: View {
     }
 
     private var traceDetail: String {
-        switch policy.traceState(snapshot) {
+        switch presentation.traceState {
         case .live: statsString("Receiving state")
         case .stale: statsString("Last update is old")
         case .down: snapshot.trace.error ?? statsString("Unavailable")
@@ -316,7 +327,7 @@ private struct MonitoringOverviewView: View {
     }
 
     private var usageDetail: String {
-        switch policy.usageState(snapshot) {
+        switch presentation.usageState {
         case .live: statsString("Today's totals are current")
         case .stale: statsString("Today's totals may be behind")
         case .down: statsString("Unavailable")
@@ -370,7 +381,7 @@ private struct MonitoringOverviewView: View {
     private func exitRow(_ exit: MonitoringExit) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Circle()
-                .fill(exit.ok == true ? Theme.success : (exit.ok == false ? Theme.danger : Theme.tertiaryText))
+                .fill(presentation.exitState(exit).statsColor)
                 .frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
                 Text(exit.name)
@@ -396,9 +407,7 @@ private struct MonitoringOverviewView: View {
     private func subtitle(for exit: MonitoringExit) -> String {
         var parts: [String] = []
         if !exit.role.isEmpty { parts.append(exit.displayRole) }
-        parts.append(exit.ok == true
-            ? statsString("Reachable")
-            : (exit.ok == false ? statsString("Unreachable") : statsString("Unknown")))
+        parts.append(presentation.reachability(exit))
         if exit.servedToday > 0 {
             parts.append(statsString("\(exit.servedToday) today"))
         }
@@ -478,7 +487,7 @@ private struct MonitoringOverviewView: View {
 
     private var inflight: some View {
         MonitoringCard(title: statsString("In flight"), symbol: "bolt.horizontal") {
-            switch policy.traceState(snapshot) {
+            switch presentation.traceState {
             case .down:
                 Text(statsString("Trace is unavailable, so requests in flight can't be read."))
                     .font(.caption)
@@ -487,7 +496,7 @@ private struct MonitoringOverviewView: View {
                 Text(statsString("Trace is stale; this list may be behind."))
                     .font(.caption)
                     .foregroundStyle(Theme.warning)
-                flightRows
+                if !snapshot.inflight.isEmpty { flightRows }
             case .unknown:
                 Text(statsString("The service didn't report whether trace is current."))
                     .font(.caption)
@@ -500,7 +509,9 @@ private struct MonitoringOverviewView: View {
 
     @ViewBuilder private var flightRows: some View {
         if snapshot.inflight.isEmpty {
-            Text(statsString("No requests in flight."))
+            Text(presentation.canClaimNoInflight
+                ? statsString("No requests in flight.")
+                : statsString("The current number of requests in flight is unknown."))
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
         } else {
@@ -562,12 +573,12 @@ private struct MonitoringOverviewView: View {
                     .foregroundStyle(Theme.secondaryText)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(snapshot.recent.prefix(3))) { flight in
+                    ForEach(Array(presentation.recent)) { flight in
                         Button { onRequest(flight) } label: {
                             MonitoringFlightRow(flight: flight, timezone: snapshot.timezone, now: snapshot.now)
                         }
                         .buttonStyle(.plain)
-                        if flight.id != snapshot.recent.prefix(3).last?.id { Divider() }
+                        if flight.id != presentation.recent.last?.id { Divider() }
                     }
                 }
             }
@@ -703,6 +714,15 @@ extension MonitoringExit {
 }
 
 extension MonitoringSourceState {
+    var statsColor: Color {
+        switch self {
+        case .live: Theme.success
+        case .down: Theme.danger
+        case .stale: Theme.warning
+        case .unknown: Theme.tertiaryText
+        }
+    }
+
     var title: String {
         switch self {
         case .live: statsString("Live")
@@ -736,16 +756,21 @@ enum MonitoringFormat {
     }
 
     static func milliseconds(_ value: Double?) -> String {
-        guard let value, value.isFinite else { return "—" }
+        guard let value, value.isFinite, value >= 0 else { return "—" }
         if value < 1 { return "<1 ms" }
         if value < 1000 { return "\(Int(value.rounded())) ms" }
         return seconds(value / 1000)
     }
 
     static func seconds(_ value: Double) -> String {
-        guard value.isFinite else { return "—" }
+        guard value.isFinite, value >= 0, let rounded = Int(exactly: value.rounded()) else { return "—" }
         if value < 10 { return String(format: "%.1f s", value) }
-        return "\(Int(value.rounded())) s"
+        return "\(rounded) s"
+    }
+
+    static func probeAxis(_ value: Double) -> String {
+        guard value.isFinite, value >= 0, let rounded = Int(exactly: value.rounded()) else { return "—" }
+        return statsString("\(rounded) ms")
     }
 
     static func speed(_ value: Double?) -> String {

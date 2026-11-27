@@ -313,7 +313,7 @@ private struct SettingsSplitView: View {
             }
 
             Section(header: Text(statsString("Monitoring service"))) {
-                SettingsRowLabel(symbol: "chart.bar.xaxis", title: statsString("Xunxin link"))
+                SettingsRowLabel(symbol: "chart.bar.xaxis", localizedTitle: statsString("Xunxin link"))
                     .accessibilityHint(statsString("The monitor service Stats reads"))
                     .settingsSidebarRow(SettingsPane.monitoring, selection: pane)
             }
@@ -517,7 +517,7 @@ struct SettingsRowLabel: View {
     }
 
     /// A title already read from a table (Stats' own copy comes from `Stats`).
-    init(symbol: String, title: String, summary: String? = nil, compact: Bool = false) {
+    init(symbol: String, localizedTitle title: String, summary: String? = nil, compact: Bool = false) {
         self.symbol = symbol
         self.title = Text(verbatim: title)
         self.summary = summary

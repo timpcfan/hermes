@@ -13,14 +13,14 @@ struct MonitoringExitsView: View {
             if let snapshot = model.snapshot {
                 if snapshot.exits.isEmpty {
                     ContentUnavailableView(
-                        "No exits reported", systemImage: "arrow.triangle.branch",
+                        statsString("No exits reported"), systemImage: "arrow.triangle.branch",
                         description: Text(statsString("The service didn't include exit probes in this snapshot."))
                     )
                     .listRowBackground(Color.clear)
                 } else {
                     ForEach(snapshot.exits) { exit in
                         Section {
-                            MonitoringExitCard(exit: exit, timezone: snapshot.timezone)
+                            MonitoringExitCard(exit: exit, timezone: snapshot.timezone, presentation: model.presentation)
                         }
                     }
                 }
@@ -120,13 +120,14 @@ extension MonitoringEvent {
 private struct MonitoringExitCard: View {
     let exit: MonitoringExit
     let timezone: String
+    let presentation: MonitoringPresentation?
     @State private var selectedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Circle()
-                    .fill(exit.ok == true ? Theme.success : (exit.ok == false ? Theme.danger : Theme.tertiaryText))
+                    .fill((presentation?.exitState(exit) ?? .unknown).statsColor)
                     .frame(width: 8, height: 8)
                 Text(exit.name)
                     .font(.headline)
@@ -134,7 +135,7 @@ private struct MonitoringExitCard: View {
                 Spacer(minLength: 8)
                 Text(reachability)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(exit.ok == true ? Theme.success : (exit.ok == false ? Theme.danger : Theme.secondaryText))
+                    .foregroundStyle((presentation?.exitState(exit) ?? .unknown).statsColor)
             }
             Text(details)
                 .font(.caption)
@@ -208,7 +209,7 @@ private struct MonitoringExitCard: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
-                        Text(statsString("\(Int(number)) ms"))
+                        Text(MonitoringFormat.probeAxis(number))
                             .font(.caption2)
                     }
                 }
@@ -236,19 +237,13 @@ private struct MonitoringExitCard: View {
     }
 
     private var reachability: String {
-        switch exit.ok {
-        case true: statsString("Reachable")
-        case false: statsString("Unreachable")
-        case nil: statsString("Unknown")
-        }
+        presentation?.reachability(exit) ?? statsString("Unknown")
     }
 
     private var details: String {
         var parts: [String] = []
         if !exit.role.isEmpty { parts.append(exit.displayRole) }
-        if let latest = exit.latestSample?.milliseconds {
-            parts.append(statsString("latest \(MonitoringFormat.milliseconds(latest))"))
-        }
+        if let latest = exit.statsLatestProbe { parts.append(latest) }
         if let failures = exit.consecutiveFailures, failures > 0 {
             parts.append(failures == 1
                 ? statsString("1 consecutive failure")

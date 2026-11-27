@@ -46,7 +46,7 @@ struct MonitoringRequestsView: View {
                 Section {
                     if page.items.isEmpty {
                         ContentUnavailableView(
-                            "No requests match", systemImage: "line.3.horizontal.decrease.circle",
+                            statsString("No requests match"), systemImage: "line.3.horizontal.decrease.circle",
                             description: Text(statsString("Change the search, the status or the amount range."))
                         )
                         .listRowBackground(Color.clear)
@@ -77,7 +77,8 @@ struct MonitoringRequestsView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.canvas)
-        .task { if requests.pageData == nil { await requests.load() } }
+        .onAppear { requests.setVisible(true) }
+        .onDisappear { requests.setVisible(false) }
         .onChange(of: requests.isLoading) { _, loading in
             // Loading a page is the list's own waiting; the field stays where it was.
             if !loading { searchFocused = false }
@@ -355,7 +356,7 @@ struct MonitoringFlightRow: View {
         if let exit = flight.exit {
             parts.append(statsString("via \(exit) (inferred)"))
         } else {
-            parts.append(statsString("direct"))
+            parts.append(statsString("Exit unknown"))
         }
         if let effort = flight.effort { parts.append(effort) }
         return parts.joined(separator: " · ")
@@ -444,7 +445,7 @@ struct MonitoringRequestDetailView: View {
                     fact(statsString("Effort"), flight.effort)
                     fact(statsString("Exit"), flight.exit.map {
                         statsString("\($0) (inferred from the tunnel log)")
-                    } ?? statsString("Direct"))
+                    } ?? statsString("Exit unknown"))
                 }
 
                 Section(header: Text(statsString("Timing"))) {
@@ -542,7 +543,7 @@ struct MonitoringRequestDetailView: View {
     }
 
     private var startText: String {
-        let epoch = MonitoringTime.epoch(fromISO: flight.time ?? "") ?? flight.start
+        let epoch = flight.statsStart
         return MonitoringFormat.dayClock(epoch, timezone: timezone)
     }
 

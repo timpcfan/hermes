@@ -79,11 +79,11 @@ final class MonitoringSettingsEditor {
         do {
             _ = try model.connection(baseURL: draft.baseURL, auth: draft.auth, typedToken: draft.token)
             if draft.auth == .bearer, draft.token.isEmpty, !model.hasStoredToken {
-                return MonitoringSettingsProblem.tokenMissing.errorDescription
+                return statsError(MonitoringSettingsProblem.tokenMissing)
             }
             return nil
         } catch {
-            return error.localizedDescription
+            return statsError(error)
         }
     }
 
@@ -101,11 +101,11 @@ final class MonitoringSettingsEditor {
     }
 
     var saveHint: String? {
-        if let validationProblem { return validationProblem.errorDescription }
+        if let validationProblem { return statsError(validationProblem) }
         guard draft.enabled else { return nil }
         if isTesting { return statsString("Testing the connection…") }
         guard let check else { return statsString("Test the connection before saving.") }
-        if !check.isUsable { return check.summary }
+        if !check.isUsable { return check.statsSummary }
         return nil
     }
 
@@ -135,7 +135,7 @@ final class MonitoringSettingsEditor {
             isTesting = false
         } catch {
             guard generation == testGeneration else { return }
-            testError = error.localizedDescription
+            testError = statsError(error)
             isTesting = false
         }
     }
@@ -158,7 +158,7 @@ final class MonitoringSettingsEditor {
             return true
         } catch {
             isSaving = false
-            saveError = error.localizedDescription
+            saveError = statsError(error)
             return false
         }
     }

@@ -311,7 +311,7 @@ struct SidebarView: View {
         DestinationRow(workspace: workspace, title: "Skills", symbol: "book.closed", item: .skills, shortcut: "⇧⌘2")
         // Stats is the app-wide monitor link, not a gateway page: it opens over the window and
         // leaves the sidebar's selection where it was.
-        SidebarNavRow(title: statsString("Stats"), symbol: "chart.bar.xaxis") {
+        SidebarNavRow(localizedTitle: statsString("Stats"), symbol: "chart.bar.xaxis") {
             router?.sheet = .monitoring
         }
     }

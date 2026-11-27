@@ -12,7 +12,7 @@ struct MonitoringModelsView: View {
         List {
             if snapshot.models.items.isEmpty {
                 ContentUnavailableView(
-                    "No models today", systemImage: "cpu",
+                    statsString("No models today"), systemImage: "cpu",
                     description: Text(statsString("The service hasn't recorded a Xunxin request today."))
                 )
                 .listRowBackground(Color.clear)
@@ -181,10 +181,11 @@ private struct MonitoringModelDetailView: View {
             AxisMarks(values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine()
                 AxisTick()
-                AxisValueLabel {
+                AxisValueLabel(centered: false, collisionResolution: .greedy) {
                     if let label = value.as(String.self) {
-                        Text(label)
-                            .font(.caption2)
+                        Text(String(label.prefix(2)))
+                            .font(.caption2.monospacedDigit())
+                            .fixedSize()
                     }
                 }
             }

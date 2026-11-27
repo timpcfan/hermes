@@ -359,6 +359,9 @@
 		FE09DAB3A64EE0597D335112 /* LearningMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AC7B02CFA9FE0E6B8A90D7 /* LearningMapView.swift */; };
 		FE26A19C9F37BA1B8A977638 /* GroupScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BB989CC92F6409C559C8DA /* GroupScreens.swift */; };
 		FEB34AA3C7C582017E097F99 /* HangLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C79E2FB449BC851F5A4BC1A6 /* HangLog.swift */; };
+		195B09D24A71B741764ED3A0 /* MonitoringPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7226F1DBAC55848AF792A7E3 /* MonitoringPresentation.swift */; };
+		4948B7AD2D875F3C844E8D93 /* MonitoringNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D82FAC1B67DBD9DC11051666 /* MonitoringNavigation.swift */; };
+		6A5942B84D513F4363F7DECB /* MonitoringCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A35713680CC6C9900434452 /* MonitoringCopy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -752,6 +755,9 @@
 		FF2AD4B883A16048295A1357 /* BotRosterSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotRosterSections.swift; sourceTree = "<group>"; };
 		FF62818A2A39AC83CBED2C28 /* MacAppsAndToolsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsAndToolsPane.swift; sourceTree = "<group>"; };
 		FFD9CCD2676A19F67EE33509 /* ScrollRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollRun.swift; sourceTree = "<group>"; };
+		1A35713680CC6C9900434452 /* MonitoringCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitoringCopy.swift; sourceTree = "<group>"; };
+		7226F1DBAC55848AF792A7E3 /* MonitoringPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitoringPresentation.swift; sourceTree = "<group>"; };
+		D82FAC1B67DBD9DC11051666 /* MonitoringNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitoringNavigation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1334,6 +1340,9 @@
 			isa = PBXGroup;
 			children = (
 				30405583067397F51B5A4272 /* MonitoringModel.swift */,
+				7226F1DBAC55848AF792A7E3 /* MonitoringPresentation.swift */,
+				D82FAC1B67DBD9DC11051666 /* MonitoringNavigation.swift */,
+				1A35713680CC6C9900434452 /* MonitoringCopy.swift */,
 				2F8AE13963626919A03D3E67 /* MonitoringSettingsEditor.swift */,
 			);
 			path = Monitoring;
@@ -2000,6 +2009,9 @@
 				A37442CB11F0646DFDE70BE0 /* ModelPicker.swift in Sources */,
 				A7D155AEEBC48C3997ACB228 /* MonitoringExitsView.swift in Sources */,
 				057D71F0E966D659FD9820E2 /* MonitoringModel.swift in Sources */,
+				195B09D24A71B741764ED3A0 /* MonitoringPresentation.swift in Sources */,
+				4948B7AD2D875F3C844E8D93 /* MonitoringNavigation.swift in Sources */,
+				6A5942B84D513F4363F7DECB /* MonitoringCopy.swift in Sources */,
 				A35E1EF5AAEF476E3291C8BB /* MonitoringModelsView.swift in Sources */,
 				2ADA84DB47493DB88D93ADE8 /* MonitoringRequestsView.swift in Sources */,
 				992D8A44CCE060555207A50E /* MonitoringSettingsEditor.swift in Sources */,

@@ -42,7 +42,23 @@ enum WindowSheet: Identifiable {
 final class WindowRouter {
     /// Names this window to `AppModel`, which keeps the gateway each window shows.
     let windowID = UUID()
-    var sheet: WindowSheet?
+    var sheet: WindowSheet? {
+        didSet { monitoringCoverageChanged?() }
+    }
+    var monitoringTabIsSelected = false {
+        didSet { monitoringCoverageChanged?() }
+    }
+    @ObservationIgnored var monitoringCoverageChanged: (() -> Void)?
+
+    var monitoringCoversChat: Bool {
+        if case .monitoring = sheet { return true }
+        return monitoringTabIsSelected
+    }
+
+    /// A destination requested outside Stats only dismisses this presentation.
+    func revealMonitoringDestination() {
+        if case .monitoring = sheet { sheet = nil }
+    }
     /// Runs once the current sheet has gone: for actions that bring up another of the
     /// window's sheets, which can't appear while this one is still leaving.
     @ObservationIgnored var afterDismiss: (() -> Void)?

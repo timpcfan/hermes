@@ -16,43 +16,88 @@ final class MonitoringModel {
     private(set) var snapshotReceivedAt: Date?
     private(set) var connectionState: MonitoringConnectionState = .idle
     private(set) var isRunning = false
+    /// Changes before any result from a replaced connection may be published.
+    private(set) var connectionGeneration = 0
+
+    @ObservationIgnored private var consumers: Set<UUID> = []
+    @ObservationIgnored private var sessionGeneration = 0
+    @ObservationIgnored private var sessionTask: Task<Void, Never>?
+    @ObservationIgnored private var stoppingTask: Task<Void, Never>?
+    @ObservationIgnored private var requestConsumers: [WeakRequests] = []
+    @ObservationIgnored private var usesDebugConnection = false
+    @ObservationIgnored private var freshnessTask: Task<Void, Never>?
+    private var freshnessRevision = 0
+
+    var presentation: MonitoringPresentation? {
+        _ = freshnessRevision
+        guard let snapshot else { return nil }
+        return MonitoringPresentation(
+            snapshot: snapshot, receivedAt: snapshotReceivedAt, now: now(), state: connectionState
+        )
+    }
+
+    private final class WeakRequests {
+        weak var value: MonitoringRequestsModel?
+        init(_ value: MonitoringRequestsModel) { self.value = value }
+    }
+
+    fileprivate func register(_ requests: MonitoringRequestsModel) {
+        requestConsumers.removeAll { $0.value == nil }
+        requestConsumers.append(WeakRequests(requests))
+    }
 
     @ObservationIgnored private let store: MonitoringSettingsStore
     @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let makeTransport: @Sendable (MonitoringConnection) -> any MonitoringTransport
+    @ObservationIgnored private let checkConnection: @Sendable (MonitoringConnection, Duration) async -> MonitoringConnectionCheck
     @ObservationIgnored private var session: MonitoringSession?
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
-    init(store: MonitoringSettingsStore = .standard(), now: @escaping @Sendable () -> Date = Date.init) {
+    init(
+        store: MonitoringSettingsStore = .standard(), now: @escaping @Sendable () -> Date = Date.init,
+        makeTransport: @escaping @Sendable (MonitoringConnection) -> any MonitoringTransport = { MonitoringClient(connection: $0) },
+        checkConnection: @escaping @Sendable (MonitoringConnection, Duration) async -> MonitoringConnectionCheck = {
+            await MonitoringClient(connection: $0).check(timeout: $1)
+        }
+    ) {
         self.store = store
         self.now = now
+        self.makeTransport = makeTransport
+        self.checkConnection = checkConnection
         var loaded = MonitoringSettings.initial
         var problem: String?
         do {
             loaded = try store.load()
         } catch {
-            problem = error.localizedDescription
+            problem = statsError(error)
         }
         settings = Self.debugAdjusted(loaded)
         storeError = problem
-        hasStoredToken = ((try? store.storedToken()) ?? nil)?.isEmpty == false
+        usesDebugConnection = Self.debugOverride != nil
+        hasStoredToken = !usesDebugConnection && settings.auth == .bearer && store.hasStoredToken()
     }
 
     /// `-HERMES_MONITOR_URL http://127.0.0.1:48081`: a development connection that never
     /// touches the saved one (screenshots and UI tests against the mock monitor).
-    private static func debugAdjusted(_ loaded: MonitoringSettings) -> MonitoringSettings {
+    private static var debugOverride: String? {
         #if DEBUG
-        var settings = loaded
         if let raw = UserDefaults.standard.string(forKey: "HERMES_MONITOR_URL")?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty, (try? MonitoringAddress.url(from: raw)) != nil {
-            settings.enabled = true
-            settings.baseURL = raw
-            settings.name = UserDefaults.standard.string(forKey: "HERMES_MONITOR_NAME") ?? settings.name
+            return raw
         }
-        return settings
-        #else
-        return loaded
         #endif
+        return nil
+    }
+
+    private static func debugAdjusted(_ loaded: MonitoringSettings) -> MonitoringSettings {
+        guard let raw = debugOverride else { return loaded }
+        // A development target is a separate no-auth connection, never a credential alias.
+        return MonitoringSettings(
+            enabled: true,
+            name: UserDefaults.standard.string(forKey: "HERMES_MONITOR_NAME") ?? MonitoringSettings.initial.name,
+            baseURL: raw, auth: .none
+        )
     }
 
     // MARK: - State
@@ -67,11 +112,11 @@ final class MonitoringModel {
             return statsString("Add the monitor service's address in Settings.")
         }
         do {
-            _ = try MonitoringConnection(settings: settings, token: try store.storedToken())
+            _ = try connection(settings: settings, typedToken: "")
         } catch let error as MonitoringAddressError {
-            return error.errorDescription
+            return statsError(error)
         } catch {
-            return error.localizedDescription
+            return statsError(error)
         }
         if settings.auth == .bearer, !hasStoredToken {
             return statsString("Add the access token in Settings.")
@@ -109,79 +154,128 @@ final class MonitoringModel {
 
     // MARK: - Lifecycle
 
-    /// Starts the one session. Called when Stats becomes visible; a second call does nothing, so a
-    /// view appearing twice can't open two streams.
-    func start() {
-        guard session == nil else { return }
-        guard settings.enabled else {
-            connectionState = .idle
+    /// Each Stats scene owns one demand token, including while setup is disabled. Repeated
+    /// appearance/active callbacks are idempotent; the last foreground consumer stops the link.
+    func setConsumer(_ id: UUID, active: Bool) {
+        if active { consumers.insert(id) } else { consumers.remove(id) }
+        reconcileSession()
+    }
+
+    private func reconcileSession() {
+        guard !consumers.isEmpty, settings.enabled else {
+            stop()
             return
         }
+        start()
+    }
+
+    private func start() {
+        guard session == nil else { return }
         guard let connection = try? connection(settings: settings, typedToken: "") else {
             connectionState = .offline(reason: setupIssue ?? statsString("Monitoring isn't set up."))
             return
         }
-        let client = MonitoringClient(connection: connection)
         let session = MonitoringSession(
-            transport: client,
+            transport: makeTransport(connection),
             configuration: MonitoringSessionConfiguration(
-                connection: connection,
-                allowsStreaming: settings.liveUpdates
+                connection: connection, allowsStreaming: settings.liveUpdates
             )
         )
         self.session = session
         isRunning = true
+        // One low-frequency clock shared by visible consumers, canceled with the last demand.
+        freshnessTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                guard let self else { return }
+                self.freshnessRevision &+= 1
+            }
+        }
+        sessionGeneration += 1
+        let generation = sessionGeneration
+        let connectionGeneration = connectionGeneration
         updatesTask = Task { [weak self] in
             for await update in session.updates {
-                guard let self else { return }
+                guard let self, !Task.isCancelled,
+                      generation == self.sessionGeneration,
+                      connectionGeneration == self.connectionGeneration else { return }
                 switch update {
                 case .state(let state):
-                    connectionState = state
+                    switch state {
+                    case .offline(let reason): connectionState = .offline(reason: statsErrorText(reason))
+                    case .incompatible(let reason): connectionState = .incompatible(reason: statsErrorText(reason))
+                    case .polling(let reason): connectionState = .polling(reason: statsErrorText(reason))
+                    default: connectionState = state
+                    }
                 case .snapshot(let snapshot, let receivedAt):
                     self.snapshot = snapshot
                     snapshotReceivedAt = receivedAt
+                    requestConsumers.removeAll { $0.value == nil }
+                    for consumer in requestConsumers { consumer.value?.snapshotChanged(snapshot) }
                 }
             }
         }
-        Task { await session.start() }
+        // A replacement waits for the old session's stop before starting its transport.
+        let stopping = stoppingTask
+        sessionTask = Task {
+            await stopping?.value
+            guard !Task.isCancelled else { return }
+            await session.start()
+        }
     }
 
-    /// Stops the stream and polling when Stats leaves the screen or the app goes away. The last
-    /// snapshot stays for the next look; nothing here touches a gateway.
-    func stop() {
-        guard let session else { return }
+    private func stop() {
+        sessionGeneration += 1
+        freshnessTask?.cancel()
+        freshnessTask = nil
+        sessionTask?.cancel()
+        let starting = sessionTask
+        sessionTask = nil
         updatesTask?.cancel()
         updatesTask = nil
-        self.session = nil
+        let previous = stoppingTask
+        if let session {
+            stoppingTask = Task {
+                await previous?.value
+                await starting?.value
+                await session.finish()
+            }
+        }
+        session = nil
         isRunning = false
         connectionState = .idle
-        Task { await session.stop(); await session.finish() }
     }
 
-    /// Coming back to the foreground, or Check Again: one fresh snapshot without waiting for the
-    /// stream's next correction.
+    /// Check Again refreshes the shared session, never creates a second polling loop.
     func refresh() {
-        if session == nil {
-            start()
-            return
-        }
+        reconcileSession()
+        let session = session
         Task { await session?.refresh() }
     }
 
-    private func restartSession() {
-        guard isRunning else { return }
+    private func invalidateConnection() {
+        connectionGeneration += 1
         stop()
-        start()
+        snapshot = nil
+        snapshotReceivedAt = nil
+        requestConsumers.removeAll { $0.value == nil }
+        for consumer in requestConsumers { consumer.value?.connectionChanged() }
     }
 
     // MARK: - Calls
 
     /// A page of the day's requests. The Requests screen owns the query; this only carries it.
     func recent(_ query: MonitoringRequestQuery) async throws -> MonitoringRecentPage {
-        guard let connection = try? connection(settings: settings, typedToken: "") else {
+        guard settings.enabled,
+              let connection = try? connection(settings: settings, typedToken: "") else {
             throw MonitoringModelError.notConfigured
         }
-        return try await MonitoringClient(connection: connection).recent(query)
+        let generation = connectionGeneration
+        let result = try await makeTransport(connection).recent(query)
+        guard generation == connectionGeneration, settings.enabled, !Task.isCancelled else {
+            throw CancellationError()
+        }
+        return result
     }
 
     /// The settings editor's bounded three-part check. It never touches the running session.
@@ -189,14 +283,17 @@ final class MonitoringModel {
         baseURL: String, auth: MonitoringAuthMode, typedToken: String, timeout: Duration = .seconds(8)
     ) async throws -> MonitoringConnectionCheck {
         let connection = try connection(baseURL: baseURL, auth: auth, typedToken: typedToken)
-        return await MonitoringClient(connection: connection).check(timeout: timeout)
+        let generation = connectionGeneration
+        let result = await checkConnection(connection, timeout)
+        guard generation == connectionGeneration, !Task.isCancelled else { throw CancellationError() }
+        return result
     }
 
     /// The connection a draft would save, with the stored token standing in for a blank field.
     func connection(baseURL: String, auth: MonitoringAuthMode, typedToken: String) throws -> MonitoringConnection {
         let trimmed = typedToken.trimmingCharacters(in: .whitespacesAndNewlines)
         var token: String?
-        if auth == .bearer {
+        if auth == .bearer, !usesDebugConnection {
             token = trimmed.isEmpty ? try store.storedToken() : trimmed
         }
         return try MonitoringConnection(baseURLString: baseURL, token: token)
@@ -209,21 +306,27 @@ final class MonitoringModel {
     /// Saves the settings and, when one was typed, the token. A failed write throws and leaves the
     /// previous configuration and token as they were (`MonitoringSettingsStore`).
     func save(_ settings: MonitoringSettings, token: String) throws {
-        try store.save(settings, token: token)
+        let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        try store.save(settings, token: normalized.isEmpty ? nil : normalized)
+        invalidateConnection()
         self.settings = Self.debugAdjusted(try store.load())
-        hasStoredToken = ((try? store.storedToken()) ?? nil)?.isEmpty == false
+        usesDebugConnection = Self.debugOverride != nil
+        hasStoredToken = !usesDebugConnection && settings.auth == .bearer && store.hasStoredToken()
         storeError = nil
-        if !self.settings.enabled {
-            snapshot = nil
-            snapshotReceivedAt = nil
-            connectionState = .idle
-        }
-        restartSession()
+        reconcileSession()
     }
 
     func reloadSettings() {
-        if let loaded = try? store.load() { settings = Self.debugAdjusted(loaded) }
-        hasStoredToken = ((try? store.storedToken()) ?? nil)?.isEmpty == false
+        guard let loaded = try? store.load() else { return }
+        let adjusted = Self.debugAdjusted(loaded)
+        let debug = Self.debugOverride != nil
+        if adjusted != settings || debug != usesDebugConnection {
+            invalidateConnection()
+            settings = adjusted
+            usesDebugConnection = debug
+        }
+        hasStoredToken = !usesDebugConnection && settings.auth == .bearer && store.hasStoredToken()
+        reconcileSession()
     }
 }
 
@@ -260,9 +363,49 @@ final class MonitoringRequestsModel {
     private(set) var lastLoadedUpto: Int?
 
     private var generation = 0
+    private var isVisible = false
+    private var loadTask: Task<MonitoringRecentPage, any Error>?
+    private var reloadTask: Task<Void, Never>?
+    private var freezesNextPage = false
 
     init(monitoring: MonitoringModel) {
         self.monitoring = monitoring
+        monitoring.register(self)
+    }
+
+    func setVisible(_ visible: Bool) {
+        isVisible = visible
+        if visible {
+            if pageData == nil { scheduleLoad() }
+            else { snapshotChanged(monitoring.snapshot) }
+        } else {
+            cancelLoad()
+        }
+    }
+
+    private func cancelLoad() {
+        generation += 1
+        reloadTask?.cancel()
+        reloadTask = nil
+        loadTask?.cancel()
+        loadTask = nil
+        isLoading = false
+    }
+
+    fileprivate func connectionChanged() {
+        cancelLoad()
+        pageData = nil
+        freeze = nil
+        lastLoadedUpto = nil
+        page = 1
+        notice = nil
+        error = nil
+        freezesNextPage = false
+    }
+
+    private func scheduleLoad() {
+        reloadTask?.cancel()
+        reloadTask = Task { [weak self] in await self?.load() }
     }
 
     var query: MonitoringRequestQuery {
@@ -297,39 +440,61 @@ final class MonitoringRequestsModel {
     func load() async {
         generation += 1
         let generation = generation
+        let connectionGeneration = monitoring.connectionGeneration
+        let query = query
+        loadTask?.cancel()
+        let task = Task { try await monitoring.recent(query) }
+        loadTask = task
         isLoading = true
         error = nil
         do {
-            let loaded = try await monitoring.recent(query)
-            guard generation == self.generation else { return }
+            let loaded = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
+            guard !Task.isCancelled, generation == self.generation,
+                  connectionGeneration == monitoring.connectionGeneration else { return }
             pageData = loaded
+            page = loaded.page
             isLoading = false
+            loadTask = nil
+            if freezesNextPage || !query.followsLive {
+                freeze = MonitoringFreeze(day: loaded.day, upto: loaded.upto)
+                freezesNextPage = false
+            }
             if followsLive { lastLoadedUpto = loaded.upto }
+            snapshotChanged(monitoring.snapshot)
         } catch {
-            guard generation == self.generation else { return }
+            guard generation == self.generation,
+                  connectionGeneration == monitoring.connectionGeneration else { return }
             isLoading = false
-            self.error = error.localizedDescription
+            loadTask = nil
+            if !(error is CancellationError), !Task.isCancelled {
+                self.error = statsError(error)
+            }
         }
     }
 
-    /// A snapshot arrived. A live list follows it; a frozen one only counts what came after its
-    /// point, and a day rollover says so and starts again at the new day.
+    /// Only visible Requests consumers follow the already accepted shared session updates.
+    /// A hidden list catches up once on reappearance, without another polling loop.
     func snapshotChanged(_ snapshot: MonitoringSnapshot?) {
-        guard let snapshot else { return }
-        if let freeze, case .rolledOver(let previous, let current) = MonitoringRollover.check(
-            frozen: freeze.day, current: snapshot.day
+        guard isVisible, let snapshot else { return }
+        let day = freeze?.day ?? pageData?.day
+        if case .rolledOver(let previous, let current) = MonitoringRollover.check(
+            frozen: day, current: snapshot.day
         ) {
-            self.freeze = nil
+            cancelLoad()
+            freeze = nil
+            pageData = nil
+            lastLoadedUpto = nil
             page = 1
-            notice = String(
-                localized: "The day rolled over from \(previous) to \(current). The list starts at the new day."
-            )
-            Task { await load() }
+            notice = statsString("The day rolled over from \(previous) to \(current). The list starts at the new day.")
+            scheduleLoad()
             return
         }
-        guard followsLive, freeze == nil else { return }
-        guard snapshot.recentDay.upto != lastLoadedUpto || pageData?.day != snapshot.day else { return }
-        Task { await load() }
+        guard followsLive, !isLoading else { return }
+        // A /recent response can be ahead of SSE. Never reload backwards to that older point.
+        guard pageData == nil || (snapshot.recentDay.upto ?? 0) > (lastLoadedUpto ?? 0) else { return }
+        scheduleLoad()
     }
 
     // MARK: - Changes
@@ -338,7 +503,7 @@ final class MonitoringRequestsModel {
         page = 1
         notice = nil
         freezeIfNeeded()
-        Task { await load() }
+        scheduleLoad()
     }
 
     func submitSearch() {
@@ -372,34 +537,34 @@ final class MonitoringRequestsModel {
         page = 1
         freeze = nil
         notice = nil
-        Task { await load() }
+        scheduleLoad()
     }
 
     func showNewer() {
-        guard let snapshot = monitoring.snapshot, let point = MonitoringFreeze(snapshot) else { return }
-        freeze = point
+        // Let /recent choose its current high-water atomically, then freeze to that response.
+        freeze = nil
+        freezesNextPage = true
         page = 1
         notice = nil
-        Task { await load() }
+        scheduleLoad()
     }
 
     func nextPage() {
         guard canGoForward else { return }
         page += 1
         freezeIfNeeded()
-        Task { await load() }
+        scheduleLoad()
     }
 
     func previousPage() {
         guard canGoBack else { return }
         page -= 1
-        Task { await load() }
+        scheduleLoad()
     }
 
     private func freezeIfNeeded() {
-        guard freeze == nil, !followsLive, let snapshot = monitoring.snapshot,
-              let point = MonitoringFreeze(snapshot) else { return }
-        freeze = point
+        guard freeze == nil, !followsLive, let loaded = pageData else { return }
+        freeze = MonitoringFreeze(day: loaded.day, upto: loaded.upto)
     }
 
     /// `1`, `0.25`, `1,5` as a person types it, or nil for blank or nonsense.

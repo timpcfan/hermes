@@ -143,6 +143,7 @@ struct RootView: View {
         // gateway for nothing.
         .onAppear {
             app.windowOpened(router.windowID, showing: app.restoredGateway(storedGateway))
+            app.registerMonitoringRouter(router)
             if appearsActive { app.windowBecameActive(router.windowID) }
         }
         .onDisappear { app.windowClosed(router.windowID) }

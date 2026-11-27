@@ -167,7 +167,7 @@ struct SidebarNavRow: View {
 
     /// A title already read from a table (Stats' own copy comes from `Stats`).
     init(
-        title: String, symbol: String, isSelected: Bool = false,
+        localizedTitle title: String, symbol: String, isSelected: Bool = false,
         shortcut: String? = nil, action: @escaping () -> Void
     ) {
         self.title = Text(verbatim: title)

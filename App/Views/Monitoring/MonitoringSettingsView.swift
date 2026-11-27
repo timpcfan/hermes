@@ -13,7 +13,7 @@ struct MonitoringSettingsRow: View {
         NavigationLink {
             MonitoringSettingsView(model: app.monitoring)
         } label: {
-            SettingsRowLabel(symbol: "chart.bar.xaxis", title: statsString("Xunxin link"), summary: summary)
+            SettingsRowLabel(symbol: "chart.bar.xaxis", localizedTitle: statsString("Xunxin link"), summary: summary)
         }
         .accessibilityHint(statsString("The monitor service Stats reads"))
         .accessibilityIdentifier("settings.monitoring")
@@ -90,7 +90,7 @@ struct MonitoringSettingsView: View {
 
             if let problem = editor.validationProblem {
                 Section {
-                    Text(problem.errorDescription ?? "")
+                    Text(statsError(problem))
                         .font(.caption)
                         .foregroundStyle(Theme.danger)
                 }
@@ -112,10 +112,10 @@ struct MonitoringSettingsView: View {
                     testLine(state: .failed, title: statsString("The test couldn't run"), detail: error)
                 }
                 if let check = editor.check {
-                    testLine(state: check.snapshot.state == .ok ? .ok : check.snapshot.state, title: statsString("Snapshot structure"), detail: check.snapshot.detail)
-                    testLine(state: check.recent.state == .ok ? .ok : check.recent.state, title: statsString("Requests list"), detail: check.recent.detail)
-                    testLine(state: check.stream.state == .ok ? .ok : check.stream.state, title: statsString("Live updates"), detail: check.stream.detail)
-                    Text(check.summary)
+                    testLine(state: check.snapshot.state == .ok ? .ok : check.snapshot.state, title: statsString("Snapshot structure"), detail: check.snapshot.statsDetail)
+                    testLine(state: check.recent.state == .ok ? .ok : check.recent.state, title: statsString("Requests list"), detail: check.recent.statsDetail)
+                    testLine(state: check.stream.state == .ok ? .ok : check.stream.state, title: statsString("Live updates"), detail: check.stream.statsDetail)
+                    Text(check.statsSummary)
                         .font(.caption)
                         .foregroundStyle(check.isUsable ? Theme.secondaryText : Theme.danger)
                         .fixedSize(horizontal: false, vertical: true)

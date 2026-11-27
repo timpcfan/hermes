@@ -28,6 +28,8 @@ public struct MonitoringSnapshot: Sendable, Equatable {
     public var today: MonitoringToday
     public var models: MonitoringModels
     public var pricing: MonitoringPricing?
+    /// `null` is an unavailable measurement, not a measured empty list.
+    public var hasKnownInflight: Bool
     public var inflight: [MonitoringFlight]
     public var recent: [MonitoringFlight]
     public var recentDay: MonitoringRecentDay
@@ -83,6 +85,7 @@ public struct MonitoringSnapshot: Sendable, Equatable {
         today = MonitoringToday(root["today"])
         models = MonitoringModels(root["models"])
         pricing = root["pricing"].flatMap(MonitoringPricing.init)
+        if case .array = root["inflight"] { hasKnownInflight = true } else { hasKnownInflight = false }
         inflight = root["inflight"]?.arrayElements.map(MonitoringFlight.init) ?? []
         recent = root["recent"]?.arrayElements.map(MonitoringFlight.init) ?? []
         recentDay = MonitoringRecentDay(root["recent_day"])

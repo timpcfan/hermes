@@ -1,6 +1,413 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Probe source unavailable · cached result": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探测来源不可用 · 缓存结果"
+          }
+        }
+      }
+    },
+    "Probe source stale · cached result": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探测来源已过期 · 缓存结果"
+          }
+        }
+      }
+    },
+    "Probe freshness unknown · cached result": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探测时效未知 · 缓存结果"
+          }
+        }
+      }
+    },
+    "The current number of requests in flight is unknown.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前在途请求数量未知。"
+          }
+        }
+      }
+    },
+    "Exit unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口未知"
+          }
+        }
+      }
+    },
+    "Latest probe failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近一次探测失败"
+          }
+        }
+      }
+    },
+    "Ready. The app updates live and falls back to a snapshot every 10 seconds if the stream drops.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接就绪。应用会实时更新；数据流中断时，每 10 秒读取一次快照。"
+          }
+        }
+      }
+    },
+    "Snapshot and requests work. Live updates don't, so the app will read a snapshot every 10 seconds.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照和请求列表正常。实时更新不可用，应用将每 10 秒读取一次快照。"
+          }
+        }
+      }
+    },
+    "The snapshot check failed. Fix that before saving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快照检查失败。请修复后再保存。"
+          }
+        }
+      }
+    },
+    "The requests check failed. Fix that before saving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求列表检查失败。请修复后再保存。"
+          }
+        }
+      }
+    },
+    "Remove credentials from the address. Put a Bearer token in the token field.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请移除地址中的凭据，将 Bearer 令牌填入令牌栏。"
+          }
+        }
+      }
+    },
+    "Use the service's root address without a query. Secrets don't belong in a URL.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用不带查询参数的服务根地址。不要在网址中放入密钥。"
+          }
+        }
+      }
+    },
+    "Use the service's root address without a #fragment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用不带 #片段的服务根地址。"
+          }
+        }
+      }
+    },
+    "That address has no server name.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址缺少服务器名称。"
+          }
+        }
+      }
+    },
+    "That isn't a valid address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址无效。"
+          }
+        }
+      }
+    },
+    "Enter the access token, or choose No Authentication.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入访问令牌，或选择无身份验证。"
+          }
+        }
+      }
+    },
+    "The monitor service refused this device (403). Check the token and the service's access rules, or choose No Authentication.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务拒绝了此设备（403）。请检查令牌与服务访问规则，或选择无身份验证。"
+          }
+        }
+      }
+    },
+    "The monitor service didn't accept the access token (401). Check the token, or choose No Authentication.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务不接受此访问令牌（401）。请检查令牌，或选择无身份验证。"
+          }
+        }
+      }
+    },
+    "The monitor service refused the request.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务拒绝了请求。"
+          }
+        }
+      }
+    },
+    "The monitor service has no monitoring API at that address. Check that it's the service's root address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址没有监控接口。请确认使用的是服务根地址。"
+          }
+        }
+      }
+    },
+    "The monitor service redirected to another address. Enter that address directly; the app never sends a token to a redirect's target.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务重定向到了其他地址。请直接输入该地址；应用不会向重定向目标发送令牌。"
+          }
+        }
+      }
+    },
+    "The monitor service answered %lld. Try again in a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务返回了 %lld。请稍后重试。"
+          }
+        }
+      }
+    },
+    "That address isn't a monitor service. Check the address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址不是监控服务。请检查地址。"
+          }
+        }
+      }
+    },
+    "The monitor service didn't answer in time. A timeout doesn't prove the token is wrong: check the address and the network.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务响应超时。超时不代表令牌有误，请检查地址与网络。"
+          }
+        }
+      }
+    },
+    "The secure connection failed. Check the service's certificate and the address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全连接失败。请检查服务证书与地址。"
+          }
+        }
+      }
+    },
+    "Can't reach the monitor service. Check the address and the network.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接监控服务。请检查地址与网络。"
+          }
+        }
+      }
+    },
+    "The connection to the monitor service failed (%@ %lld).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接监控服务失败（%@ %lld）。"
+          }
+        }
+      }
+    },
+    "The connection to the monitor service failed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接监控服务失败。"
+          }
+        }
+      }
+    },
+    "The live update stream ended.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时更新数据流已结束。"
+          }
+        }
+      }
+    },
+    "That address answered, but not with monitoring data.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地址已响应，但返回的不是监控数据。"
+          }
+        }
+      }
+    },
+    "This monitor service doesn't support Xunxin-only statistics. Update the monitor service.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此监控服务不支持仅统计讯星的数据。请更新监控服务。"
+          }
+        }
+      }
+    },
+    "This monitor service speaks contract %lld, which this app doesn't know. Update Hermes or the monitor service.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务使用的协议版本为 %lld，当前应用尚不支持。请更新 Hermes 或监控服务。"
+          }
+        }
+      }
+    },
+    "That service answered for “%@”, not the Xunxin scope. The app won't show global statistics as Xunxin's.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务返回的是“%@”范围的数据，而非讯星数据。应用不会将全局统计显示为讯星统计。"
+          }
+        }
+      }
+    },
+    "The monitor service answered in a way this app doesn't understand (%@).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务返回的数据格式不受支持（%@）。"
+          }
+        }
+      }
+    },
+    "The operation failed (%@ %lld). Check the connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作失败（%@ %lld）。请检查连接后重试。"
+          }
+        }
+      }
+    },
+    "The check was cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查已取消。"
+          }
+        }
+      }
+    },
+    "Live updates are off for this connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此连接已关闭实时更新。"
+          }
+        }
+      }
+    },
+    "The check failed. Verify the service address, access token and monitoring contract, then try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查失败。请确认服务地址、访问令牌与监控协议后重试。"
+          }
+        }
+      }
+    },
+    "Use an http or https address, not “%@”.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用 http 或 https 地址，不要使用“%@”。"
+          }
+        }
+      }
+    },
+    "%lld ms": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 毫秒"
+          }
+        }
+      }
+    },
+    "Active tunnels unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "活动隧道数未知" }
+        }
+      }
+    },
     " Lowest %@, median %@, highest %@. %@": {
       "localizations": {
         "zh-Hans": {
