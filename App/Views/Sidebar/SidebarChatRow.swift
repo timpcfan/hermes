@@ -7,8 +7,8 @@ import SwiftUI
 /// the line's end, and what it is doing in the top corner.
 ///
 /// No last-message preview: the sidebar's rows are about which chat and what state, and the
-/// person reads the conversation itself (`_brief/BRIEF-SIDEBAR.md`). The words and the state come
-/// from the shared `ChatRowReading`, so the two lists can't say different things.
+/// person reads the conversation itself (`docs/inbox.md` §2). The words and the state come from the
+/// shared `ChatRowReading`, so the two lists can't say different things.
 struct SidebarChatRow: View {
     let session: HermesSession
     let workspace: BotWorkspace

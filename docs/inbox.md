@@ -115,29 +115,37 @@ right after it ([connecting-and-voice.md](connecting-and-voice.md) §8).
 
 ## 2. The rows
 
-On iPhone at a compact width the list is the Chat tab's own screen and its rows are drawn by
-`IOSChatRow` (§10). The table below is the split view's sidebar, on iPad and the Mac and in a wide
-iPad window.
+A chat's row has one shape: `SidebarChatRow` in the split view's sidebar (iPad and the Mac) and
+`IOSChatRow` in the iPhone's Chat tab (§10). Both read the same `ChatRowReading`, so the title, the
+line under it and the state can't say different things; only the sizes differ. The sidebar's are the
+iPhone's at a sidebar's size: a 32 pt face, a 15 pt semibold title and a 13 pt detail line, in a row
+at least 64 pt tall (`SidebarMetrics.chatFaceSize`, `chatTitleFont`…), so a 240 pt-wide sidebar still
+holds a two-line title. The iPad's type grows with Dynamic Type; the Mac's stays at 15/13 pt.
 
-Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMetrics`).
-
-| State | Line 1 | Line 2 | Trailing |
-|---|---|---|---|
-| Read | Title, time grey | Last message ("You:" or a Bot's name before it) | – |
-| Unread | Title semibold, time primary | Last message, brighter | Ink count |
-| Marked unread | Semibold | Last message | Ink dot |
-| Muted | Title, slashed bell, time | Last message | Grey count |
-| Live | Still ink dot, semibold title | The activity line, shimmering | – |
-| Needs you | Semibold | Orange hand + what it needs | Orange hand badge |
-| Draft | Title | **Draft:** then the draft (a chat or Bot Chat opened this launch, `RowDraft`) | – |
-| Failed | Title | Red triangle + "Stopped: …" until opened | – |
-| Mention (group chat) | Semibold | Last message or who's working | @ badge, then the count |
-
+- The face (`ChatProfileAvatar`): the profile's Bot photo or drawn face when it has one, otherwise
+  its first letter on the name's stable colour; the unread dot sits on its corner.
+- The title and the pin, one or two lines: a long title wraps and the row grows, while the state
+  keeps its top corner. A running chat's title is secondary text.
+- The detail line: the source's glyph, then source · profile · project (`ChatRowSubtitle`; the
+  project is `git_repo_root`'s folder name, absent outside a repository), one line cut at the tail.
+  When Hermes serves a model for the chat, its name closes the line flush right in tertiary text
+  (`ChatRowSubtitle.modelLine`); the provider prefix goes, a long model name is cut, the reasoning
+  level is not shown, and without a model the line ends at the profile. A narrow row cuts the
+  profile before the model.
+- The state (`ChatRowState`, §10's trailing state): a dashed green ring and the running time, an
+  orange mark and Needs you, or a red mark, Failed and the reason in red on its own line; an unread
+  chat that finished is a green check and Done, a read one how long ago it ended.
+- No last-message preview: the sidebar says which chat and what state, and the conversation itself
+  is one click away.
+- The lines (`SidebarRowDivider`): a one-physical-pixel `Theme.rowSeparator` under each row, the
+  stronger `Theme.sectionSeparator` under a region's last row while a header or another region
+  follows, and none under the list's last row. Pinned and Main read as one block here, so the line
+  between them is a plain one, unlike the iPhone's (§10).
 - In Chats mode the list is an inbox of regions (§2a); within Main, by each row's time or the
   moment it came back, newest first; no date sections. Bots mode: pinned first, then by time
   (`RowTime.ordered`).
 - **A row's time is its last line's message** (`RowTime`): the newest message a person or a Bot
-  wrote (a reply: when it ended), the same one line 2 shows. It's also what the row sorts by, in
+  wrote (a reply: when it ended). It's what the row sorts by, in
   the chats, the Bots and group chats (their log's newest message), and a search result takes its
   chat's row's ([search.md](search.md) §2). Hermes'
   `last_active` moves for more than messages, so it only stands in until the line is read:
@@ -155,22 +163,22 @@ Two lines: 62 pt on iPhone and iPad, 46 pt on the Mac with 13 pt type (`InboxMet
   row stands at its activity (so it rises), and when the reply ends it settles at the reply's time.
   A row with no messages uses its creation time (a Bot's `created`). A chat opened from elsewhere
   before the list has it (the Board, a task's run) has no time until its line is read.
-- The time reads "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct", "12 Oct 2025"
-  (`InboxTime`), in the system's calendar and time zone, the same on every device. It redraws only
-  when its words change (`InboxTime.nextChange`): each minute in the first hour, then at midnight,
-  so an idle list wakes nothing.
+- A Bot's row shows its time as "now", "2 min", "14:21", "Yesterday", "Thu", "12 Oct", "12 Oct
+  2025" (`InboxTime`), in the system's calendar and time zone, the same on every device. It redraws
+  only when its words change (`InboxTime.nextChange`): each minute in the first hour, then at
+  midnight, so an idle list wakes nothing.
 - Bot rows (`BotInboxRow`) have the face at 44 pt (32 on the Mac) in the mood of what it's doing
   (`ActivityLine.faceMood`, `docs/bot-faces.md` §5.9). Group rows (`GroupInboxRow`) stack the
   members' faces with whoever is working in front.
-- Line 2 is one line, cut at the tail.
+- The detail line is one line, cut at the tail.
 - Only the open chat's row hides what's new (`BadgeScope.rowBadge`): it's read as it's shown. A
   chat backed out of on iPhone (or an iPad window as narrow) stays selected under the list but
-  isn't open, so its row shows its count, its @ and its draft, a Bot's and a group chat's too.
+  isn't open, so its unread dot shows again; a Bot's and a group chat's count, @ and draft do too.
 
 ### The activity line
 
-One line per chat (`LiveActivity`), the same words on the row, the jump pill and the Live
-Activity's first state.
+One line per chat (`LiveActivity`), the same words in a Bot's row, the jump pill and the Live
+Activity's first state; a chat's row shows only its state (§2, §10).
 
 | Source | Line |
 |---|---|
@@ -539,8 +547,11 @@ loading rows while it's open and loading.
 
 ## 6. Accessibility
 
-- Rows read "Release notes for 1.3, 3 unread, 14:21, 23 merged PRs"; live "…, Hermes: Running
-  swift test"; muted "…, muted, 12 unread"; needs you "…, waiting for your approval".
+- A chat's row reads its title, its detail line and its model, then its marks and state: "Release
+  notes for 1.3, terminal · default, claude-sonnet-4.6, unread, ended 3 hours ago", running "…,
+  running for 1h 37m", needs you "…, needs you", failed "…, failed, <reason>". The sidebar and the
+  iPhone say the same (`ChatRowReading`). A Bot's row reads its name, time and news; needs you "…,
+  waiting for your approval".
 - Rows have custom actions: Mark as Read / Unread, Pin / Unpin, Mute / Unmute, Settle; settled
   rows Un-settle. Region headers are headers, with their count and Expanded / Collapsed.
 - VoiceOver stays where the person put it while replies arrive: on a row of the list, and on a
@@ -808,13 +819,16 @@ result or a link opens the same chat here as there.
   (`LiveActivity.runningStart`), else the session's `last_active`; the earliest fallback wins, so a
   streaming reply doesn't restart the clock. Only a running row redraws each second
   (`TimelineView`).
-- **The list's lines** (`SidebarRowDivider`): every chat row has a one-physical-pixel
-  `Theme.rowSeparator` under it, running the list's whole width. Pinned's last row and each
-  region's last row get a stronger `Theme.sectionSeparator` line with 6 pt of air above it when
-  another region follows (Pinned → Main, then Working and Settled, whose headers stay); the list's
-  last row has none. The group chats and Bots rows draw the same two lines (`showsRowDividers`): the
-  breaks sit where the group chats end, where the pinned Bots end, and before Hidden. The split
-  view's sidebar (iPad and Mac) passes nothing and looks as before.
+- **The list's lines** (`SidebarRowDivider`, `RowDividerPlan`): every chat row has a
+  one-physical-pixel `Theme.rowSeparator` under it, running the list's whole width. A region's last
+  row gets a stronger `Theme.sectionSeparator` line with 6 pt of air above it when a header or
+  another region follows (Pinned → Main here, then Working and Settled, whose headers stay); the
+  list's last row has none. The split view's sidebar draws the same lines, with Pinned and Main as
+  one block: their break is a plain line, and its stronger ones fall before Working and Settled
+  (§2). The group chats and Bots rows draw them too (`showsRowDividers`, on both lists): the breaks
+  sit where the group chats end, where the pinned Bots end, and before Hidden. `RowDividerPlan`
+  turns the regions into each row's line in HermesKit, so no `ForEach` counts indices
+  (`RowDividerPlanTests`).
 - **Actions** match the sidebar's: leading swipe Read/Unread and Pin, trailing Settle (full swipe)
   and Mute, the same context menu, and the same Rename, Delete and error alerts. A waiting chat
   offers only Delete. Settled rows keep Un-settle.
