@@ -444,16 +444,19 @@ public struct MonitoringQuota: Sendable, Equatable {
     }
 
     public var hasValues: Bool { balanceUSD != nil || usedUSD != nil }
+    public var hasCompleteValues: Bool { balanceUSD != nil && usedUSD != nil }
 
     /// What the overview may claim. A successful value is live only while it is the service's
-    /// own `stale == false`, has a success time within the service's threshold, and the app's
-    /// transport still carries a current receipt.
+    /// own `stale == false`, both amounts are usable, its success time is within the service's
+    /// threshold, and the app's transport still carries a current receipt.
     public func state(serverTime: Double?, transportIsCurrent: Bool) -> MonitoringSourceState {
         guard transportIsCurrent else { return hasValues ? .stale : .unknown }
         guard ok == true, let updatedAt else {
             if hasValues { return .stale }
             return ok == false ? .down : .unknown
         }
+        // A success without both amounts is not a complete account reading, so it can't be live.
+        guard hasCompleteValues else { return .unknown }
         guard let serverTime else { return .unknown }
         let age = max(0, serverTime - updatedAt)
         if stale || age > staleAfterSeconds { return .stale }

@@ -3178,6 +3178,16 @@
         }
       }
     },
+    "The reading is incomplete; only the known amounts are shown.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采集结果不完整，只显示已知金额。"
+          }
+        }
+      }
+    },
     "No balance is available; it never shows 0 instead.": {
       "localizations": {
         "zh-Hans": {

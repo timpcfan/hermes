@@ -343,7 +343,9 @@ private struct MonitoringOverviewView: View {
             let base = statsString("No balance is available; it never shows 0 instead.")
             return problem.map { base + " " + $0 } ?? base
         case .unknown:
-            return statsString("Waiting for the first reading; no value is shown until it succeeds.")
+            return quota.hasValues
+                ? statsString("The reading is incomplete; only the known amounts are shown.")
+                : statsString("Waiting for the first reading; no value is shown until it succeeds.")
         }
     }
 

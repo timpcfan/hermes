@@ -77,6 +77,33 @@ struct MonitoringQuotaTests {
         }
     }
 
+    @Test func aSuccessWithoutBothAmountsIsNeverLive() throws {
+        let absent = try #require(try quotaSnapshot(quotaJSON(
+            balance: "null", used: "null", ok: "true", stale: "false"
+        )).quota)
+        #expect(!absent.hasValues)
+        #expect(absent.state(serverTime: 200, transportIsCurrent: true) == .unknown)
+
+        // One valid amount still can't prove a complete account reading.
+        let partial = try #require(try quotaSnapshot(quotaJSON(
+            balance: "10", used: "null", ok: "true", stale: "false"
+        )).quota)
+        #expect(partial.hasValues)
+        #expect(!partial.hasCompleteValues)
+        #expect(partial.state(serverTime: 200, transportIsCurrent: true) == .unknown)
+        #expect(partial.state(serverTime: 200, transportIsCurrent: false) == .stale)
+
+        // Booleans and strings are not amounts even when the service says success.
+        for (badBalance, badUsed) in [("true", "false"), ("\"10\"", "\"20\""),
+                                      ("[]", "{}")] {
+            let malformed = try #require(try quotaSnapshot(quotaJSON(
+                balance: badBalance, used: badUsed, ok: "true", stale: "false"
+            )).quota)
+            #expect(!malformed.hasValues)
+            #expect(malformed.state(serverTime: 200, transportIsCurrent: true) == .unknown)
+        }
+    }
+
     @Test func readsTheBackendQuota() throws {
         let snapshot = try quotaSnapshot(quotaJSON())
         let quota = try #require(snapshot.quota)
