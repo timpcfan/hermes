@@ -5,18 +5,19 @@ import Foundation
 /// country still sees the day the service counted.
 public enum MonitoringTime {
     public static func timeZone(offset: String) -> TimeZone {
-        let trimmed = offset.trimmingCharacters(in: .whitespaces)
-        let sign: Int
-        switch trimmed.first {
-        case "+": sign = 1
-        case "-": sign = -1
-        default: return TimeZone(secondsFromGMT: 0) ?? .gmt
-        }
-        let digits = trimmed.dropFirst()
-        let parts = digits.split(separator: ":")
-        guard let hours = Int(parts.first ?? "0") else { return TimeZone(secondsFromGMT: 0) ?? .gmt }
-        let minutes = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-        return TimeZone(secondsFromGMT: sign * (hours * 3600 + minutes * 60)) ?? TimeZone(secondsFromGMT: 0) ?? .gmt
+        guard let seconds = offsetSeconds(offset) else { return .gmt }
+        return TimeZone(secondsFromGMT: seconds) ?? .gmt
+    }
+
+    /// Strict wire offsets, bounded before arithmetic (the maximum civil offset is 14 hours).
+    static func offsetSeconds(_ offset: String) -> Int? {
+        let bytes = Array(offset.utf8)
+        guard bytes.count == 6, bytes[0] == 43 || bytes[0] == 45, bytes[3] == 58,
+              [1, 2, 4, 5].allSatisfy({ (48...57).contains(bytes[$0]) }) else { return nil }
+        let hours = Int(bytes[1] - 48) * 10 + Int(bytes[2] - 48)
+        let minutes = Int(bytes[4] - 48) * 10 + Int(bytes[5] - 48)
+        guard hours <= 14, minutes < 60, hours < 14 || minutes == 0 else { return nil }
+        return (bytes[0] == 45 ? -1 : 1) * (hours * 3600 + minutes * 60)
     }
 
     /// `HH:mm:ss` in the service's offset.

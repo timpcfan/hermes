@@ -186,30 +186,28 @@ public struct MonitoringSettingsStore: Sendable {
     }
 
     public func load() throws -> MonitoringSettings {
-        guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else {
-            return .initial
-        }
-        let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder().decode(MonitoringSettings.self, from: data)
+        try saved().settings
     }
 
     /// Saves the settings and, when `token` is given, the new token too. A failed save leaves the
     /// previous settings and token exactly as they were (`PLAN.md`: 保存失败保留输入与旧的有效配置).
     public func save(_ settings: MonitoringSettings, token: String?) throws {
-        let previousToken = try? keychain.string(for: Self.tokenAccount)
-        var wroteToken = false
-        if let token, !token.isEmpty {
-            try keychain.setString(token, for: Self.tokenAccount)
-            wroteToken = true
-        }
+        let previous = try saved()
+        var account = previous.credentialAccount
         do {
-            try write(settings)
+            if let token, !token.isEmpty {
+                // Never overwrite the effective item. A failed read must abort before staging.
+                _ = try keychain.string(for: previous.credentialAccount ?? Self.tokenAccount)
+                let staged = "monitoring-credential-\(UUID().uuidString)"
+                account = staged
+                try keychain.setString(token, for: staged)
+            }
+            try write(Saved(settings: settings, credentialAccount: account))
         } catch {
-            if wroteToken {
-                if let previousToken {
-                    try? keychain.setString(previousToken, for: Self.tokenAccount)
-                } else {
-                    try? keychain.removeValue(for: Self.tokenAccount)
+            if account != previous.credentialAccount, let account {
+                do { try keychain.removeValue(for: account) }
+                catch let cleanup {
+                    throw MonitoringSettingsSaveFailure.cleanup(commit: error as NSError, cleanup: cleanup as NSError)
                 }
             }
             throw error
@@ -217,14 +215,54 @@ public struct MonitoringSettingsStore: Sendable {
     }
 
     public func storedToken() throws -> String? {
-        try keychain.string(for: Self.tokenAccount)
+        try keychain.string(for: saved().credentialAccount ?? Self.tokenAccount)
     }
 
     public func hasStoredToken() -> Bool {
-        ((try? keychain.string(for: Self.tokenAccount)) ?? nil)?.isEmpty == false
+        ((try? storedToken()) ?? nil)?.isEmpty == false
     }
 
-    private func write(_ settings: MonitoringSettings) throws {
+    /// The file remains a flat settings object, with an additive, non-secret Keychain reference.
+    /// Old files without the reference keep using access-token. Orphaned old items are retained:
+    /// deleting them after commit would make an otherwise successful save partially fail.
+    private struct Saved: Codable {
+        var settings: MonitoringSettings
+        var credentialAccount: String?
+
+        enum CodingKeys: String, CodingKey { case credentialAccount }
+
+        init(settings: MonitoringSettings, credentialAccount: String?) {
+            self.settings = settings
+            self.credentialAccount = credentialAccount
+        }
+
+        init(from decoder: any Decoder) throws {
+            settings = try MonitoringSettings(from: decoder)
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            credentialAccount = try values.decodeIfPresent(String.self, forKey: .credentialAccount)
+            if let account = credentialAccount {
+                let prefix = "monitoring-credential-"
+                guard account.hasPrefix(prefix), UUID(uuidString: String(account.dropFirst(prefix.count))) != nil else {
+                    throw DecodingError.dataCorruptedError(forKey: .credentialAccount, in: values, debugDescription: "Invalid monitoring credential reference")
+                }
+            }
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            try settings.encode(to: encoder)
+            var values = encoder.container(keyedBy: CodingKeys.self)
+            try values.encodeIfPresent(credentialAccount, forKey: .credentialAccount)
+        }
+    }
+
+    private func saved() throws -> Saved {
+        guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else {
+            return Saved(settings: .initial, credentialAccount: nil)
+        }
+        return try JSONDecoder().decode(Saved.self, from: Data(contentsOf: fileURL))
+    }
+
+    private func write(_ settings: Saved) throws {
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
