@@ -65,29 +65,21 @@ struct BotRosterSections: View {
     /// Group chats come before the Bots: a line between them, and the stronger one on the last
     /// when a Bot or the Hidden region follows (`docs/inbox.md` §10).
     private func roomDividers(_ rooms: [GroupRoom], followedByAnotherRegion: Bool) -> [String: SidebarRowDivider] {
-        var dividers: [String: SidebarRowDivider] = [:]
-        for (index, room) in rooms.enumerated() {
-            let divider: SidebarRowDivider = index < rooms.count - 1 ? .line : (followedByAnotherRegion ? .section : .none)
-            dividers[room.id] = divider
-        }
-        return dividers
+        var plan = RowDividerPlan<String>()
+        plan.add(rooms.map(\.id), boundary: .section)
+        plan.isFollowedByContent = followedByAnotherRegion
+        return plan.dividers
     }
 
     /// A line between Bots, the stronger one where the pinned ones end and where the Hidden region
     /// begins; the list's last row has none.
     private func botDividers(_ bots: [BotProfile], hasHiddenRegion: Bool) -> [String: SidebarRowDivider] {
-        var dividers: [String: SidebarRowDivider] = [:]
-        let pinned = bots.prefix { $0.meta.isPinned }.count
-        for (index, bot) in bots.enumerated() {
-            let divider: SidebarRowDivider
-            if index < bots.count - 1 {
-                divider = index + 1 == pinned ? .section : .line
-            } else {
-                divider = hasHiddenRegion ? .section : .none
-            }
-            dividers[bot.name] = divider
-        }
-        return dividers
+        var plan = RowDividerPlan<String>()
+        let pinned = bots.prefix { $0.meta.isPinned }.map(\.name)
+        plan.add(pinned, boundary: .section)
+        plan.add(bots.dropFirst(pinned.count).map(\.name), boundary: .section)
+        plan.isFollowedByContent = hasHiddenRegion
+        return plan.dividers
     }
 
     // MARK: Rows

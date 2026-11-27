@@ -113,15 +113,6 @@ struct SidebarRowInsets: ViewModifier {
     }
 }
 
-/// The hairline under a list row (`docs/inbox.md` §10): every row has one, a region's last row
-/// gets the stronger one when another region follows, and the list's last row has none. The
-/// iPhone's lists ask for them; the split view's sidebar leaves them off.
-enum SidebarRowDivider: Equatable {
-    case none
-    case line
-    case section
-}
-
 extension View {
     /// Draws the row's divider under its content, edge to edge, in the theme's quiet line colours.
     func sidebarRowDivider(_ divider: SidebarRowDivider) -> some View {
