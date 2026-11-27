@@ -275,31 +275,23 @@ struct IOSChatList: View {
     /// last row has none.
     private func topDividers(of listed: [HermesSession], pinnedCount: Int,
                              hasMarkAll: Bool, hasWorking: Bool, hasSettled: Bool) -> [String: SidebarRowDivider] {
-        var dividers: [String: SidebarRowDivider] = [:]
-        for (index, session) in listed.enumerated() {
-            let divider: SidebarRowDivider
-            if index < listed.count - 1 {
-                // Pinned and Main are regions of their own, with no header between them.
-                divider = index + 1 == pinnedCount ? .section : .line
-            } else if hasMarkAll {
-                divider = .line
-            } else {
-                divider = hasWorking || hasSettled ? .section : .none
-            }
-            dividers[session.stableID] = divider
-        }
-        return dividers
+        var plan = RowDividerPlan<String>()
+        let pinned = listed.prefix(pinnedCount).map(\.stableID)
+        let main = listed.dropFirst(pinned.count).map(\.stableID)
+        // Pinned and Main are regions of their own, with no header between them.
+        plan.add(pinned, boundary: main.isEmpty && hasMarkAll ? .line : .section)
+        plan.add(main, boundary: hasMarkAll ? .line : .section)
+        plan.isFollowedByContent = hasMarkAll || hasWorking || hasSettled
+        return plan.dividers
     }
 
     /// Rows inside one region: a line between them, the stronger one on the last when another
     /// region follows, and none on the list's last row.
     private func rowDividers(of rows: [HermesSession], followedByAnotherRegion: Bool) -> [String: SidebarRowDivider] {
-        var dividers: [String: SidebarRowDivider] = [:]
-        for (index, session) in rows.enumerated() {
-            let divider: SidebarRowDivider = index < rows.count - 1 ? .line : (followedByAnotherRegion ? .section : .none)
-            dividers[session.stableID] = divider
-        }
-        return dividers
+        var plan = RowDividerPlan<String>()
+        plan.add(rows.map(\.stableID), boundary: .section)
+        plan.isFollowedByContent = followedByAnotherRegion
+        return plan.dividers
     }
 
     /// Whether the Settled region has a header to draw (`settledRegion`).

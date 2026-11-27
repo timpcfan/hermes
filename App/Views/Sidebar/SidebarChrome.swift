@@ -38,6 +38,25 @@ enum SidebarMetrics {
     static let sectionFont = Font.footnote.weight(.semibold)
     static let glyphColor = Theme.primaryText
     #endif
+    /// A chat in the sidebar (iPad and the Mac share one size): a 20 pt face — a thumbnail beside
+    /// the profile's name, not a photo in its own column — a 15 pt semibold title that wraps to two
+    /// lines, and 13 pt detail on two lines of its own (`docs/inbox.md` §2).
+    static let chatFaceSize: CGFloat = 20
+    static let chatRowHeight: CGFloat = 64
+    /// Line three — the source and the model. 12 pt: a step under the profile's 13 pt, and small
+    /// enough that "app" + "claude-sonnet-4.6" fit a 240 pt sidebar whole. Behind the longer
+    /// "terminal" the model name is cut at the tail, which is the narrowest sidebar's price.
+    static let chatMetaFont: Font = .system(size: 12)
+    static let chatGlyphSize: CGFloat = 11
+    static let chatLineSpacing: CGFloat = 3
+    #if os(macOS)
+    static let chatTitleFont = Font.system(size: 15, weight: .semibold)
+    static let chatDetailFont = Font.system(size: 13)
+    #else
+    static let chatTitleFont = Font.subheadline.weight(.semibold)
+    static let chatDetailFont = Font.footnote
+    #endif
+
     /// The rows' inset from the sidebar's edges; the highlight sits inside it.
     static let listInset: CGFloat = 8
     static var rowInsets: EdgeInsets {
@@ -96,15 +115,6 @@ struct SidebarRowInsets: ViewModifier {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }
-}
-
-/// The hairline under a list row (`docs/inbox.md` §10): every row has one, a region's last row
-/// gets the stronger one when another region follows, and the list's last row has none. The
-/// iPhone's lists ask for them; the split view's sidebar leaves them off.
-enum SidebarRowDivider: Equatable {
-    case none
-    case line
-    case section
 }
 
 extension View {

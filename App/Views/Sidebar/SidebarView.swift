@@ -205,7 +205,7 @@ struct SidebarView: View {
             navigationRows(roster: botRoster)
         }
         if let botRoster {
-            BotRosterSections(roster: botRoster, workspace: workspace)
+            BotRosterSections(roster: botRoster, workspace: workspace, showsRowDividers: true)
         } else if isSearching {
             // What was said, not only titles (`docs/search.md`).
             SearchResultsSection(workspace: workspace)
@@ -321,6 +321,9 @@ struct SidebarView: View {
 
     // MARK: Sessions
 
+    /// The Mark All button's place in the dividers' plan: it is a row of the list, not a chat.
+    private static let markAllRowID = "sidebar.markAll"
+
     /// The Chats inbox (`docs/inbox.md` §2a): Pinned and Main, then Working while something runs,
     /// then Settled. One pass builds the regions (`inboxSections`); a folded region keeps no rows,
     /// and Working, with nothing running, not even its header.
@@ -332,12 +335,21 @@ struct SidebarView: View {
             FilteredLine(workspace: workspace)
         }
         let listed = ChatListSnapshot.listed(top, firstFrame: isFirstFrame)
-        ForEach(listed, id: \.stableID) { session in
-            sessionRow(session)
-        }
         // Nothing goes below a list cut for the first frame: it is whole a moment later.
         let isWhole = listed.count == top.count
-        if isWhole, workspace.inboxScope.unreadOnly, !top.isEmpty {
+        let hasMarkAll = isWhole && workspace.inboxScope.unreadOnly && !top.isEmpty
+        let hasWorking = isWhole && !sections.working.isEmpty
+        let workingShown = hasWorking && workspace.workingExpanded
+        let hasSettled = isWhole && settledHeaderShown
+        let settledRows = isWhole ? settledShownRows : []
+        let dividers = chatDividers(top: Array(listed), hasMarkAll: hasMarkAll, hasWorking: hasWorking,
+                                    workingShown: workingShown, hasSettled: hasSettled,
+                                    settledRows: settledRows, working: Array(sections.working))
+        ForEach(listed, id: \.stableID) { session in
+            sessionRow(session)
+                .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
+        }
+        if hasMarkAll {
             // Mark All as Read, at the end of the Unread list as in the filter menu
             // (`docs/inbox.md` §5).
             Button("Mark All as Read") {
@@ -349,16 +361,20 @@ struct SidebarView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .modifier(SidebarRowInsets())
+            .sidebarRowDivider(dividers[Self.markAllRowID] ?? SidebarRowDivider.none)
         }
-        if isWhole, !sections.working.isEmpty {
+        if hasWorking {
             InboxRegionHeader(title: String(localized: "Working"), count: sections.working.count, isExpanded: $workspace.workingExpanded)
-            if workspace.workingExpanded {
+            if workingShown {
                 ForEach(sections.working, id: \.stableID) { session in
                     sessionRow(session)
+                        .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
                 }
             }
         }
-        if isWhole { settledRegion }
+        if isWhole {
+            settledRegion(rows: settledRows, dividers: dividers)
+        }
         // The next page loads at the very end, so Working and Settled follow the chats listed so
         // far rather than waiting for every page (`docs/inbox.md` §5 Paging).
         if isWhole, workspace.hasMoreSessions, !workspace.inboxScope.narrowsMain {
@@ -369,6 +385,27 @@ struct SidebarView: View {
                 // would then wait for a scroll that can't come (`docs/inbox.md` §5).
                 .task(id: workspace.nextSessionOffset) { await workspace.loadMoreSessions() }
         }
+    }
+
+    /// Where the line under each Chats row goes (`docs/inbox.md` §10): Pinned and Main read as one
+    /// block on this side of the app, a line between a region's rows, the stronger one under a
+    /// region's last row while a header or another region follows, and none under the list's last.
+    private func chatDividers(top: [HermesSession], hasMarkAll: Bool, hasWorking: Bool,
+                              workingShown: Bool, hasSettled: Bool, settledRows: [HermesSession],
+                              working: [HermesSession]) -> [String: SidebarRowDivider] {
+        var plan = RowDividerPlan<String>()
+        plan.add(top.map(\.stableID), boundary: hasMarkAll ? .line : .section)
+        if hasMarkAll {
+            plan.add([Self.markAllRowID], boundary: .section)
+        }
+        if workingShown {
+            plan.add(working.map(\.stableID), boundary: .section)
+        }
+        plan.add(settledRows.map(\.stableID), boundary: .none)
+        // A folded region still has its header after the last row, so that row keeps a section
+        // line rather than ending the list.
+        plan.isFollowedByContent = settledRows.isEmpty && (hasSettled || (hasWorking && !workingShown))
+        return plan.dividers
     }
 
     /// The row the next page loads from, below Settled (`docs/inbox.md` §5 Paging). It draws
@@ -384,19 +421,15 @@ struct SidebarView: View {
     /// Open, ten rows and then 25 more at a time; folded, none, except a settled chat opened from
     /// search while it's open. Not there without the Dashboard backend that lists them.
     @ViewBuilder
-    private var settledRegion: some View {
+    private func settledRegion(rows: [HermesSession], dividers: [String: SidebarRowDivider]) -> some View {
         @Bindable var settled = workspace.settled
-        let revealed = settled.revealed
         // Nothing settled yet: no region, as Working with nothing running.
-        if (settled.isAvailable && settled.list.total != 0) || revealed != nil {
+        if (settled.isAvailable && settled.list.total != 0) || settled.revealed != nil {
             InboxRegionHeader(title: String(localized: "Settled"), count: settled.list.total, isExpanded: $settled.isExpanded,
                               showsActivity: settled.hasActivity)
-            let rows = settled.isExpanded ? settled.list.rows : []
-            if let revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
-                settledRow(revealed)
-            }
             ForEach(rows, id: \.stableID) { session in
                 settledRow(session)
+                    .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
             }
             if settled.isExpanded {
                 if settled.isLoading {
@@ -408,6 +441,23 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    /// Whether Settled has a header to draw, folded or open.
+    private var settledHeaderShown: Bool {
+        guard let settled = workspace.settled else { return false }
+        return (settled.isAvailable && settled.list.total != 0) || settled.revealed != nil
+    }
+
+    /// Settled's rows as the list shows them: open, its pages; folded, only a settled chat revealed
+    /// from search, if one is. The revealed chat is first when its page doesn't hold it.
+    private var settledShownRows: [HermesSession] {
+        guard let settled = workspace.settled else { return [] }
+        var rows = settled.isExpanded ? settled.list.rows : []
+        if let revealed = settled.revealed, !rows.contains(where: { $0.stableID == revealed.stableID }) {
+            rows.insert(revealed, at: 0)
+        }
+        return rows
     }
 
     /// A settled chat: Un-settle is its trailing swipe (a full swipe does it) and first in its menu.
@@ -695,10 +745,10 @@ private struct SessionRow: View {
     var body: some View {
         let item = SidebarItem.session(session.stableID)
         let isSelected = workspace.selection == item
-        SidebarRow(isSelected: isSelected, height: InboxMetrics.rowHeight) {
+        SidebarRow(isSelected: isSelected, height: SidebarMetrics.chatRowHeight) {
             workspace.pick(item)
         } label: {
-            ChatInboxRow(session: session, workspace: workspace)
+            SidebarChatRow(session: session, workspace: workspace)
         }
         #if DEBUG
         .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }

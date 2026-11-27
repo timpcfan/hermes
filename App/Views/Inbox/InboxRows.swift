@@ -2,65 +2,11 @@ import HermesKit
 import HermesPush
 import SwiftUI
 
-/// A chat in the list, two lines (`chatRow` and its variants, `docs/inbox.md` §2): the title and
-/// the time, then the last message or what's happening, then what's new.
-struct ChatInboxRow: View {
-    let session: HermesSession
-    let workspace: BotWorkspace
-
-    var body: some View {
-        let key = session.stableID
-        let unread = workspace.unread
-        let open = unread.openKey
-        // A new chat whose first message waits says so, in still words: Hermes isn't working on it.
-        let waiting = workspace.waitingNote(forKey: key)
-        let line = waiting == nil ? workspace.activity.line(for: key) : nil
-        // The open chat is read as it's shown; a running turn shows no count until it ends.
-        let running = line.map { $0.isLive && !$0.needsYou } ?? false
-        let badge: UnreadBadge = running ? .none : BadgeScope.rowBadge(unread.badge(for: key), key: key, open: open)
-        let muted = unread.isMuted(key)
-        // The open chat's draft is in its composer; the others' show on their row.
-        let draft = RowDraft.shown(workspace.loadedConversation(forKey: key).flatMap { $0.hasDraftText ? $0.draft : nil },
-                                   key: key, open: open)
-        let lastLine = unread.lastLines[key]
-        let strong = badge.isUnread || (line?.isLive ?? false)
-        let date = workspace.rowTime(session, isLive: line?.isLive == true)
-        // Every profile's chats in one list: each row says whose it is (`docs/inbox.md` §9).
-        let mark = workspace.listsEveryProfile
-            ? ProfileRows.badge(profile: ProfileRows.profileName(of: session, home: workspace.bot.profileName), project: session.projectName)
-            : nil
-        InboxRowLayout(
-            title: session.displayTitle,
-            date: date,
-            strong: strong,
-            live: line?.isLive == true && line?.needsYou == false,
-            muted: muted,
-            pinned: session.pinned,
-            badge: badge,
-            needsYou: line?.needsYou ?? false,
-            mark: mark
-        ) {
-            if let waiting {
-                RowPreview(prefix: nil, text: waiting, bright: false)
-            } else if let line {
-                ActivityLineView(line: line)
-            } else if let draft {
-                RowPreview(prefix: String(localized: "Draft:"), prefixIsInk: true, text: LastLine.flatten(draft), bright: false)
-            } else if let lastLine {
-                RowPreview(lastLine, bright: badge.isUnread)
-            } else {
-                RowPreview(prefix: nil, text: session.listPreview ?? "", bright: badge.isUnread)
-                    .onAppear { unread.needsLastLine(session) }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.spoken(title: session.displayTitle, badge: badge, muted: muted, pinned: session.pinned, line: line,
-                                        date: date, preview: waiting ?? lastLine?.text ?? session.listPreview, mark: mark))
-    }
-
-    /// "Release notes for 1.3, money, 3 unread, 14:21, 23 merged PRs" (`docs/inbox.md` §6).
-    static func spoken(title: String, badge: UnreadBadge, muted: Bool, pinned: Bool, line: ActivityLine?, date: Date?, preview: String?,
-                       mark: String? = nil) -> String {
+/// How the Bots' rows read a chat's own line as VoiceOver words (`docs/inbox.md` §6):
+/// "Release notes for 1.3, money, 3 unread, 14:21, 23 merged PRs".
+enum InboxRowSpoken {
+    static func text(title: String, badge: UnreadBadge, muted: Bool, pinned: Bool, line: ActivityLine?, date: Date?, preview: String?,
+                     mark: String? = nil) -> String {
         var parts = [title]
         if let mark { parts.append(mark) }
         if muted { parts.append(String(localized: "muted")) }
@@ -128,7 +74,7 @@ struct BotInboxRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ChatInboxRow.spoken(title: bot.title, badge: badge, muted: muted, pinned: bot.meta.isPinned, line: line,
+        .accessibilityLabel(InboxRowSpoken.text(title: bot.title, badge: badge, muted: muted, pinned: bot.meta.isPinned, line: line,
                                                 date: date, preview: lastLine?.text ?? bot.preview))
     }
 }
@@ -176,7 +122,7 @@ struct GroupInboxRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ChatInboxRow.spoken(title: room.name, badge: badge, muted: muted, pinned: false, line: nil,
+        .accessibilityLabel(InboxRowSpoken.text(title: room.name, badge: badge, muted: muted, pinned: false, line: nil,
                                                 date: date, preview: summary.preview)
                             + (mentioned ? ", " + String(localized: "mentions you") : "")
                             + (summary.needsYou ? ", " + String(localized: "waiting for your approval") : ""))

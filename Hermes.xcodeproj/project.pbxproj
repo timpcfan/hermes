@@ -212,6 +212,7 @@
 		91F7484E3672F75C11885603 /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D7674ED0A0BB8F75D6B14E28 /* Intents.framework */; };
 		939C2DCE6237310CE1960BEE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1F1848A93EBD13325AEB3483 /* SwiftUI.framework */; };
 		93C65D710F17956F27B7FC14 /* IndicatorsGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202B1FF9B6247201C0904CDF /* IndicatorsGallery.swift */; };
+		945740364305E8B49CE9AF22 /* SidebarChatRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16504A510F6541BF41DA6A8 /* SidebarChatRow.swift */; };
 		94D6A0B26085F3D0CA57EDA1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 23137A90C3B1CD64BA1D3CBD /* PrivacyInfo.xcprivacy */; };
 		965C2708E588D051FC6EB350 /* RoutinesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A9032046947526C76D5936 /* RoutinesModel.swift */; };
 		9790C1B520CFAEA47DF74211 /* PillTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE63B9B4552E01494E93B76 /* PillTextView.swift */; };
@@ -272,6 +273,7 @@
 		BECDBBCD783252707323C6BA /* SetupCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20B62887DA33B2D81F9CE7A /* SetupCenter.swift */; };
 		BFBBFB3B016E13E703D731FF /* PagePreviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598CA8F535E8924DE352A7D4 /* PagePreviewViews.swift */; };
 		C033ACA5C0EF8B255157CA92 /* PluginOfferCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C976FDFA49A2BC736F66D3 /* PluginOfferCard.swift */; };
+		C144ED587A5F394BBBF5CD90 /* ChatRowParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA12CEF6AA4428B44CC910C /* ChatRowParts.swift */; };
 		C215A8126E42824521D0EB5B /* FileMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E18902E6043BEB1E947E79 /* FileMediaView.swift */; };
 		C28896533AA3CF30D16E846E /* VoiceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BD332B5E6974D145FD6A19 /* VoiceUITests.swift */; };
 		C2F9B989D42D48DF43BFBF7A /* HermesMarkPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58216F3283638D4CA643E82E /* HermesMarkPath.swift */; };
@@ -579,6 +581,7 @@
 		8BE62AA56C7273A33AAF03D0 /* SearchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViews.swift; sourceTree = "<group>"; };
 		8D28D9031C970E1F1CF601E1 /* WhatsNew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNew.swift; sourceTree = "<group>"; };
 		8E3D2825DBC3AEF1CEB79DAE /* TaskSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSplitViews.swift; sourceTree = "<group>"; };
+		8EA12CEF6AA4428B44CC910C /* ChatRowParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRowParts.swift; sourceTree = "<group>"; };
 		8EBCBF43CB09E699F6C87358 /* SlashMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashMenu.swift; sourceTree = "<group>"; };
 		8F0BF2A6657BB676114ADFB7 /* TeamViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamViews.swift; sourceTree = "<group>"; };
 		9056EA027A87EF84EE487D10 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
@@ -603,6 +606,7 @@
 		A08A478CF569E541F077B3CA /* DictationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationController.swift; sourceTree = "<group>"; };
 		A098A4F67CC9E04D4C5C020D /* TalkControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalkControl.swift; sourceTree = "<group>"; };
 		A10CCD80E543E6E1E4F17479 /* NowPlayingPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingPublisher.swift; sourceTree = "<group>"; };
+		A16504A510F6541BF41DA6A8 /* SidebarChatRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarChatRow.swift; sourceTree = "<group>"; };
 		A1C976FDFA49A2BC736F66D3 /* PluginOfferCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginOfferCard.swift; sourceTree = "<group>"; };
 		A20B62887DA33B2D81F9CE7A /* SetupCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupCenter.swift; sourceTree = "<group>"; };
 		A3E5DF5B94D19CAC9ABC78C1 /* HelperViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperViews.swift; sourceTree = "<group>"; };
@@ -1416,6 +1420,7 @@
 		CFF165CB2ECBD8AA730FDFF1 /* Inbox */ = {
 			isa = PBXGroup;
 			children = (
+				8EA12CEF6AA4428B44CC910C /* ChatRowParts.swift */,
 				CB8C73EAB2B52E4FB5647230 /* InboxChatParts.swift */,
 				A561B3A740221D8E69A1230F /* InboxListParts.swift */,
 				6CE21584C8656984496A9021 /* InboxParts.swift */,
@@ -1446,6 +1451,7 @@
 				3AB1797B38534062C2C3F38F /* IOSChatRow.swift */,
 				A73268AE70D9FC9A3D3EC2ED /* IOSMainView.swift */,
 				C525BD3D40E9B9708B9886AA /* QuickOpenView.swift */,
+				A16504A510F6541BF41DA6A8 /* SidebarChatRow.swift */,
 				7AB786670227F23BE604A7E7 /* SidebarChrome.swift */,
 				B65F86E4FDC5733C8ABF5605 /* SidebarModeSwitcher.swift */,
 				481C32606FBCEC04CDD75100 /* SidebarOverChat.swift */,
@@ -1836,6 +1842,7 @@
 				C4F66DDD23BF244BE8A02FD7 /* CatalogPluginReviewView.swift in Sources */,
 				665755A319E2B05399C5E076 /* ChangesModel.swift in Sources */,
 				DF4AEC2AAF7424129F4B9C90 /* ChangesTabView.swift in Sources */,
+				C144ED587A5F394BBBF5CD90 /* ChatRowParts.swift in Sources */,
 				6E4BC7F483F0439F749C448C /* ChatScreen.swift in Sources */,
 				6AF564FBE420E5E43FA5F787 /* ChatSearch.swift in Sources */,
 				613C62242A0D32337C865507 /* ChatSounds.swift in Sources */,
@@ -2025,6 +2032,7 @@
 				20A2038E7DD4EA336624CFF1 /* SetupOverviewView.swift in Sources */,
 				D7B104DB46D5B2D360EED23E /* SetupViews.swift in Sources */,
 				CA4A498E7CA4364CCCDA4EE7 /* Shaders.metal in Sources */,
+				945740364305E8B49CE9AF22 /* SidebarChatRow.swift in Sources */,
 				201AF65BA7D28F4AD433BF12 /* SidebarChrome.swift in Sources */,
 				57CDC820425F29E6ECBEB8B4 /* SidebarModeSwitcher.swift in Sources */,
 				8A6743F902B872D50A4D42EE /* SidebarOverChat.swift in Sources */,
