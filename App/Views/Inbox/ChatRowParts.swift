@@ -144,6 +144,9 @@ struct ChatRowStatusBadge: View {
     let startedAt: Date?
     /// The iPhone's `.footnote`; the sidebar's smaller type passes its own.
     var font = Font.footnote.weight(.semibold)
+    /// The Mac's sidebar writes the word "Working" beside the ring; the iPhone and iPad show the
+    /// ring and the running time alone (`docs/inbox.md` §2, §10).
+    var showsWorkingWord = false
 
     var body: some View {
         Group {
@@ -151,14 +154,10 @@ struct ChatRowStatusBadge: View {
             case .running:
                 if let startedAt {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        label(text: ChatRowDuration.short(context.date.timeIntervalSince(startedAt)), color: Theme.success) {
-                            DashedStatusRing()
-                        }
+                        runningLabel(text: runningText(ChatRowDuration.short(context.date.timeIntervalSince(startedAt))))
                     }
                 } else {
-                    label(text: String(localized: "Working"), color: Theme.success) {
-                        DashedStatusRing()
-                    }
+                    runningLabel(text: runningText(nil))
                 }
             case .done:
                 label(symbol: "checkmark.circle", text: String(localized: "Done"), color: Theme.success)
@@ -182,11 +181,33 @@ struct ChatRowStatusBadge: View {
         }
     }
 
-    private func label(text: String, color: Color, @ViewBuilder icon: () -> some View) -> some View {
+    /// A running chat: the dashed ring in the working blue, with the time, or the word "Working"
+    /// where the sidebar asks for it. With neither, the ring stands alone.
+    private func runningLabel(text: String?) -> some View {
+        label(text: text, color: Theme.working) {
+            DashedStatusRing()
+        }
+    }
+
+    /// What a running chat says: its time, and on the Mac the word before it — "Working · 4m 12s".
+    /// Without a start time the word stands alone where the sidebar asks for it.
+    private func runningText(_ duration: String?) -> String? {
+        let word = showsWorkingWord ? String(localized: "Working") : nil
+        switch (word, duration) {
+        case let (word?, duration?): return "\(word) · \(duration)"
+        case let (word?, nil): return word
+        case let (nil, duration?): return duration
+        case (nil, nil): return nil
+        }
+    }
+
+    private func label(text: String?, color: Color, @ViewBuilder icon: () -> some View) -> some View {
         HStack(spacing: 5) {
             icon()
-            Text(text)
-                .monospacedDigit()
+            if let text {
+                Text(text)
+                    .monospacedDigit()
+            }
         }
         .foregroundStyle(color)
     }

@@ -140,9 +140,10 @@ all three lines without the face taking a column of its own; only a long model n
   240 pt "app" and "claude-sonnet-4.6" fit whole; behind the longer "terminal" the model name is cut
   at the tail, so the source word keeps its letters. The project (`git_repo_root`'s folder name) has
   no line of its own in the sidebar.
-- The state (`ChatRowState`, §10's trailing state): a dashed green ring and the running time, an
-  orange mark and Needs you, or a red mark, Failed and the reason in red on its own line; an unread
-  chat that finished is a green check and Done, a read one how long ago it ended.
+- The state (`ChatRowState`, §10's trailing state): a dashed blue ring (`Theme.working`) with the
+  word "Working" before the running time on the Mac, an orange mark and Needs you, or a red mark,
+  Failed and the reason in red on its own line; an unread chat that finished is a green check and
+  Done, a read one how long ago it ended.
 - No last-message preview: the sidebar says which chat and what state, and the conversation itself
   is one click away.
 - The lines (`SidebarRowDivider`): a one-physical-pixel `Theme.rowSeparator` under each row, the
@@ -803,20 +804,25 @@ result or a link opens the same chat here as there.
   "Filtered: …" line goes above the rows in this layout; "Show Everything" stays in the Sources
   menu while anything differs from the standard. A picked profile without chats says so ("No chats
   in scout"), not that the sources hold nothing.
-- **A row** (`IOSChatRow`): the profile's avatar at 44 pt on the left — its Bot's photo or drawn
-  face when it has one, otherwise its initial on the name's stable colour (`ProfileMonogram`) — with
-  the unread dot on its corner. The sizes are the Bots tab's (`InboxMetrics`: `.body` title,
-  66 pt minimum row), so the two tabs read as one list; the small print under the title is
-  `.caption`. Then the title and pin,
-  at `.body` semibold and up to two lines: a long title wraps and the row grows, while the trailing
-  status keeps its corner. Under it a line of source · profile · project (`ChatRowSubtitle`;
-  `git_repo_root`'s folder name, absent outside a repository) in `.footnote`. The device is never
-  named. When Hermes serves a model for the chat, the same line ends flush
-  right with the chat's model ("qwen4-max") in `.footnote` tertiary text
-  (`ChatRowSubtitle.modelLine`), the profile reading from the left edge in `.footnote` too; the reasoning level is
-  not shown (it read as noise beside the profile). The provider prefix goes, a long model name is
-  cut, and without a model the line ends at the profile.
-- **The trailing state** (`ChatRowState`) is a dashed green ring and the running time, an orange
+- **A row** (`IOSChatRow`) has two lines, the shape the person asked for:
+
+  1. the title and pin at `.body` semibold, up to two lines: a long title wraps and the row grows,
+     while the trailing status keeps its corner;
+  2. the profile's face at 18 pt (`InboxMetrics.rowFaceSize`) with the profile's name in
+     `.footnote`, and the chat's model flush right.
+
+  The face is its Bot's photo or drawn face when it has one, otherwise its initial on the name's
+  stable colour (`ProfileMonogram`); the unread dot is the leading row's business no longer, so the
+  face here stays plain. The sizes are the Bots tab's (`InboxMetrics`), so the two tabs read as one
+  list. **The source — app, terminal, telegram — is not drawn on this row**: the profile takes the
+  line's left edge, and where the chat came from is one tap away inside it. When Hermes serves a
+  model, its name ends the second line in `.footnote` tertiary text
+  (`ChatRowSubtitle.modelLine`); the reasoning level is not shown (it read as noise beside the
+  profile), the provider prefix goes, a long model name is cut, and without a model the line ends at
+  the profile.
+- **The trailing state** (`ChatRowState`) is a dashed blue ring (`Theme.working`) and the running
+  time — the Mac's sidebar writes "Working" before it ("Working · 4m"), iPad and iPhone the time
+  alone — an orange
   mark and Needs you, or a red mark, Failed and the reason in red on its own line. An idle chat is a
   green check and Done while it is unread (the dot's rule: `UnreadStore`'s badge or a mark as
   unread); once read it shows only how long ago it ended (`ChatRowAgo`: "now", "5m", "2h", "3d",

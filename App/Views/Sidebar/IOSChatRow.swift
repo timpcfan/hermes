@@ -1,10 +1,17 @@
 import HermesKit
 import SwiftUI
 
-/// A chat in the iPhone's list (`mockup-v2.html`): the profile's avatar with the unread dot on its
-/// corner, the title and pin, where the chat came from, then what it is doing — running with its
-/// time, done while its news is unread, how long ago it ended once read, waiting on the person, or
-/// failed with the reason in red (`docs/inbox.md` §10).
+/// A chat in the iPhone's list (`mockup-v2.html`): two lines, the shape the person asked for.
+///
+/// ```
+/// Fix the RSS feed dates                              2h
+/// (face) default                              qwen4-max
+/// ```
+///
+/// Line one is the title, wrapping to two lines, with the state in the corner. Line two opens with
+/// the profile's small face and its name and closes with the model flush right. The app the chat
+/// came from isn't drawn — the profile takes its place at the left edge, and the source is one tap
+/// away in the chat (`docs/inbox.md` §10).
 ///
 /// The left side is one row's own state: it reads its activity line through `ChatRowReading`, so a
 /// reply streaming in another chat redraws that row, not this one (`docs/inbox.md` §3).
@@ -14,22 +21,19 @@ struct IOSChatRow: View {
 
     var body: some View {
         let row = ChatRowReading(session: session, workspace: workspace)
-        HStack(alignment: .top, spacing: 12) {
-            ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: row.isUnread)
-            VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
-                HStack(alignment: .top, spacing: 8) {
-                    title(row)
-                    Spacer(minLength: 0)
-                    ChatRowStatusBadge(state: row.state, startedAt: row.startedAt)
-                        .padding(.top, 1)
-                }
-                subtitleLine(row)
-                if case .failed(let reason) = row.state {
-                    Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(Theme.danger)
-                        .lineLimit(1)
-                }
+        VStack(alignment: .leading, spacing: InboxMetrics.lineSpacing) {
+            HStack(alignment: .top, spacing: 8) {
+                title(row)
+                Spacer(minLength: 0)
+                ChatRowStatusBadge(state: row.state, startedAt: row.startedAt)
+                    .padding(.top, 1)
+            }
+            subtitleLine(row)
+            if case .failed(let reason) = row.state {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(1)
             }
         }
         .padding(.vertical, 8)
@@ -57,19 +61,17 @@ struct IOSChatRow: View {
         }
     }
 
+    /// Line two: the profile's face at a thumbnail's size, then its name, then the model flush
+    /// right (`docs/inbox.md` §10). The source's glyph isn't drawn — the profile takes its place.
     private func subtitleLine(_ row: ChatRowReading) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: InboxSourceGroup(source: session.source).symbol)
-                .font(.system(size: InboxMetrics.glyphSize))
-                .foregroundStyle(Theme.tertiaryText)
-                .accessibilityHidden(true)
-            Text(row.subtitle)
+        HStack(spacing: 5) {
+            ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: false,
+                              size: InboxMetrics.rowFaceSize)
+            Text(row.profile)
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
-                .truncationMode(.tail)
-            // The model closes the same line (`docs/inbox.md` §10): the profile reads from the
-            // left edge, the model sits flush right.
+                .minimumScaleFactor(0.85)
             if let modelLine = row.modelLine {
                 Spacer(minLength: 8)
                 Text(modelLine)
@@ -77,7 +79,6 @@ struct IOSChatRow: View {
                     .foregroundStyle(Theme.tertiaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .layoutPriority(1)
                     .accessibilityHidden(true)
             }
         }

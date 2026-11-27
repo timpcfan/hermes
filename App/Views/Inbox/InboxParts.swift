@@ -10,6 +10,9 @@ enum InboxMetrics {
     static let slimRowHeight: CGFloat = 28
     static let botRowHeight: CGFloat = 50
     static let faceSize: CGFloat = 32
+    /// The profile's face on a chat row's second line (`IOSChatRow`): a thumbnail beside the
+    /// name, not the row's leading picture (`docs/inbox.md` §10).
+    static let rowFaceSize: CGFloat = 16
     static let titleFont = Font.system(size: 13)
     static let unreadTitleFont = Font.system(size: 13, weight: .semibold)
     static let lineFont = Font.system(size: 11.5)
@@ -23,6 +26,9 @@ enum InboxMetrics {
     static let slimRowHeight: CGFloat = 44
     static let botRowHeight: CGFloat = 66
     static let faceSize: CGFloat = 44
+    /// The profile's face on a chat row's second line (`IOSChatRow`): a thumbnail beside the
+    /// name, not the row's leading picture (`docs/inbox.md` §10).
+    static let rowFaceSize: CGFloat = 18
     static let titleFont = Font.body
     static let unreadTitleFont = Font.body.weight(.semibold)
     static let lineFont = Font.subheadline

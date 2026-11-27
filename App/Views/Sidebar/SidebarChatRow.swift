@@ -42,7 +42,8 @@ struct SidebarChatRow: View {
                     .layoutPriority(1)
                 Spacer(minLength: 6)
                 ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
-                                   font: SidebarMetrics.chatDetailFont.weight(.semibold))
+                                   font: SidebarMetrics.chatDetailFont.weight(.semibold),
+                                   showsWorkingWord: true)
             }
             title(row)
                 .padding(.top, 1)

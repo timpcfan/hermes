@@ -53,6 +53,9 @@ nonisolated enum Theme {
     static let inkForeground = Palette.onInk
     static let inkForegroundSecondary = Palette.onInkSecondary
     static let success = Palette.success
+    /// A chat Hermes is working on: blue, so it reads as in-progress rather than finished
+    /// (`docs/inbox.md` §2). The same blue as links, which already clears 4.5:1 on both themes.
+    static let working = Palette.link
     /// A switch that's on: the system green, brighter than `success`, which is for text.
     static let switchOn = Palette.switchOn
     static let warning = Palette.warning
