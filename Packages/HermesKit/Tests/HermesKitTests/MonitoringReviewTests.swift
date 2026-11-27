@@ -49,6 +49,18 @@ struct MonitoringReviewContractTests {
         #expect(buckets.map(\.requests) == [2, 4])
     }
 
+    @Test func nullInflightIsDifferentFromMeasuredEmpty() throws {
+        var object = try reviewObject()
+        object["inflight"] = NSNull()
+        let unknown = try MonitoringSnapshot(data: reviewData(object))
+        #expect(!unknown.hasKnownInflight)
+        #expect(unknown.inflight.isEmpty)
+        object["inflight"] = []
+        let empty = try MonitoringSnapshot(data: reviewData(object))
+        #expect(empty.hasKnownInflight)
+        #expect(empty.inflight.isEmpty)
+    }
+
     @Test func nullTunnelsAreDifferentFromMeasuredZero() throws {
         let unknown = MonitoringExit(try #require(JSONValue.parse(#"{"name":"synthetic","tunnels":null}"#)))
         let zero = MonitoringExit(try #require(JSONValue.parse(#"{"name":"synthetic","tunnels":0}"#)))

@@ -8,20 +8,25 @@ struct MonitoringPresentation {
     let receivedAt: Date?
     let now: Date
     let state: MonitoringConnectionState
+    var receiptAge: TimeInterval? = nil
+
+    private var age: TimeInterval {
+        if let receiptAge { return max(0, receiptAge) }
+        return receivedAt.map { max(0, now.timeIntervalSince($0)) } ?? .infinity
+    }
 
     private var agedSnapshot: MonitoringSnapshot {
         var result = snapshot
-        if let serverTime = snapshot.serverTime, let receivedAt {
-            result.snapshotAt = serverTime + max(0, now.timeIntervalSince(receivedAt))
+        if let serverTime = snapshot.serverTime, age.isFinite {
+            result.snapshotAt = serverTime + age
         }
         return result
     }
 
     private var transportIsCurrent: Bool {
-        guard state.isLive || state.isPolling, let receivedAt else { return false }
-        return !MonitoringFreshnessPolicy.standard.snapshotIsStale(
-            receivedAt: receivedAt, now: now, isPolling: state.isPolling
-        )
+        guard state.isLive || state.isPolling else { return false }
+        let policy = MonitoringFreshnessPolicy.standard
+        return age <= (state.isPolling ? policy.pollingStaleAfter : policy.snapshotStaleAfter)
     }
 
     private func qualify(_ source: MonitoringSourceState) -> MonitoringSourceState {

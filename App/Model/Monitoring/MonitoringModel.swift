@@ -32,7 +32,8 @@ final class MonitoringModel {
         _ = freshnessRevision
         guard let snapshot else { return nil }
         return MonitoringPresentation(
-            snapshot: snapshot, receivedAt: snapshotReceivedAt, now: now(), state: connectionState
+            snapshot: snapshot, receivedAt: snapshotReceivedAt, now: now(), state: connectionState,
+            receiptAge: snapshotReceivedUptime.map { max(0, uptime() - $0) }
         )
     }
 
@@ -48,6 +49,8 @@ final class MonitoringModel {
 
     @ObservationIgnored private let store: MonitoringSettingsStore
     @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let uptime: @Sendable () -> TimeInterval
+    @ObservationIgnored private var snapshotReceivedUptime: TimeInterval?
     @ObservationIgnored private let makeTransport: @Sendable (MonitoringConnection) -> any MonitoringTransport
     @ObservationIgnored private let checkConnection: @Sendable (MonitoringConnection, Duration) async -> MonitoringConnectionCheck
     @ObservationIgnored private var session: MonitoringSession?
@@ -55,6 +58,7 @@ final class MonitoringModel {
 
     init(
         store: MonitoringSettingsStore = .standard(), now: @escaping @Sendable () -> Date = Date.init,
+        uptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         makeTransport: @escaping @Sendable (MonitoringConnection) -> any MonitoringTransport = { MonitoringClient(connection: $0) },
         checkConnection: @escaping @Sendable (MonitoringConnection, Duration) async -> MonitoringConnectionCheck = {
             await MonitoringClient(connection: $0).check(timeout: $1)
@@ -62,19 +66,24 @@ final class MonitoringModel {
     ) {
         self.store = store
         self.now = now
+        self.uptime = uptime
         self.makeTransport = makeTransport
         self.checkConnection = checkConnection
         var loaded = MonitoringSettings.initial
         var problem: String?
-        do {
-            loaded = try store.load()
-        } catch {
-            problem = statsError(error)
+        if Self.debugOverride == nil {
+            do {
+                loaded = try store.load()
+            } catch {
+                problem = statsError(error)
+            }
         }
-        settings = Self.debugAdjusted(loaded)
+        let adjusted = Self.debugAdjusted(loaded)
+        let debug = Self.debugOverride != nil
+        settings = adjusted
         storeError = problem
-        usesDebugConnection = Self.debugOverride != nil
-        hasStoredToken = !usesDebugConnection && settings.auth == .bearer && store.hasStoredToken()
+        usesDebugConnection = debug
+        hasStoredToken = !debug && adjusted.auth == .bearer && store.hasStoredToken()
     }
 
     /// `-HERMES_MONITOR_URL http://127.0.0.1:48081`: a development connection that never
@@ -146,6 +155,7 @@ final class MonitoringModel {
     }
 
     var isSnapshotStale: Bool {
+        _ = freshnessRevision
         guard let snapshotReceivedAt else { return false }
         return MonitoringFreshnessPolicy.standard.snapshotIsStale(
             receivedAt: snapshotReceivedAt, now: now(), isPolling: connectionState.isPolling
@@ -179,7 +189,8 @@ final class MonitoringModel {
             transport: makeTransport(connection),
             configuration: MonitoringSessionConfiguration(
                 connection: connection, allowsStreaming: settings.liveUpdates
-            )
+            ),
+            now: now
         )
         self.session = session
         isRunning = true
@@ -210,6 +221,7 @@ final class MonitoringModel {
                 case .snapshot(let snapshot, let receivedAt):
                     self.snapshot = snapshot
                     snapshotReceivedAt = receivedAt
+                    snapshotReceivedUptime = uptime()
                     requestConsumers.removeAll { $0.value == nil }
                     for consumer in requestConsumers { consumer.value?.snapshotChanged(snapshot) }
                 }
@@ -258,6 +270,7 @@ final class MonitoringModel {
         stop()
         snapshot = nil
         snapshotReceivedAt = nil
+        snapshotReceivedUptime = nil
         requestConsumers.removeAll { $0.value == nil }
         for consumer in requestConsumers { consumer.value?.connectionChanged() }
     }
@@ -306,6 +319,18 @@ final class MonitoringModel {
     /// Saves the settings and, when one was typed, the token. A failed write throws and leaves the
     /// previous configuration and token as they were (`MonitoringSettingsStore`).
     func save(_ settings: MonitoringSettings, token: String) throws {
+        #if DEBUG
+        if usesDebugConnection {
+            // The launch override is a disposable connection, including edits made in its form.
+            // It must never stage a credential or overwrite the person's saved connection.
+            invalidateConnection()
+            self.settings = Self.debugAdjusted(settings)
+            hasStoredToken = false
+            storeError = nil
+            reconcileSession()
+            return
+        }
+        #endif
         let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
         try store.save(settings, token: normalized.isEmpty ? nil : normalized)
         invalidateConnection()
@@ -317,6 +342,19 @@ final class MonitoringModel {
     }
 
     func reloadSettings() {
+        #if DEBUG
+        if Self.debugOverride != nil {
+            let adjusted = Self.debugAdjusted(.initial)
+            if adjusted != settings || !usesDebugConnection {
+                invalidateConnection()
+                settings = adjusted
+                usesDebugConnection = true
+            }
+            hasStoredToken = false
+            reconcileSession()
+            return
+        }
+        #endif
         guard let loaded = try? store.load() else { return }
         let adjusted = Self.debugAdjusted(loaded)
         let debug = Self.debugOverride != nil
@@ -374,6 +412,7 @@ final class MonitoringRequestsModel {
     }
 
     func setVisible(_ visible: Bool) {
+        guard visible != isVisible else { return }
         isVisible = visible
         if visible {
             if pageData == nil { scheduleLoad() }
@@ -442,6 +481,7 @@ final class MonitoringRequestsModel {
         let generation = generation
         let connectionGeneration = monitoring.connectionGeneration
         let query = query
+        let followedSnapshot = monitoring.snapshot.flatMap { MonitoringFreeze($0) }
         loadTask?.cancel()
         let task = Task { try await monitoring.recent(query) }
         loadTask = task
@@ -462,7 +502,11 @@ final class MonitoringRequestsModel {
                 freezesNextPage = false
             }
             if followsLive { lastLoadedUpto = loaded.upto }
-            snapshotChanged(monitoring.snapshot)
+            // Coalesce a snapshot that advanced during this load. A persistently lagging
+            // /recent endpoint must not turn one snapshot into an unbounded request loop.
+            if followedSnapshot != monitoring.snapshot.flatMap({ MonitoringFreeze($0) }) {
+                snapshotChanged(monitoring.snapshot)
+            }
         } catch {
             guard generation == self.generation,
                   connectionGeneration == monitoring.connectionGeneration else { return }
@@ -479,6 +523,9 @@ final class MonitoringRequestsModel {
     func snapshotChanged(_ snapshot: MonitoringSnapshot?) {
         guard isVisible, let snapshot else { return }
         let day = freeze?.day ?? pageData?.day
+        // /recent can cross midnight before SSE. An older accepted snapshot cannot roll a
+        // newer authoritative page back to yesterday or keep restarting its load.
+        if let day, snapshot.day < day { return }
         if case .rolledOver(let previous, let current) = MonitoringRollover.check(
             frozen: day, current: snapshot.day
         ) {

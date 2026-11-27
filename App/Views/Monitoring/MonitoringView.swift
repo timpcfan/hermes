@@ -12,6 +12,7 @@ struct MonitoringView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.monitoringWindowIsVisible) private var windowIsVisible
     @State private var consumerID = UUID()
     @State private var isVisible = false
     @State private var section = MonitoringSection.overview
@@ -68,10 +69,15 @@ struct MonitoringView: View {
         }
         .onAppear {
             isVisible = true
-            model.setConsumer(consumerID, active: scenePhase != .background)
+            model.setConsumer(consumerID, active: scenePhase != .background && windowIsVisible)
         }
         .onChange(of: scenePhase) { _, phase in
-            let active = isVisible && phase != .background
+            let active = isVisible && windowIsVisible && phase != .background
+            model.setConsumer(consumerID, active: active)
+            requests.setVisible(active && section == .requests)
+        }
+        .onChange(of: windowIsVisible) { _, visible in
+            let active = isVisible && visible && scenePhase != .background
             model.setConsumer(consumerID, active: active)
             requests.setVisible(active && section == .requests)
         }
@@ -740,6 +746,8 @@ nonisolated func statsString(_ value: String.LocalizationValue) -> String {
 }
 
 enum MonitoringFormat {
+    static func bucketHour(_ label: String) -> String { String(label.prefix(2)) }
+
     static func count(_ value: Int) -> String {
         value.formatted(.number)
     }
@@ -766,6 +774,11 @@ enum MonitoringFormat {
         guard value.isFinite, value >= 0, let rounded = Int(exactly: value.rounded()) else { return "—" }
         if value < 10 { return String(format: "%.1f s", value) }
         return "\(rounded) s"
+    }
+
+    static func chartValue(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value >= 0, Int(exactly: value.rounded()) != nil else { return nil }
+        return value
     }
 
     static func probeAxis(_ value: Double) -> String {

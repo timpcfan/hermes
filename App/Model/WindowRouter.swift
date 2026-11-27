@@ -180,6 +180,8 @@ extension FocusedValues {
 }
 
 extension EnvironmentValues {
+    /// Stats has its own shared demand; a minimized Mac window contributes none.
+    @Entry var monitoringWindowIsVisible = true
     /// A Mac window under 700 pt (`docs/chat.md` §4): toolbars keep only what fits.
     @Entry var windowIsNarrow = false
     /// The sidebar is over a narrow window's chat: the toolbar's centered item steps aside, so

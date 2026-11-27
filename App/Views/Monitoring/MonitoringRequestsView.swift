@@ -353,11 +353,7 @@ struct MonitoringFlightRow: View {
     private var metaText: String {
         var parts: [String] = []
         if let account = flight.providerName ?? flight.provider { parts.append(account) }
-        if let exit = flight.exit {
-            parts.append(statsString("via \(exit) (inferred)"))
-        } else {
-            parts.append(statsString("Exit unknown"))
-        }
+        parts.append(flight.statsExit)
         if let effort = flight.effort { parts.append(effort) }
         return parts.joined(separator: " · ")
     }

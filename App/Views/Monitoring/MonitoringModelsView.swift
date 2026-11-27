@@ -183,7 +183,7 @@ private struct MonitoringModelDetailView: View {
                 AxisTick()
                 AxisValueLabel(centered: false, collisionResolution: .greedy) {
                     if let label = value.as(String.self) {
-                        Text(String(label.prefix(2)))
+                        Text(MonitoringFormat.bucketHour(label))
                             .font(.caption2.monospacedDigit())
                             .fixedSize()
                     }
@@ -328,8 +328,8 @@ private struct MonitoringModelDetailView: View {
             let p90 = metric == .firstToken ? bucket.ttftP90 : bucket.tpsP90
             return BucketPoint(
                 hour: bucket.hour, requests: bucket.requests,
-                p50: bucket.requests > 0 ? p50 : nil,
-                p90: bucket.requests > 0 ? p90 : nil,
+                p50: bucket.requests > 0 ? MonitoringFormat.chartValue(p50) : nil,
+                p90: bucket.requests > 0 ? MonitoringFormat.chartValue(p90) : nil,
                 metric: metric
             )
         }

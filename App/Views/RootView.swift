@@ -225,6 +225,7 @@ struct RootView: View {
         .focusedSceneValue(\.windowRouter, router)
         // Outermost, so sheets inherit them too.
         .environment(router)
+        .environment(\.monitoringWindowIsVisible, !isMinimized && scenePhase != .background)
         .pausesMotionWhenAway()
         #if HERMES_PUSH
         .pushPresentation()

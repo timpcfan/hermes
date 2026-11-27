@@ -169,7 +169,7 @@ private struct MonitoringExitCard: View {
     private var chart: some View {
         Chart {
             ForEach(samples) { sample in
-                if let milliseconds = sample.milliseconds {
+                if let milliseconds = MonitoringFormat.chartValue(sample.milliseconds) {
                     LineMark(
                         x: .value(statsString("Probe time"), Date(timeIntervalSince1970: sample.at)),
                         y: .value(statsString("Latency"), milliseconds)
