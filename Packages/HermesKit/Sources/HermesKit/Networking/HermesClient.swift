@@ -176,9 +176,8 @@ public struct HermesClient: Sendable {
     }
 
     public func renameSession(id: String, title: String?) async throws -> HermesSession {
-        let body: [String: JSONValue] = ["title": title.map(JSONValue.string) ?? .null]
-        let envelope: SessionEnvelope = try await send("PATCH", ["api", "sessions", id], body: body)
-        return envelope.session
+        let response = try await fencedSessionWrite(id, method: "PATCH", body: ["title": title.map(JSONValue.string) ?? .null])
+        return try Self.session(from: response, id: id)
     }
 
     /// - Parameter unread: Hermes' read mark (`docs/inbox.md` §1): `false` stamps it now, `true`
@@ -189,12 +188,119 @@ public struct HermesClient: Sendable {
         if let pinned { body["pinned"] = .bool(pinned) }
         if let archived { body["archived"] = .bool(archived) }
         if let unread { body["unread"] = .bool(unread) }
-        let envelope: SessionEnvelope = try await send("PATCH", ["api", "sessions", id], body: body)
-        return envelope.session
+        let response = try await fencedSessionWrite(id, method: "PATCH", body: body)
+        return try Self.session(from: response, id: id)
     }
 
     public func deleteSession(id: String) async throws {
-        let _: JSONValue = try await send("DELETE", ["api", "sessions", id], body: Optional<JSONValue>.none)
+        _ = try await fencedSessionWrite(id, method: "DELETE")
+    }
+
+    // MARK: - Fenced session writes (Hermes from 2026-10-16)
+
+    /// The session's current write revision (`GET /api/sessions/{id}/mutation-snapshot`), the
+    /// one a fenced write must name. `nil` when the gateway doesn't have the route — the API
+    /// server, and a Hermes before the fence — whose writes stay plain. The route's 404 wears
+    /// either of the two not-found shapes: FastAPI's JSON `detail` (`.notFound`) and the
+    /// gateway API server's bare `404: Not Found` (`.unsupportedServer`).
+    private func mutationSnapshot(_ id: String) async throws -> JSONValue? {
+        do {
+            let (data, _) = try await data(for: makeRequest("GET", ["api", "sessions", id, "mutation-snapshot"]))
+            return try JSONValue.decode(data)
+        } catch HermesError.notFound(message: _) {
+            return nil
+        } catch HermesError.unsupportedServer {
+            return nil
+        }
+    }
+
+    /// The session row a write left behind, re-read for a fenced answer: the API server wraps
+    /// its rows in a `{"session": …}` envelope, the web route returns the row — either shape
+    /// settles into `session(from:)`.
+    private func sessionRow(_ id: String) async throws -> JSONValue {
+        let (data, _) = try await data(for: makeRequest("GET", ["api", "sessions", id]))
+        let value = try JSONValue.decode(data)
+        if let row = value["session"] { return row }
+        return value
+    }
+
+    /// A session write (a rename, a flag, a delete) made the fenced-write way: the session's
+    /// current `mutation-snapshot`, then the write carrying a fresh `request_id`, the
+    /// `runtime_revision`, and the `runtime_generation` when the runtime reports one. The edit
+    /// route reads the fence from the body; the delete route reads it from the URL's query
+    /// (`web_routers/sessions.py`). A turn landing between the snapshot and the write moves the
+    /// revision: a 409 `revision_conflict` or `stale_generation` is retried once with a fresh
+    /// one. A gateway without the snapshot route takes the plain write. The raw answer: a fenced
+    /// gateway answers an edit with a receipt, not the row, so the callers settle the row.
+    private func fencedSessionWrite(_ id: String, method: String, body: [String: JSONValue]? = nil) async throws -> JSONValue {
+        for attempt in 0..<2 {
+            var query: [URLQueryItem] = []
+            var fields = body ?? [:]
+            var fenced = false
+            if let snapshot = try await mutationSnapshot(id) {
+                guard snapshot["exists"]?.boolValue == true else { return JSONValue.null }
+                fenced = true
+                let requestID = UUID().uuidString
+                let revision = Int(snapshot["runtime_revision"]?.doubleValue ?? 0)
+                let generation = snapshot["runtime_generation"]?.truncatedIntValue
+                if method == "DELETE" {
+                    // The delete route reads the fence from the URL, not the body.
+                    query = [
+                        URLQueryItem(name: "request_id", value: requestID),
+                        URLQueryItem(name: "expected_revision", value: String(revision)),
+                    ]
+                    if let generation { query.append(URLQueryItem(name: "expected_generation", value: String(generation))) }
+                    fields = [:]
+                } else {
+                    fields["request_id"] = .string(requestID)
+                    fields["expected_revision"] = .number(Double(revision))
+                    if let generation { fields["expected_generation"] = .number(Double(generation)) }
+                }
+            }
+            do {
+                let response: JSONValue
+                if fenced, method == "DELETE" {
+                    let request = makeRequest(method, ["api", "sessions", id], query: query)
+                    response = try await perform(request)
+                } else {
+                    response = try await send(method, ["api", "sessions", id], body: fields)
+                }
+                if fenced, method != "DELETE" {
+                    // The fenced gateway answers a write with a receipt (ok, revision, operation),
+                    // not the row the write left behind: read the row again, so the caller
+                    // settles the real one. A row that vanished meanwhile keeps the receipt.
+                    if let row = try? await sessionRow(id) { return row }
+                }
+                return response
+            } catch let error as HermesError {
+                if case .server(409, code: _, let message) = error, fenced, attempt == 0,
+                   ["revision_conflict", "stale_generation"].contains(message ?? "") {
+                    continue  // a turn moved the revision; the next attempt takes a fresh snapshot
+                }
+                throw error
+            }
+        }
+        throw HermesError.server(status: 409, code: "revision_conflict", message: nil)
+    }
+
+    /// The session a write left behind: the row the answer carries (the API server's
+    /// `{"session": …}`), else the row the edit named, rebuilt from the fields sent — the
+    /// fenced-write gateway answers a rename with a receipt, not a row.
+    private static func session(from response: JSONValue, id: String) throws -> HermesSession {
+        if let session = try? JSONDecoder().decode(SessionEnvelope.self, from: JSONEncoder().encode(response)) {
+            return session.session
+        }
+        if let row = response["session"], let session = try? JSONDecoder().decode(HermesSession.self, from: JSONEncoder().encode(row)) {
+            return session
+        }
+        if let session = try? JSONDecoder().decode(HermesSession.self, from: JSONEncoder().encode(response)) {
+            return session
+        }
+        var session = HermesSession(id: id, source: nil)
+        if let title = response["title"]?.stringValue { session.title = title }
+        if let pinned = response["pinned"]?.boolValue { session.pinned = pinned }
+        if let archived = response["archived"]?.boolValue { session.archived = archived }
+        return session
     }
 
     /// Branches a conversation into a new session (the source session is ended).
