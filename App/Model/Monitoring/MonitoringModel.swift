@@ -37,6 +37,15 @@ final class MonitoringModel {
         )
     }
 
+    fileprivate var receiptUptime: TimeInterval { uptime() }
+
+    fileprivate func recentIsCurrent(receivedAt: TimeInterval?) -> Bool {
+        guard let receivedAt, presentation?.usageState == .live else { return false }
+        let policy = MonitoringFreshnessPolicy.standard
+        return max(0, uptime() - receivedAt)
+            <= (connectionState.isPolling ? policy.pollingStaleAfter : policy.snapshotStaleAfter)
+    }
+
     private final class WeakRequests {
         weak var value: MonitoringRequestsModel?
         init(_ value: MonitoringRequestsModel) { self.value = value }
@@ -411,6 +420,7 @@ final class MonitoringRequestsModel {
     private var freezesNextPage = false
     /// Cancellation keeps the accepted rows, but an unfinished query still needs its own page.
     private var needsLoad = false
+    private var pageReceivedUptime: TimeInterval?
 
     init(monitoring: MonitoringModel) {
         self.monitoring = monitoring
@@ -421,8 +431,8 @@ final class MonitoringRequestsModel {
         guard visible != isVisible else { return }
         isVisible = visible
         if visible {
-            snapshotChanged(monitoring.snapshot)
             if pageData == nil || needsLoad { scheduleLoad() }
+            snapshotChanged(monitoring.snapshot)
         } else {
             cancelLoad()
         }
@@ -440,6 +450,7 @@ final class MonitoringRequestsModel {
     fileprivate func connectionChanged() {
         cancelLoad()
         pageData = nil
+        pageReceivedUptime = nil
         freeze = nil
         lastLoadedUpto = nil
         page = 1
@@ -465,6 +476,12 @@ final class MonitoringRequestsModel {
 
     var followsLive: Bool { freeze == nil && query.followsLive }
 
+    /// Following updates is a query policy; retained rows need their own current-data evidence.
+    var canClaimLive: Bool {
+        followsLive && !needsLoad && error == nil && pageData != nil
+            && monitoring.recentIsCurrent(receivedAt: pageReceivedUptime)
+    }
+
     var newerCount: Int {
         var count = pageData?.newer ?? 0
         if freeze != nil, let snapshot = monitoring.snapshot {
@@ -484,6 +501,7 @@ final class MonitoringRequestsModel {
     // MARK: - Loading
 
     func load() async {
+        guard !Task.isCancelled else { return }
         needsLoad = true
         generation += 1
         let generation = generation
@@ -502,6 +520,7 @@ final class MonitoringRequestsModel {
             guard !Task.isCancelled, generation == self.generation,
                   connectionGeneration == monitoring.connectionGeneration else { return }
             pageData = loaded
+            pageReceivedUptime = monitoring.receiptUptime
             page = loaded.page
             needsLoad = false
             isLoading = false

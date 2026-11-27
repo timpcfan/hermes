@@ -225,7 +225,7 @@ struct MonitoringRequestsView: View {
         if page.unpricedCount > 0 {
             parts.append(statsString("\(page.unpricedCount) without a price"))
         }
-        if requests.followsLive { parts.append(statsString("live")) }
+        if requests.canClaimLive { parts.append(statsString("live")) }
         return parts.joined(separator: " · ")
     }
 
