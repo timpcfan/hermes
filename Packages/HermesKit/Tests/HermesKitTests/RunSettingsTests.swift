@@ -11,6 +11,7 @@ struct RunSettingsTests {
     private let gpt = ModelSelection(provider: "openrouter", model: "openai/gpt-5")
 
     private var gptValue: String { "openai/gpt-5 --provider openrouter" }
+    private var gptHighValue: String { "openai/gpt-5 --provider openrouter --reasoning high" }
 
     private actor Events {
         enum Event: Equatable, Sendable {
@@ -161,10 +162,9 @@ struct RunSettingsTests {
         #expect(outcome.effortApplied)
         #expect(outcome.applied == RunSettings(model: gpt, effort: .high))
         #expect(await events.events == [
-            .set(runtime: "runtime-1", key: "model", value: gptValue),
+            .set(runtime: "runtime-1", key: "model", value: gptHighValue),
             .reattach,
-            .set(runtime: "runtime-2", key: "model", value: gptValue),
-            .set(runtime: "runtime-2", key: "reasoning", value: "high"),
+            .set(runtime: "runtime-2", key: "model", value: gptHighValue),
         ])
     }
 
@@ -287,5 +287,93 @@ struct RunSettingsTests {
         #expect(outcome.effortApplied)
         #expect(outcome.applied == RunSettings(model: gpt, effort: .high))
         #expect(await events.events.isEmpty)
+    }
+
+    // MARK: - The level rides the model switch
+
+    @Test func aLevelTheChatAlreadyRanRidesTheNextModelSwitch() async {
+        // Hermes re-reads the level from the new model's own config as it swaps the model, so
+        // "already applied" from before the swap says nothing about after it: set on its own, or
+        // not at all as here, the level was gone the moment the pick landed — the chip said High
+        // while the turn ran the model's default.
+        let events = Events()
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: gpt, effort: .high),
+            applied: RunSettings(model: sonnet, effort: .high),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                return .object(["applied": .bool(true)])
+            },
+            reattach: { .init(runtime: "runtime-2", applied: nil) }
+        )
+        #expect(outcome.modelApplied)
+        #expect(outcome.effortApplied)
+        #expect(outcome.applied == RunSettings(model: gpt, effort: .high))
+        // One call, the level in it: Hermes applies it after the swap.
+        #expect(await events.events == [.set(runtime: "runtime-1", key: "model", value: gptHighValue)])
+    }
+
+    @Test func aQueuedSwitchCarriesTheLevelToo() async {
+        let events = Events()
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: gpt, effort: .max),
+            applied: RunSettings(model: sonnet, effort: .max),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                return .object(["applied": .bool(false), "deferred": .bool(true)])
+            },
+            reattach: { .init(runtime: "runtime-2", applied: nil) }
+        )
+        #expect(outcome.effortApplied)
+        #expect(outcome.applied == RunSettings(model: gpt, effort: .max))
+        // Nothing goes to the live session ahead of the swap: the swap would undo it.
+        #expect(await events.events == [
+            .set(runtime: "runtime-1", key: "model", value: "openai/gpt-5 --provider openrouter --reasoning max"),
+        ])
+    }
+
+    @Test func autoOnASwitchForgetsTheLevelTheOldModelRan() async {
+        let events = Events()
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: gpt, effort: nil),
+            applied: RunSettings(model: sonnet, effort: .high),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                return .object(["applied": .bool(true)])
+            },
+            reattach: { .init(runtime: "runtime-2", applied: nil) }
+        )
+        // Auto is no level to send: the new model's own is what the session runs now.
+        #expect(outcome.effortApplied)
+        #expect(outcome.applied == RunSettings(model: gpt, effort: nil))
+        #expect(await events.events == [.set(runtime: "runtime-1", key: "model", value: gptValue)])
+    }
+
+    @Test func aSwitchHeldForConfirmationChangesNoEffort() async {
+        let events = Events()
+        let outcome = await RunSettingsApply.run(
+            wanted: RunSettings(model: gpt, effort: .high),
+            applied: RunSettings(model: sonnet, effort: .high),
+            runtime: "runtime-1",
+            set: { runtime, key, value in
+                await events.add(.set(runtime: runtime, key: key, value: value))
+                return .object(["confirm_required": .bool(true), "confirm_message": .string("It costs more.")])
+            },
+            reattach: { .init(runtime: "runtime-2", applied: nil) }
+        )
+        // Hermes changed nothing, so nothing about the level changed either: not re-sent, not recorded.
+        #expect(outcome.confirmationMessage == "It costs more.")
+        #expect(!outcome.modelApplied)
+        #expect(outcome.applied == RunSettings(model: sonnet, effort: .high))
+        #expect(await events.events == [.set(runtime: "runtime-1", key: "model", value: gptHighValue)])
+    }
+
+    @Test func aSwitchValueNamesTheLevelOnlyWhenThereIsOne() {
+        #expect(RunSettingsApply.switchValue(gpt, effort: nil) == gptValue)
+        #expect(RunSettingsApply.switchValue(gpt, effort: .off) == "openai/gpt-5 --provider openrouter --reasoning none")
+        #expect(RunSettingsApply.switchValue(gpt, effort: .max) == "openai/gpt-5 --provider openrouter --reasoning max")
     }
 }

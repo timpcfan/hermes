@@ -5888,7 +5888,7 @@ extension ConversationModel {
             do {
                 let result = try await roster.request("config.set", [
                     "session_id": .string(runtime), "key": .string("model"),
-                    "value": .string("\(confirmation.selection.model) --provider \(confirmation.selection.provider)"),
+                    "value": .string(RunSettingsApply.switchValue(confirmation.selection, effort: reasoningEffort)),
                     "confirm_expensive_model": .bool(true),
                 ])
                 answer = ConfigSetAnswer(result: result, error: nil)
@@ -5896,7 +5896,8 @@ extension ConversationModel {
                 answer = ConfigSetAnswer(result: nil, error: error)
             }
             if case .applied = answer {
-                appliedRunSettings = RunSettings(model: confirmation.selection, effort: appliedRunSettings?.effort)
+                // The level rode with the confirmed switch, as with any other.
+                appliedRunSettings = RunSettings(model: confirmation.selection, effort: reasoningEffort)
                 modelFollow.sent(confirmation.selection)
             } else {
                 // Confirmed, but Hermes still didn't switch: the chat keeps the model it runs.

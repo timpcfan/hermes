@@ -128,7 +128,7 @@ picker open; picking a model closes it. The chat's title names the chat and its 
 | Empty list | | "Hermes didn't report any other models. Configure providers with `hermes model` on the gateway." |
 | Pick a model | stored on the chat | Also remembered as this gateway's model for new chats on this device (`UserDefaults` `model.<gateway id>`, `effort.<gateway id>`). `/model <name>` and `/model <name> --provider <slug>` pick by id, short name or display name |
 | Over the API server | the run's body | Each `POST /v1/runs` carries `model`, `provider` and `model_options.reasoning_effort`. Turns with images (`POST /api/sessions/{id}/chat/stream`) add `require_model_lock: true` |
-| Over the gateway | `session.create`, then `config.set` | A new chat passes `model`, `provider` and `reasoning_effort` to `session.create`. Later changes go before the next turn, only when they changed: `config.set {session_id, key: "model", value: "<model> --provider <slug>"}` and `config.set {session_id, key: "reasoning", value}` |
+| Over the gateway | `session.create`, then `config.set` | A new chat passes `model`, `provider` and `reasoning_effort` to `session.create`. Later changes go before the next turn, only when they changed: `config.set {session_id, key: "model", value: "<model> --provider <slug> --reasoning <level>"}` when the chat has a level (`"<model> --provider <slug>"` on Auto), and `config.set {session_id, key: "reasoning", value}` for a level changed on its own |
 | Reasoning level | the composer's model chip | Auto (the gateway decides), Off, Minimal, Low, Medium, High, XHigh, Max: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` on the wire. The chip shows the level as whole signal bars (Auto: `a.circle`); a model that doesn't reason has no glyph and its controls are disabled. `/reasoning <level>` (alias `/effort`) does the same |
 | Thinking block | `reasoning.delta` and `reasoning.available` events | See `docs/chat.md` |
 
@@ -160,6 +160,13 @@ and the switch takes over as the next one starts — that is this message's turn
 older than that answer sends no `applied`, so a set that answered took, unless its fields say
 `deferred` or `confirm_required`. The chat records the pick as applied only when it took; the logic
 is `RunSettingsApply` in HermesKit.
+
+A model pick carries the chat's level, level changed or not. Hermes re-reads the level from the new
+model's own config as it swaps the model, so a level the chat had set on its own was gone the moment
+the pick landed: the chip still said Max while the turn ran the model's default. Riding with the pick
+(`--reasoning <level>`) it is applied after the swap, and lands with it when the switch is queued for
+the next turn. A pick Hermes holds for confirmation carries nothing (nothing changed); the confirmed
+switch carries the level.
 
 A runtime Hermes no longer has answers 4001 (another client closed the chat, or a restart). The app
 resumes the stored session, sets the chat's model and effort on the new runtime, and only then
