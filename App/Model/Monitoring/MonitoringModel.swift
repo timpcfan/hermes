@@ -409,6 +409,8 @@ final class MonitoringRequestsModel {
     private var loadTask: Task<MonitoringRecentPage, any Error>?
     private var reloadTask: Task<Void, Never>?
     private var freezesNextPage = false
+    /// Cancellation keeps the accepted rows, but an unfinished query still needs its own page.
+    private var needsLoad = false
 
     init(monitoring: MonitoringModel) {
         self.monitoring = monitoring
@@ -419,8 +421,8 @@ final class MonitoringRequestsModel {
         guard visible != isVisible else { return }
         isVisible = visible
         if visible {
-            if pageData == nil { scheduleLoad() }
-            else { snapshotChanged(monitoring.snapshot) }
+            snapshotChanged(monitoring.snapshot)
+            if pageData == nil || needsLoad { scheduleLoad() }
         } else {
             cancelLoad()
         }
@@ -447,6 +449,7 @@ final class MonitoringRequestsModel {
     }
 
     private func scheduleLoad() {
+        needsLoad = true
         reloadTask?.cancel()
         reloadTask = Task { [weak self] in await self?.load() }
     }
@@ -481,6 +484,7 @@ final class MonitoringRequestsModel {
     // MARK: - Loading
 
     func load() async {
+        needsLoad = true
         generation += 1
         let generation = generation
         let connectionGeneration = monitoring.connectionGeneration
@@ -499,6 +503,7 @@ final class MonitoringRequestsModel {
                   connectionGeneration == monitoring.connectionGeneration else { return }
             pageData = loaded
             page = loaded.page
+            needsLoad = false
             isLoading = false
             loadTask = nil
             if freezesNextPage || !query.followsLive {
@@ -535,6 +540,7 @@ final class MonitoringRequestsModel {
         ) {
             cancelLoad()
             freeze = nil
+            freezesNextPage = false
             pageData = nil
             lastLoadedUpto = nil
             page = 1
