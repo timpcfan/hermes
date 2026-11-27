@@ -404,7 +404,10 @@
     "Active tunnels unknown": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "活动隧道数未知" }
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动隧道数未知"
+          }
         }
       }
     },
@@ -3061,6 +3064,206 @@
           "stringUnit": {
             "state": "translated",
             "value": "探测"
+          }
+        }
+      }
+    },
+    "Xunxin balance": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讯星剩余额度"
+          }
+        }
+      }
+    },
+    "Balance (USD)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "美元余额"
+          }
+        }
+      }
+    },
+    "Account spent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号累计消耗"
+          }
+        }
+      }
+    },
+    "Since the account started": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整个账号累计"
+          }
+        }
+      }
+    },
+    "Whole account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整个账号"
+          }
+        }
+      }
+    },
+    "Updated %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新于 %@"
+          }
+        }
+      }
+    },
+    "Not read yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未采集"
+          }
+        }
+      }
+    },
+    "Current": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前"
+          }
+        }
+      }
+    },
+    "Waiting for the first reading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待首次采集"
+          }
+        }
+      }
+    },
+    "The reading is current.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前读数有效。"
+          }
+        }
+      }
+    },
+    "The reading is stale; the last successful value is shown.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采集已过期，显示的是最后一次成功值。"
+          }
+        }
+      }
+    },
+    "No balance is available; it never shows 0 instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "余额不可用，不会用 0 代替。"
+          }
+        }
+      }
+    },
+    "Waiting for the first reading; no value is shown until it succeeds.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待首次采集成功，在此之前不显示数值。"
+          }
+        }
+      }
+    },
+    "The service has no account credential configured.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务端未配置账号凭据。"
+          }
+        }
+      }
+    },
+    "The account credential was refused.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号凭据被拒绝。"
+          }
+        }
+      }
+    },
+    "The account read timed out.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号读取超时。"
+          }
+        }
+      }
+    },
+    "The account service sent an unexpected answer.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号服务返回了异常结果。"
+          }
+        }
+      }
+    },
+    "The account read failed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号读取失败。"
+          }
+        }
+      }
+    },
+    "The service reads the whole account's balance every 60 seconds. This page never queries it, and the value isn't today's estimated spend or one provider's balance.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务端每 60 秒读取一次整个账号的余额；本页不会触发查询，这个值不是今日估算花费，也不是某个 provider 的余额。"
+          }
+        }
+      }
+    },
+    "The service doesn't report an account balance.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监控服务没有提供账号余额。"
           }
         }
       }

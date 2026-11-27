@@ -8,7 +8,8 @@
     "scoped_snapshot",
     "scoped_recent",
     "sse_snapshot",
-    "source_freshness"
+    "source_freshness",
+    "account_quota"
   ],
   "freshness": {
     "trace": {
@@ -678,5 +679,19 @@
     "n": 8,
     "upto": 10
   },
-  "events": []
+  "events": [],
+  "quota": {
+    "source": "xunxin_account",
+    "scope": "account",
+    "currency": "USD",
+    "balance_usd": 1234.56789,
+    "used_usd": 2469.13578,
+    "updated_at": 1795735829.8399518,
+    "last_attempt_at": 1795735829.8399518,
+    "ok": true,
+    "stale": false,
+    "error": null,
+    "refresh_seconds": 60,
+    "stale_after_seconds": 180.0
+  }
 }

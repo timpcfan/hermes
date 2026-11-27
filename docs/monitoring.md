@@ -16,6 +16,26 @@ same gateway can keep reading. Coverage and window-recency callbacks do not reop
 chat or clear an intentional unread reminder. Queued Bot reads recheck reading demand when they
 wake; see [inbox.md §4](inbox.md#4-in-the-chat).
 
+### Account balance
+
+The overview's first card is the whole Xunxin account's real deducted balance, not today's Magpie
+estimate and not one provider's balance. The backend reads `GET /api/user/self` once every 60
+seconds and shares one cached `quota` object with snapshot and SSE; opening Stats or receiving a
+snapshot never asks upstream. The app also never derives a weekly ratio or a reset time from the
+balance and account spend.
+
+`balance_usd` and `used_usd` arrive as quota units divided by 500,000. Only finite JSON numbers are
+amounts: booleans, strings, null, NaN and infinity leave the amount unknown, while a real zero or a
+negative balance is shown as reported. A missing or malformed `quota` (including an unsupported
+source, scope or currency) makes only this card unknown; the rest of an older snapshot still
+decodes. Before the first success both amounts stay unknown rather than zero.
+
+A reading is current only while the service reports success, the service's 180-second freshness
+window holds, and this receipt's transport and age are also current. A failed read keeps the last
+successful amounts and marks them stale; a first failure shows unavailable. The card names a
+credential, auth, timeout, availability or invalid-response problem by local error kind and never
+shows the upstream body.
+
 ## 2. Requests
 
 The default first page follows accepted snapshot high-water changes. Search, filters, sorting and
