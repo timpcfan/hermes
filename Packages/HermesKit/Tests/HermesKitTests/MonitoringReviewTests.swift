@@ -232,7 +232,7 @@ struct MonitoringReviewTransportTests {
                           initialRetryDelays: [.milliseconds(1)], jitter: 0))
         let recorder = ReviewRecorder(session)
         await session.start()
-        try await Task.sleep(for: .milliseconds(180))
+        try await reviewWait { recorder.states.contains { $0.isPolling } && fixture.streamStarts.withLock { $0 } >= 2 }
         #expect(recorder.states.contains { $0.isPolling })
         #expect(fixture.streamStarts.withLock { $0 } >= 2)
         #expect(fixture.maximumStreams.withLock { $0 } == 1)
@@ -508,7 +508,7 @@ struct MonitoringReviewSessionTests {
             let session = try makeSession(transport)
             let recorder = ReviewRecorder(session)
             await session.start()
-            try await Task.sleep(for: .milliseconds(180))
+            try await reviewWait { recorder.states.contains { $0.isPolling } && transport.calls.withLock { $0 } > 1 }
             #expect(recorder.states.contains { $0.isPolling })
             #expect(transport.calls.withLock { $0 } > 1)
             #expect(transport.maximumActive.withLock { $0 } == 1)
@@ -528,7 +528,11 @@ struct MonitoringReviewSessionTests {
         let session = try makeSession(transport, streaming: false)
         let recorder = ReviewRecorder(session)
         await session.start()
-        try await Task.sleep(for: .milliseconds(100))
+        try await reviewWait {
+            let states = recorder.states
+            guard let offline = states.firstIndex(where: { if case .offline = $0 { true } else { false } }) else { return false }
+            return states.dropFirst(offline + 1).contains { $0.isPolling }
+        }
         let states = recorder.states
         let offline = try #require(states.firstIndex { if case .offline = $0 { true } else { false } })
         #expect(states.dropFirst(offline + 1).contains { $0.isPolling })

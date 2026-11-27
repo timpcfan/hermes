@@ -421,7 +421,7 @@ struct MonitoringSessionTests {
         let session = MonitoringSession(
             transport: transport,
             configuration: MonitoringSessionConfiguration(connection: try Self.connection()),
-            timing: Self.fastTiming
+            timing: MonitoringTiming(pollInterval: .seconds(1), jitter: 0)
         )
         recorder.watch(session)
         await session.start()
