@@ -264,6 +264,7 @@ private struct MonitoringOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                quota
                 health
                 exits
                 today
@@ -273,6 +274,91 @@ private struct MonitoringOverviewView: View {
             .padding(16)
         }
         .refreshable { model.refresh() }
+    }
+
+    // MARK: Quota
+
+    private var quota: some View {
+        MonitoringCard(title: statsString("Xunxin balance"), symbol: "creditcard") {
+            if let quota = snapshot.quota {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    MonitoringStateDot(state: presentation.quotaState)
+                    Text(quotaStatus(state: presentation.quotaState))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.primaryText)
+                    Spacer(minLength: 8)
+                    Text(quota.updatedAt.map {
+                        statsString("Updated \(MonitoringTime.clock($0, timezone: snapshot.timezone))")
+                    } ?? statsString("Not read yet"))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                    GridItem(.flexible(), alignment: .leading)], spacing: 12) {
+                    metric(
+                        statsString("Balance (USD)"),
+                        value: MonitoringFormat.signedDollars(quota.balanceUSD),
+                        detail: statsString("Whole account"), symbol: "dollarsign.circle"
+                    )
+                    metric(
+                        statsString("Account spent"),
+                        value: MonitoringFormat.signedDollars(quota.usedUSD),
+                        detail: statsString("Since the account started"), symbol: "chart.line.uptrend.xyaxis"
+                    )
+                }
+                Text(quotaDetail(quota, state: presentation.quotaState))
+                    .font(.caption)
+                    .foregroundStyle(presentation.quotaState == .stale ? Theme.warning : Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(statsString("The service reads the whole account's balance every 60 seconds. This page never queries it, and the value isn't today's estimated spend or one provider's balance."))
+                    .font(.caption2)
+                    .foregroundStyle(Theme.tertiaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(statsString("The service doesn't report an account balance."))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+    }
+
+    private func quotaStatus(state: MonitoringSourceState) -> String {
+        switch state {
+        case .live: statsString("Current")
+        case .stale: statsString("Stale")
+        case .down: statsString("Unavailable")
+        case .unknown: statsString("Waiting for the first reading")
+        }
+    }
+
+    private func quotaDetail(_ quota: MonitoringQuota, state: MonitoringSourceState) -> String {
+        let problem = quotaProblem(quota)
+        switch state {
+        case .live:
+            return statsString("The reading is current.")
+        case .stale:
+            let base = statsString("The reading is stale; the last successful value is shown.")
+            return problem.map { base + " " + $0 } ?? base
+        case .down:
+            let base = statsString("No balance is available; it never shows 0 instead.")
+            return problem.map { base + " " + $0 } ?? base
+        case .unknown:
+            return quota.hasValues
+                ? statsString("The reading is incomplete; only the known amounts are shown.")
+                : statsString("Waiting for the first reading; no value is shown until it succeeds.")
+        }
+    }
+
+    /// Only the contract's error codes reach copy. An unknown or missing code stays generic.
+    private func quotaProblem(_ quota: MonitoringQuota) -> String? {
+        switch quota.errorKind {
+        case .notConfigured: statsString("The service has no account credential configured.")
+        case .authFailed: statsString("The account credential was refused.")
+        case .timeout: statsString("The account read timed out.")
+        case .invalidResponse: statsString("The account service sent an unexpected answer.")
+        case .unavailable: statsString("The account read failed.")
+        case nil: nil
+        }
     }
 
     // MARK: Health
@@ -764,6 +850,15 @@ enum MonitoringFormat {
     static func dollars(_ value: Double?) -> String {
         guard let value else { return "—" }
         return "$" + value.formatted(.number.precision(.fractionLength(2)))
+    }
+
+    /// A real balance keeps its sign and its zero: `-$3.50`, `$0.00`; unknown stays `—`.
+    static func signedDollars(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "—" }
+        let sign = value < 0 ? "-" : ""
+        let amount = abs(value)
+        let digits = amount > 0 && amount < 0.01 ? 4 : 2
+        return sign + "$" + amount.formatted(.number.precision(.fractionLength(digits)))
     }
 
     static func preciseDollars(_ value: Double?) -> String {

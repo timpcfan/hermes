@@ -28,6 +28,9 @@ public struct MonitoringSnapshot: Sendable, Equatable {
     public var today: MonitoringToday
     public var models: MonitoringModels
     public var pricing: MonitoringPricing?
+    /// The whole Xunxin account's live balance, when the service sends one. A missing or
+    /// malformed object is unknown; it never fails the snapshot that carries it.
+    public var quota: MonitoringQuota?
     /// `null` is an unavailable measurement, not a measured empty list.
     public var hasKnownInflight: Bool
     public var inflight: [MonitoringFlight]
@@ -85,6 +88,7 @@ public struct MonitoringSnapshot: Sendable, Equatable {
         today = MonitoringToday(root["today"])
         models = MonitoringModels(root["models"])
         pricing = root["pricing"].flatMap(MonitoringPricing.init)
+        quota = MonitoringQuota(root["quota"])
         if case .array = root["inflight"] { hasKnownInflight = true } else { hasKnownInflight = false }
         inflight = root["inflight"]?.arrayElements.map(MonitoringFlight.init) ?? []
         recent = root["recent"]?.arrayElements.map(MonitoringFlight.init) ?? []
@@ -390,6 +394,82 @@ public struct MonitoringPricing: Sendable, Equatable {
         error = value["err"]?.stringValue
         models = value["n"]?.integerValue ?? 0
     }
+}
+
+/// The account's real deducted balance (`quota` on either snapshot). Amounts are strict JSON
+/// numbers: a boolean, string, NaN or infinity is unknown, never a balance. A missing or
+/// malformed object reads as nil so an older payload still decodes.
+public struct MonitoringQuota: Sendable, Equatable {
+    public var source: String
+    public var scope: String
+    public var currency: String
+    public var balanceUSD: Double?
+    public var usedUSD: Double?
+    /// Epoch seconds of the last successful read.
+    public var updatedAt: Double?
+    /// Epoch seconds of the last attempt, successful or not.
+    public var lastAttemptAt: Double?
+    /// The last attempt's outcome: true succeeded, false failed, nil not attempted.
+    public var ok: Bool?
+    /// True when the service says the last success is too old, a read failed, or it didn't say.
+    public var stale: Bool
+    public var errorCode: String?
+    public var refreshSeconds: Int
+    public var staleAfterSeconds: Double
+
+    /// Nil unless this is the Xunxin account object the app understands.
+    public init?(_ value: JSONValue?) {
+        guard let value, value.objectFields != nil,
+              value["source"]?.stringValue == "xunxin_account",
+              value["scope"]?.stringValue == "account",
+              value["currency"]?.stringValue == "USD" else { return nil }
+        source = "xunxin_account"
+        scope = "account"
+        currency = "USD"
+        balanceUSD = value["balance_usd"]?.finiteMonitoringNumber
+        usedUSD = value["used_usd"]?.finiteMonitoringNumber
+        updatedAt = value["updated_at"]?.finiteMonitoringNumber.flatMap { $0 > 0 ? $0 : nil }
+        lastAttemptAt = value["last_attempt_at"]?.finiteMonitoringNumber.flatMap { $0 > 0 ? $0 : nil }
+        ok = value["ok"]?.boolValue
+        stale = value["stale"]?.boolValue ?? true
+        errorCode = value["error"]?.stringValue
+        let refresh = value["refresh_seconds"]?.strictMonitoringInteger
+        refreshSeconds = refresh.map { max(1, $0) } ?? 60
+        let after = value["stale_after_seconds"]?.finiteMonitoringNumber
+        staleAfterSeconds = after.map { $0 > 0 ? $0 : 180 } ?? 180
+    }
+
+    public var errorKind: MonitoringQuotaError? {
+        errorCode.flatMap(MonitoringQuotaError.init(rawValue:))
+    }
+
+    public var hasValues: Bool { balanceUSD != nil || usedUSD != nil }
+    public var hasCompleteValues: Bool { balanceUSD != nil && usedUSD != nil }
+
+    /// What the overview may claim. A successful value is live only while it is the service's
+    /// own `stale == false`, both amounts are usable, its success time is within the service's
+    /// threshold, and the app's transport still carries a current receipt.
+    public func state(serverTime: Double?, transportIsCurrent: Bool) -> MonitoringSourceState {
+        guard transportIsCurrent else { return hasValues ? .stale : .unknown }
+        guard ok == true, let updatedAt else {
+            if hasValues { return .stale }
+            return ok == false ? .down : .unknown
+        }
+        // A success without both amounts is not a complete account reading, so it can't be live.
+        guard hasCompleteValues else { return .unknown }
+        guard let serverTime else { return .unknown }
+        let age = max(0, serverTime - updatedAt)
+        if stale || age > staleAfterSeconds { return .stale }
+        return .live
+    }
+}
+
+public enum MonitoringQuotaError: String, Sendable, Equatable {
+    case notConfigured = "not_configured"
+    case authFailed = "auth_failed"
+    case timeout
+    case unavailable
+    case invalidResponse = "invalid_response"
 }
 
 /// One request: in flight, or finished and in the day's list. The baseline's field names are

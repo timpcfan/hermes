@@ -36,6 +36,13 @@ struct MonitoringPresentation {
     var traceState: MonitoringSourceState { qualify(MonitoringFreshnessPolicy.standard.traceState(agedSnapshot)) }
     var probesState: MonitoringSourceState { qualify(MonitoringFreshnessPolicy.standard.probesState(agedSnapshot)) }
     var usageState: MonitoringSourceState { qualify(MonitoringFreshnessPolicy.standard.usageState(agedSnapshot)) }
+
+    /// The quota's own freshness, bounded again by this receipt: a quota value can never stay
+    /// "live" while the transport or the snapshot receipt has gone stale.
+    var quotaState: MonitoringSourceState {
+        guard let quota = snapshot.quota else { return .unknown }
+        return quota.state(serverTime: agedSnapshot.serverTime, transportIsCurrent: transportIsCurrent)
+    }
     var relayState: MonitoringSourceState {
         guard let reachable = snapshot.failover.reachable else { return .unknown }
         return reachable ? qualify(.live) : .down

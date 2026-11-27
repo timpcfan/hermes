@@ -25,6 +25,10 @@ show "N new requests". `--token` requires `Authorization: Bearer <token>`.
 
 Every timestamp is in the service's +08:00 business day. The mock keeps its data in
 memory, never reads a real monitor's state and never makes an outbound request.
+
+Every snapshot also carries the account `quota` object (whole Xunxin account, USD,
+60-second refresh). `--scenario stale` dates it past its 180-second window so Stats
+must keep the last amounts but stop calling them current.
 """
 
 import argparse
@@ -251,6 +255,7 @@ class Fixture:
                 "exits": self._exits(rows, now, stale),
                 "today": self._today(rows),
                 "models": self._models(rows),
+                "quota": self._quota(now, stale),
                 "pricing": {"at": iso(now - 3600), "err": None, "n": 42},
                 "inflight": self._inflight(now) if self.scenario != "empty" else [],
                 "recent": [wire(row) for row in sorted(
@@ -269,6 +274,17 @@ class Fixture:
             elif self.scenario == "wrong-scope":
                 view["scope"] = "global"
             return view
+
+    def _quota(self, now, stale):
+        """A synthetic whole-account balance; the stale scenario keeps the last success but ages it."""
+        updated = now - 600 if stale else now - 12
+        return {
+            "source": "xunxin_account", "scope": "account", "currency": "USD",
+            "balance_usd": 128.402, "used_usd": 2332.507,
+            "updated_at": updated, "last_attempt_at": updated,
+            "ok": True, "stale": stale, "error": None,
+            "refresh_seconds": 60, "stale_after_seconds": 180,
+        }
 
     def _inflight(self, now):
         rows = []
