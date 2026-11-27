@@ -601,18 +601,24 @@ struct ChatScreen: View {
     ///
     /// On the Mac an item is also replaced, and the toolbar laid out again, whenever the views in
     /// it change kind: a title that is the chat's name in one chat and the Bot's title in the
-    /// next, or ··· in place of New Chat. So there each item keeps one kind of view. The title
-    /// switches inside a stack, which is a single view whatever it holds, and Routines, New Chat
-    /// and ··· are always there, each hidden where it doesn't belong.
+    /// next, or ··· in place of New Chat. So there each item keeps one kind of view. The chat's
+    /// title (leading, as on iPhone and iPad) and the Bot's title (centred) are two items, and
+    /// Routines, New Chat and ··· are always there, each hidden where it doesn't belong.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         #if os(macOS)
+        ToolbarItem(placement: .navigation) {
+            ChatHeaderTitle(conversation: conversation, workspace: workspace)
+        }
+        // Plain text on the bar, as on iPhone and iPad, not in a glass capsule of its own.
+        .sharedBackgroundVisibility(.hidden)
+        .hidden(sidebarShowsOverChat || isBotChat)
         ToolbarItem(placement: .principal) {
             ZStack {
-                chatTitle
+                botChatTitle
             }
         }
-        .hidden(sidebarShowsOverChat)
+        .hidden(sidebarShowsOverChat || !isBotChat)
         inspectorToolbarItem
         if !windowIsNarrow {
             ToolbarItem(placement: .primaryAction) {
@@ -656,11 +662,20 @@ struct ChatScreen: View {
         if let roster, let name = conversation.botName {
             BotChatTitle(roster: roster, botName: name, conversation: conversation)
         } else {
-            // Where the person is (`docs/chat.md` §4): the chat's name and its profile. One kind of
-            // view inside the stack (the Mac toolbar rule).
+            // Where the person is (`docs/chat.md` §4): the chat's name and its profile.
             ChatHeaderTitle(conversation: conversation, workspace: workspace)
         }
     }
+
+    #if os(macOS)
+    /// A Bot's chat's title, centred on the Mac; the chat's own title is the leading item there.
+    @ViewBuilder
+    private var botChatTitle: some View {
+        if let roster, let name = conversation.botName {
+            BotChatTitle(roster: roster, botName: name, conversation: conversation)
+        }
+    }
+    #endif
 
     private var routinesButton: some View {
         Button {

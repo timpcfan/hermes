@@ -183,8 +183,9 @@ code field. The Mac reads the pasteboard when asked.
 
 ## 6. Toolbars and navigation
 
-- Chat toolbar: the chat's title and its profile, centred on the Mac and leading on iPhone and
-  iPad, not a control (a Bot Chat shows the Bot's title instead) and a
+- Chat toolbar: the chat's title and its profile, leading on every platform (on the Mac a
+  `.navigation` item beside the sidebar's edge, plain text without the toolbar's glass), not a
+  control (a Bot Chat shows the Bot's title instead, centred on the Mac) and a
   trailing New Chat (a Bot Chat has Routines and a … menu). iPad and Mac add the Inspector button
   ([inspector.md](inspector.md)). Leading is the system's: the back button of a pushed chat on
   iPhone, the sidebar button on iPad and the Mac. The app draws no button of its own there.
