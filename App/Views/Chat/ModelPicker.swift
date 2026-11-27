@@ -46,6 +46,9 @@ struct ChatHeaderTitle: View {
         // The Mac's toolbar gives a leading item its ideal width: a long name stops short of the
         // trailing buttons and is cut at its tail rather than pushed into the » overflow.
         .frame(maxWidth: Self.macMaxWidth, alignment: .leading)
+        // Room between the sidebar's edge (or its button) and the name, as the iPhone's back
+        // button has.
+        .padding(.leading, Self.macLeadingInset)
         #endif
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title), \(profile)"))
@@ -58,6 +61,8 @@ struct ChatHeaderTitle: View {
     #else
     /// The widest the Mac's title gets, about the transcript's half.
     private static let macMaxWidth: CGFloat = 380
+    /// The Mac's title's room from the sidebar's edge, on top of the toolbar's own few points.
+    private static let macLeadingInset: CGFloat = 12
     #endif
 }
 
