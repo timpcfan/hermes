@@ -736,8 +736,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   reply's menu (long press, or …) still has **Select Text**, a sheet with the reply's words to
   select any part of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their
   long press opens the message menu (§4).
-- **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
-  webhook's or an automation's delivery is Markdown like a reply.
+- **The person's own messages** are plain text, as in Hermes Desktop (§2a). On the Mac their
+  words select with the pointer: a right click on the words gives the text menu (Copy, Look Up…)
+  and one on the bubble gives the message menu (§4); on iPhone and iPad their long press opens
+  it. A routine's, a webhook's or an automation's delivery is Markdown like a reply.
 
 ## 3a. Files Hermes sends
 
