@@ -973,9 +973,8 @@ Check with the mock: "video links".
   resumes it. Settings → Chat → Keep chat at bottom when sending (off by default) turns the page
   off: the message lands at the bottom with the earlier messages above it and no blank room, and
   the reply grows from the bottom, followed while you're at the end (`SendScroll`). With Reduce
-  Motion on, that follow goes at once instead of easing. The transcript has no scrollbar
-  (`scrollIndicators(.never)`): the jump pill and the scroll edge effects are what say there is
-  more.
+  Motion on, that follow goes at once instead of easing. The transcript's scroller is an overlay
+  one: it floats over the text and takes no width (`docs/chat.md` §4a).
 - **Sending on a busy or away gateway.** Send never waits on the gateway, and is never greyed out
   for it. The message shows at once; a quick gateway takes it before anything else shows. After
   half a second it says "Sending…" under it (a big upload to a healthy Mac stays there;
