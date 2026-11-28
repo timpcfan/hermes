@@ -84,11 +84,11 @@ struct ChatRowReading {
 }
 
 /// The profile's avatar: its Bot's photo or drawn face when it has one, otherwise its first letter
-/// on the name's stable colour. The unread dot sits on the corner.
+/// on the name's stable colour. No unread dot: an unread chat's state already says Done, and a
+/// second mark on the same row repeated it (`docs/inbox.md` §2).
 struct ChatProfileAvatar: View {
     let profile: String
     let workspace: BotWorkspace
-    let isUnread: Bool
     var size: CGFloat = InboxMetrics.faceSize
 
     private var appearance: BotAppearance? {
@@ -113,15 +113,6 @@ struct ChatProfileAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .overlay(alignment: .topTrailing) {
-            if isUnread {
-                Circle()
-                    .fill(Palette.Faces.unread)
-                    .frame(width: 9, height: 9)
-                    .overlay { Circle().strokeBorder(Theme.canvas, lineWidth: 2) }
-                    .offset(x: 3, y: -3)
-            }
-        }
         .accessibilityHidden(true)
     }
 

@@ -27,8 +27,11 @@ Every timestamp is in the service's +08:00 business day. The mock keeps its data
 memory, never reads a real monitor's state and never makes an outbound request.
 
 Every snapshot also carries the account `quota` object (whole Xunxin account, USD,
-60-second refresh). `--scenario stale` dates it past its 180-second window so Stats
-must keep the last amounts but stop calling them current.
+60-second refresh) with today's spend, the complete days' average, the projected
+emptying day and the balance trend the card draws. `--scenario stale` dates it past
+its 180-second window and fails the usage read so Stats must keep the last amounts
+but stop calling them current; `--scenario empty` has no average, forecast or
+projection.
 """
 
 import argparse
@@ -49,6 +52,10 @@ BUCKET_HOURS = list(range(0, 24, 3))
 
 def iso(epoch):
     return datetime.datetime.fromtimestamp(epoch, TZ).isoformat(timespec="seconds")
+
+
+def day_of(epoch):
+    return datetime.datetime.fromtimestamp(epoch, TZ).strftime("%Y-%m-%d")
 
 
 def percentile(values, q):
@@ -276,14 +283,59 @@ class Fixture:
             return view
 
     def _quota(self, now, stale):
-        """A synthetic whole-account balance; the stale scenario keeps the last success but ages it."""
+        """A whole-account balance; the stale scenario keeps the last success but ages it."""
         updated = now - 600 if stale else now - 12
+        empty = self.scenario == "empty"
+        balance = 128.402
+        average = None if empty else 9.87
+        days_left = round(balance / average, 1) if average else None
         return {
             "source": "xunxin_account", "scope": "account", "currency": "USD",
-            "balance_usd": 128.402, "used_usd": 2332.507,
+            "balance_usd": balance, "used_usd": 2332.507,
             "updated_at": updated, "last_attempt_at": updated,
             "ok": True, "stale": stale, "error": None,
             "refresh_seconds": 60, "stale_after_seconds": 180,
+            # The stale scenario's usage read fails too: today and the forecast keep the last
+            # success, exactly as the contract's retained-reading rule says.
+            "usage_error": "timeout" if stale else None,
+            "today": {
+                "day": day_of(now),
+                "used_usd": 0.0 if empty else 12.34,
+                "tokens": 0 if empty else 1234567,
+                "requests": 0 if empty else 78,
+                "updated_at": updated,
+            },
+            "avg_daily_usd": average,
+            "forecast": None if days_left is None else {
+                "window_days": 7,
+                "avg_daily_usd": average,
+                "days_left": days_left,
+                "projected_empty_at": now + days_left * 86400,
+            },
+            "trend": self._quota_trend(now, empty),
+        }
+
+    def _quota_trend(self, now, empty):
+        """Seven recorded days and a three-day projection; the empty scenario has one point."""
+        balances = [195.0, 185.0, 175.0, 165.0, 155.0, 145.0, 128.402]
+        spent = [9.2, 10.0, 10.0, 10.0, 10.0, 10.0, 16.598]
+        points = [{
+            "day": day_of(now - (6 - offset) * 86400),
+            "balance_usd": balance,
+            "spent_usd": cost,
+        } for offset, (balance, cost) in enumerate(zip(balances, spent))]
+        if empty:
+            points = [{"day": day_of(now), "balance_usd": 128.402, "spent_usd": 0.0}]
+        projection = [] if empty else [{
+            "day": day_of(now + (offset + 1) * 86400),
+            "balance_usd": round(128.402 - 9.87 * (offset + 1), 3),
+        } for offset in range(3)]
+        return {
+            "window_days": 7,
+            "topup_detected": False,
+            "points": points,
+            "projection": projection,
+            "depletion_day": None if empty else day_of(now + 13 * 86400),
         }
 
     def _inflight(self, now):

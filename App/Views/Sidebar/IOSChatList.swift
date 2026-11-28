@@ -323,7 +323,9 @@ struct IOSChatList: View {
                     .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
             }
             if settled.isExpanded {
-                if settled.isLoading {
+                // A reload keeps the rows it has (`SettledChats.reload`): the skeleton is only for
+                // a first page nothing sits behind, or it would flash the region on every refresh.
+                if settled.isLoading && settled.list.rows.isEmpty {
                     SkeletonRows(count: 2)
                         .padding(.vertical, 4)
                         .modifier(SidebarRowInsets())

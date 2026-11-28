@@ -1118,7 +1118,12 @@ final class ConversationModel: Identifiable {
         rows += turnReceipts
         // A live notice of finished work joins the line just before it, as the stored chat folds it.
         rows = TranscriptBuilder.appending(redirectedParts, to: rows)
-        if let liveRow { rows.append(.assistant(liveRow)) }
+        if let liveRow {
+            // A rebuild while it runs (a page loaded above) puts the stored part of this turn back
+            // in (`LiveTurn(continuing:)` keeps its id): one turn in one place, the live row.
+            rows = LiveTurn.rows(rows, droppingStoredCopyOf: liveRow.id)
+            rows.append(.assistant(liveRow))
+        }
         return rows
     }
 
@@ -1131,7 +1136,10 @@ final class ConversationModel: Identifiable {
         rows += turnReceipts
         // A live notice of finished work joins the line just before it, as the stored chat folds it.
         rows = TranscriptBuilder.appending(redirectedParts, to: rows)
-        if let liveOutline { rows.append(.assistant(liveOutline)) }
+        if let liveOutline {
+            rows = LiveTurn.rows(rows, droppingStoredCopyOf: liveOutline.id)
+            rows.append(.assistant(liveOutline))
+        }
         return rows
     }
 

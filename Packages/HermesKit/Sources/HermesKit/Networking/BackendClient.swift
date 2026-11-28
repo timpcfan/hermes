@@ -341,9 +341,39 @@ public actor BackendClient {
         }
     }
 
-    /// Deletes a stored session in any profile (`DELETE /api/sessions/{id}?profile=`).
+    /// Deletes a stored session in any profile (`DELETE /api/sessions/{id}?profile=`), the same
+    /// revision protocol as the sidebar edits — with one fence difference: the delete route reads
+    /// the fence from the URL's query, the edit route from the body (`web_routers/sessions.py`).
+    /// The session's current `mutation-snapshot`, then a delete fenced on it; a turn landing in
+    /// between moves the revision, and that conflict is retried once with a fresh one. A Hermes
+    /// without fenced writes (no `mutation-snapshot` route, like the one from 2026-10-16) takes
+    /// the plain delete. A row another device already deleted is gone: the delete is a no-op.
     public func deleteSession(storedSessionID: String, profile: String?) async throws {
-        _ = try await send(path: "api/sessions/\(Self.escape(storedSessionID))", method: "DELETE", query: Self.profileQuery(profile))
+        let id = Self.escape(storedSessionID)
+        let profileQuery = Self.profileQuery(profile)
+        for attempt in 0..<2 {
+            let data: Data
+            do {
+                (data, _) = try await send(path: "api/sessions/\(id)/mutation-snapshot", query: profileQuery)
+            } catch Failure.http(404, let detail?) where Self.isUnroutedPath(detail) {
+                _ = try await send(path: "api/sessions/\(id)", method: "DELETE", query: profileQuery)
+                return
+            }
+            let snapshot = try JSONValue.decode(data)
+            guard snapshot["exists"]?.boolValue == true, let revision = snapshot["runtime_revision"]?.doubleValue else { return }
+            var query = profileQuery
+            query.append(URLQueryItem(name: "request_id", value: UUID().uuidString))
+            query.append(URLQueryItem(name: "expected_revision", value: String(Int(revision))))
+            if let generation = snapshot["runtime_generation"]?.doubleValue {
+                query.append(URLQueryItem(name: "expected_generation", value: String(Int(generation))))
+            }
+            do {
+                _ = try await send(path: "api/sessions/\(id)", method: "DELETE", query: query)
+                return
+            } catch Failure.http(409, let detail?) where ["revision_conflict", "stale_generation"].contains(detail) && attempt == 0 {
+                continue
+            }
+        }
     }
 
     /// Whether to leave a sidebar edit's archive filter: every chat, or only the settled ones.

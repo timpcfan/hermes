@@ -104,38 +104,42 @@ def wait_out_stall():
     STARVE.wait()
 
 
+_LOAD_LOCK = threading.Lock()
+
+
+def _load_module(alias, filename):
+    """A mock support file, imported once per process. The copy joins sys.modules only after
+    its body has run, so a thread that arrives mid-import (a turn and a socket loading the
+    same file) never reads a half-initialized module."""
+    module = sys.modules.get(alias)
+    if module is None:
+        with _LOAD_LOCK:
+            module = sys.modules.get(alias)
+            if module is None:
+                spec = importlib.util.spec_from_file_location(alias, pathlib.Path(__file__).resolve().parent / filename)
+                loader = spec.loader if spec is not None else None
+                if spec is None or loader is None:
+                    raise ImportError(f"{filename} is missing next to the mock backend")
+                module = importlib.util.module_from_spec(spec)
+                loader.exec_module(module)
+                sys.modules[alias] = module
+    return module
+
+
 def load_starve():
     """starve.py (`POST /api/mock/starve`, `--starve`): the whole Mac starved, not only the
     dashboard's loop. One copy per process, shared with the gateway mock, so both starve together."""
-    module = sys.modules.get("mock_starve")
-    if module is None:
-        spec = importlib.util.spec_from_file_location("mock_starve", pathlib.Path(__file__).resolve().parent / "starve.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["mock_starve"] = module
-        spec.loader.exec_module(module)
-    return module
+    return _load_module("mock_starve", "starve.py")
 
 
 def load_image_turns():
     """image_turns.py: the user row Hermes stores for a turn with photos, shared with the gateway mock."""
-    module = sys.modules.get("mock_image_turns")
-    if module is None:
-        spec = importlib.util.spec_from_file_location("mock_image_turns", pathlib.Path(__file__).resolve().parent / "image_turns.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["mock_image_turns"] = module
-        spec.loader.exec_module(module)
-    return module
+    return _load_module("mock_image_turns", "image_turns.py")
 
 
 def load_edits():
     """edits.py: the "many edits" turn."""
-    module = sys.modules.get("mock_edits")
-    if module is None:
-        spec = importlib.util.spec_from_file_location("mock_edits", pathlib.Path(__file__).resolve().parent / "edits.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["mock_edits"] = module
-        spec.loader.exec_module(module)
-    return module
+    return _load_module("mock_edits", "edits.py")
 
 
 STARVE = load_starve()

@@ -19,6 +19,12 @@ import SwiftUI
 struct SidebarChatRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
+    /// What the row offers at the line's end under the pointer, in place of its state
+    /// (`docs/inbox.md` §2): Settle in Main, Un-settle in Settled. Nil where there's nothing to
+    /// offer yet — a chat whose first message still waits for the gateway.
+    var hoverAction: ChatRowHoverAction?
+
+    @Environment(\.sidebarRowHovered) private var rowHovered
 
     var body: some View {
         let row = ChatRowReading(session: session, workspace: workspace)
@@ -30,7 +36,7 @@ struct SidebarChatRow: View {
                         .foregroundStyle(Theme.warning)
                         .accessibilityHidden(true)
                 }
-                ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: row.isUnread,
+                ChatProfileAvatar(profile: row.profile, workspace: workspace,
                                   size: SidebarMetrics.chatFaceSize)
                 Text(row.profile)
                     .font(SidebarMetrics.chatDetailFont.weight(.medium))
@@ -41,10 +47,19 @@ struct SidebarChatRow: View {
                     .minimumScaleFactor(0.8)
                     .layoutPriority(1)
                 Spacer(minLength: 6)
-                ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
-                                   font: SidebarMetrics.chatDetailFont.weight(.semibold),
-                                   showsWorkingWord: true)
+                // Under the pointer the state gives way to the row's action (`docs/inbox.md` §2):
+                // the same corner, one click to settle or un-settle the chat.
+                if rowHovered, let hoverAction {
+                    ChatRowHoverButton(action: hoverAction)
+                        .transition(.opacity)
+                } else {
+                    ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
+                                       font: SidebarMetrics.chatDetailFont.weight(.semibold),
+                                       showsWorkingWord: true)
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.12), value: rowHovered)
             title(row)
                 .padding(.top, 1)
             HStack(spacing: 4) {
@@ -98,5 +113,48 @@ struct SidebarChatRow: View {
             // While Hermes works the status in the corner is the thing to read.
             .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
             .lineLimit(2)
+    }
+}
+
+/// What a chat row offers under the pointer, where its state was (`docs/inbox.md` §2): the verb
+/// and its glyph. Main's rows settle, Settled's un-settle.
+struct ChatRowHoverAction {
+    let title: LocalizedStringKey
+    let symbol: String
+    let action: () -> Void
+
+    static func settle(_ action: @escaping () -> Void) -> ChatRowHoverAction {
+        ChatRowHoverAction(title: "Settle", symbol: "checkmark.circle", action: action)
+    }
+
+    static func unsettle(_ action: @escaping () -> Void) -> ChatRowHoverAction {
+        ChatRowHoverAction(title: "Un-settle", symbol: "tray.and.arrow.up", action: action)
+    }
+}
+
+/// The affordance a chat row shows under the pointer, where its state was (`docs/inbox.md` §2):
+/// a glyph and the word, one click. It reads as quiet as the state it replaces, and warms to
+/// primary ink under its own pointer.
+struct ChatRowHoverButton: View {
+    let action: ChatRowHoverAction
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action.action) {
+            HStack(spacing: 4) {
+                Image(systemName: action.symbol)
+                    .font(.system(size: 12, weight: .regular))
+                Text(action.title)
+                    .font(SidebarMetrics.chatDetailFont)
+            }
+            .foregroundStyle(isHovered ? Theme.primaryText : Theme.secondaryText)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(action.title)
+        .accessibilityLabel(Text(action.title))
     }
 }

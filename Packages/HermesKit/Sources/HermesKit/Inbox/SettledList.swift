@@ -60,9 +60,30 @@ public struct SettledList: Equatable, Sendable {
         return generation
     }
 
+    /// Starts a reload while the region stays open (the list moved): pages on their way are
+    /// dropped, but the rows already shown stay until the new first page replaces them, so the
+    /// region never blanks out while a refresh is in flight. Returns the generation new loads
+    /// carry. `reset` is for folding, where nothing is shown anyway.
+    @discardableResult
+    public mutating func restart() -> Int {
+        generation += 1
+        return generation
+    }
+
     /// The count alone (a `limit=1` read while the region is folded).
     public mutating func noteTotal(_ total: Int) {
         self.total = total
+    }
+
+    /// The first page again after `restart`: it replaces the rows rather than appending, in
+    /// Hermes' order. Returns false when it's from an older generation.
+    @discardableResult
+    public mutating func replace(_ page: SettledPage, limit: Int, generation: Int) -> Bool {
+        guard generation == self.generation else { return false }
+        rows = page.sessions
+        total = page.total
+        nextOffset = limit
+        return true
     }
 
     /// A page asked for at `offset` with `limit`, in `generation`. Returns false when it's from an

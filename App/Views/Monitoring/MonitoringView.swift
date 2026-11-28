@@ -305,6 +305,49 @@ private struct MonitoringOverviewView: View {
                         value: MonitoringFormat.signedDollars(quota.usedUSD),
                         detail: statsString("Since the account started"), symbol: "chart.line.uptrend.xyaxis"
                     )
+                    if quota.hasUsageReport {
+                        metric(
+                            statsString("Today's spend"),
+                            value: presentation.quotaTodaySpendText,
+                            detail: statsString("Since 00:00 today"), symbol: "sun.max"
+                        )
+                        metric(
+                            statsString("7-day average"),
+                            value: presentation.quotaAverageDailyText,
+                            detail: statsString("Complete days before today"), symbol: "chart.bar"
+                        )
+                    }
+                }
+                if let trend = presentation.quotaTrend {
+                    let depletion = presentation.quotaDepletionText
+                    QuotaTrendChart(summary: trend, showsDepletion: trend.marksDepletion && depletion != nil)
+                        .padding(.top, 2)
+                    if let depletion {
+                        Text(depletion)
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if trend.showsTopupNote {
+                        Text(statsString("A top-up happened in this window, so the history line isn't continuous."))
+                            .font(.caption2)
+                            .foregroundStyle(Theme.tertiaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if quota.hasUsageReport, let forecast = presentation.quotaForecastText {
+                    Text(forecast)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if quota.usageErrorKind != nil {
+                    Text(quota.today != nil
+                        ? statsString("Today's usage read failed; the last successful values are shown.")
+                        : statsString("Today's usage read failed; no value is shown until it succeeds."))
+                        .font(.caption)
+                        .foregroundStyle(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(quotaDetail(quota, state: presentation.quotaState))
                     .font(.caption)
@@ -802,6 +845,88 @@ struct MonitoringStateDot: View {
     }
 }
 
+/// The account balance's path across the window: recorded days as a solid line, the service's
+/// projection as a dashed continuation, and the day it empties as a ringed dot on the end. Drawn
+/// by hand so it stays one quiet line inside the card, on iPhone and Mac alike.
+private struct QuotaTrendChart: View {
+    let summary: MonitoringQuotaTrendSummary
+    /// The dot only draws when the card can also name the day, so the two never disagree.
+    let showsDepletion: Bool
+
+    private static let height: CGFloat = 96
+
+    var body: some View {
+        Canvas { context, size in
+            let points = summary.chartPoints
+            guard !points.isEmpty, size.width > 0, size.height > 0 else { return }
+            let insetX: CGFloat = 6
+            let insetY: CGFloat = 6
+            let floor = size.height - insetY
+            let span = max(1, size.height - insetY * 2)
+            let peak = max(summary.peakBalanceUSD, 0)
+            let scale = peak > 0 ? peak : 1
+
+            func x(_ index: Int) -> CGFloat {
+                guard points.count > 1 else { return size.width / 2 }
+                return insetX + (size.width - insetX * 2) * CGFloat(index) / CGFloat(points.count - 1)
+            }
+            func y(_ balance: Double) -> CGFloat {
+                // Zero stays on the floor: the window reads against its own peak instead of a
+                // rescaled axis that would turn a small dip into a cliff.
+                let ratio = min(max(balance / scale, 0), 1)
+                return floor - span * CGFloat(ratio)
+            }
+
+            var baseline = Path()
+            baseline.move(to: CGPoint(x: 0, y: floor + 0.5))
+            baseline.addLine(to: CGPoint(x: size.width, y: floor + 0.5))
+            context.stroke(baseline, with: .color(Theme.hairline), lineWidth: 0.5)
+
+            if summary.points.count == 1, let only = summary.points.first {
+                // One recorded day is a dot, not an invisible zero-length line.
+                let center = CGPoint(x: x(0), y: y(only.balanceUSD))
+                context.fill(
+                    Path(ellipseIn: CGRect(x: center.x - 2.5, y: center.y - 2.5, width: 5, height: 5)),
+                    with: .color(Theme.link)
+                )
+            } else {
+                var history = Path()
+                for (index, point) in summary.points.enumerated() {
+                    let step = CGPoint(x: x(index), y: y(point.balanceUSD))
+                    if index == 0 { history.move(to: step) } else { history.addLine(to: step) }
+                }
+                context.stroke(
+                    history, with: .color(Theme.link),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
+            }
+
+            if summary.hasProjection, let last = summary.points.last {
+                // The dashed segment starts on the last recorded day, so the line is continuous.
+                var projection = Path()
+                projection.move(to: CGPoint(x: x(summary.points.count - 1), y: y(last.balanceUSD)))
+                for (offset, point) in summary.projection.enumerated() {
+                    projection.addLine(to: CGPoint(x: x(summary.points.count + offset), y: y(point.balanceUSD)))
+                }
+                context.stroke(
+                    projection, with: .color(Theme.link.opacity(0.65)),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [5, 4])
+                )
+            }
+
+            if showsDepletion, let end = points.last {
+                let center = CGPoint(x: x(points.count - 1), y: y(end.balanceUSD))
+                let dot = Path(ellipseIn: CGRect(x: center.x - 4.5, y: center.y - 4.5, width: 9, height: 9))
+                context.fill(dot, with: .color(Theme.link))
+                context.stroke(dot, with: .color(Theme.surface), lineWidth: 2)
+            }
+        }
+        .frame(height: Self.height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(statsString("Balance trend, last \(summary.points.count) days")))
+    }
+}
+
 extension MonitoringExit {
     /// A known role reads in the app's language; any other value stays as the service sent it.
     var displayRole: String {
@@ -914,6 +1039,33 @@ enum MonitoringFormat {
     static func clock(_ epoch: Double?, timezone: String) -> String {
         guard let epoch else { return "—" }
         return MonitoringTime.clock(epoch, timezone: timezone)
+    }
+
+    /// A projected calendar day in the service's own offset, without the year:
+    /// `11月28日` under Chinese, `Nov 28` under English.
+    static func monthDay(_ epoch: Double, timezone: String) -> String {
+        let style = Date.FormatStyle(timeZone: MonitoringTime.timeZone(offset: timezone))
+        return Date(timeIntervalSince1970: epoch).formatted(style.month(.abbreviated).day())
+    }
+
+    /// A forecast's day count: one decimal below ten days, whole days above.
+    static func days(_ value: Double) -> String {
+        guard value.isFinite, value >= 0 else { return "—" }
+        return value.formatted(.number.precision(.fractionLength(value < 10 ? 1 : 0)))
+    }
+
+    /// A wire day (`YYYY-MM-DD`) as a month and day in the service's own offset, or nil when the
+    /// service didn't send a real calendar day.
+    static func monthDay(day: String, timezone: String) -> String? {
+        let zone = MonitoringTime.timeZone(offset: timezone)
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = zone
+        parser.dateFormat = "yyyy-MM-dd"
+        parser.isLenient = false
+        guard let date = parser.date(from: day), parser.string(from: date) == day else { return nil }
+        let style = Date.FormatStyle(timeZone: zone)
+        return date.formatted(style.month(.abbreviated).day())
     }
 
     static func dayClock(_ epoch: Double?, timezone: String) -> String {

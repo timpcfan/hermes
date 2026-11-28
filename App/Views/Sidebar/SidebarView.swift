@@ -437,7 +437,9 @@ struct SidebarView: View {
                     .sidebarRowDivider(dividers[session.stableID] ?? SidebarRowDivider.none)
             }
             if settled.isExpanded {
-                if settled.isLoading {
+                // A reload keeps the rows it has (`SettledChats.reload`): the skeleton is only for
+                // a first page nothing sits behind, or it would flash the region on every refresh.
+                if settled.isLoading && settled.list.rows.isEmpty {
                     SkeletonRows(count: 2)
                         .padding(.vertical, 4)
                         .modifier(SidebarRowInsets())
@@ -465,10 +467,12 @@ struct SidebarView: View {
         return rows
     }
 
-    /// A settled chat: Un-settle is its trailing swipe (a full swipe does it) and first in its menu.
+    /// A settled chat reads like a Main row — the same face, title and line three — because it is
+    /// one of the person's chats (`docs/inbox.md` §2a). Under the pointer its state gives way to
+    /// Un-settle, the way a Main row's gives way to Settle.
     @ViewBuilder
     private func settledRow(_ session: HermesSession) -> some View {
-        SettledRow(session: session, workspace: workspace)
+        SessionRow(session: session, workspace: workspace, hoverAction: .unsettle { unsettle(session) })
             .contextMenu {
                 Button("Un-settle", systemImage: "tray.and.arrow.up") { unsettle(session) }
                 Divider()
@@ -520,7 +524,7 @@ struct SidebarView: View {
         let key = session.stableID
         let isUnread = workspace.unread.badge(for: key).isUnread || workspace.unread.readMark(for: key) == .markedUnread
         let muted = workspace.unread.isMuted(key)
-        SessionRow(session: session, workspace: workspace)
+        SessionRow(session: session, workspace: workspace, hoverAction: .settle { archive(session) })
             .contextMenu { contextMenu(for: session) }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button(isUnread ? "Read" : "Unread", systemImage: isUnread ? "envelope.open" : "envelope.badge") { toggleRead(key, isUnread: isUnread) }
@@ -746,6 +750,7 @@ struct SidebarView: View {
 private struct SessionRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
+    var hoverAction: ChatRowHoverAction?
 
     var body: some View {
         let item = SidebarItem.session(session.stableID)
@@ -753,7 +758,7 @@ private struct SessionRow: View {
         SidebarRow(isSelected: isSelected, height: SidebarMetrics.chatRowHeight) {
             workspace.pick(item)
         } label: {
-            SidebarChatRow(session: session, workspace: workspace)
+            SidebarChatRow(session: session, workspace: workspace, hoverAction: hoverAction)
         }
         #if DEBUG
         .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }

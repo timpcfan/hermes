@@ -98,6 +98,41 @@ struct SettledListTests {
         #expect(list.rows.map(\.id) == ["a", "pin", "b"])
     }
 
+    // MARK: Reloading
+
+    @Test func aReloadKeepsTheRowsUntilItsPageReplacesThem() {
+        var list = SettledList()
+        let generation = list.reset()
+        list.apply(Self.page(["a", "b", "c"], total: 9), offset: 0, limit: 3, generation: generation)
+        // The list moved while Settled is open: the rows and the offsets stay, so the region
+        // doesn't blank while the page is on its way, and a page from before the restart is
+        // dropped.
+        let reload = list.restart()
+        #expect(list.rows.map(\.id) == ["a", "b", "c"])
+        #expect(list.nextOffset == 3)
+        let stale = list.apply(Self.page(["old"], total: 9), offset: 3, limit: 2, generation: generation)
+        #expect(!stale)
+        // The first page takes the old rows' place, in Hermes' order.
+        let replaced = list.replace(Self.page(["b", "a", "d"], total: 9), limit: 3, generation: reload)
+        #expect(replaced)
+        #expect(list.rows.map(\.id) == ["b", "a", "d"])
+        #expect(list.nextOffset == 3)
+        #expect(list.hasMore)
+    }
+
+    @Test func aPageFromBeforeTheRestartCannotReplaceTheRows() {
+        var list = SettledList()
+        let generation = list.reset()
+        list.apply(Self.page(["a"], total: 2), offset: 0, limit: 1, generation: generation)
+        let reload = list.restart()
+        let stale = list.replace(Self.page(["b"], total: 2), limit: 1, generation: generation)
+        #expect(!stale)
+        #expect(list.rows.map(\.id) == ["a"])
+        let replaced = list.replace(Self.page(["b"], total: 2), limit: 1, generation: reload)
+        #expect(replaced)
+        #expect(list.rows.map(\.id) == ["b"])
+    }
+
     // MARK: Here
 
     @Test func settlingHereListsItFirstAndCountsIt() {

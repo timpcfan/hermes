@@ -414,6 +414,17 @@ public struct MonitoringQuota: Sendable, Equatable {
     /// True when the service says the last success is too old, a read failed, or it didn't say.
     public var stale: Bool
     public var errorCode: String?
+    /// The usage collector's own failure, kept beside a retained `today`. Nil when it last
+    /// succeeded or the service doesn't report usage at all.
+    public var usageError: String?
+    /// The account's real spend today, when the service reports usage.
+    public var today: MonitoringQuotaToday?
+    /// The average over the window's complete days before today, USD.
+    public var avgDailyUSD: Double?
+    /// When the current pace empties the balance, when there is a pace to project.
+    public var forecast: MonitoringQuotaForecast?
+    /// The balance's path through the window and the service's projection of it, when sent.
+    public var trend: MonitoringQuotaTrend?
     public var refreshSeconds: Int
     public var staleAfterSeconds: Double
 
@@ -433,6 +444,11 @@ public struct MonitoringQuota: Sendable, Equatable {
         ok = value["ok"]?.boolValue
         stale = value["stale"]?.boolValue ?? true
         errorCode = value["error"]?.stringValue
+        usageError = value["usage_error"]?.stringValue
+        today = MonitoringQuotaToday(value["today"])
+        avgDailyUSD = value["avg_daily_usd"]?.finiteMonitoringNumber
+        forecast = MonitoringQuotaForecast(value["forecast"])
+        trend = MonitoringQuotaTrend(value["trend"])
         let refresh = value["refresh_seconds"]?.strictMonitoringInteger
         refreshSeconds = refresh.map { max(1, $0) } ?? 60
         let after = value["stale_after_seconds"]?.finiteMonitoringNumber
@@ -445,6 +461,17 @@ public struct MonitoringQuota: Sendable, Equatable {
 
     public var hasValues: Bool { balanceUSD != nil || usedUSD != nil }
     public var hasCompleteValues: Bool { balanceUSD != nil && usedUSD != nil }
+
+    /// True when the service reported any usage field. An older service sends none, so a card
+    /// can stay quiet instead of claiming "no spend" about data it never sent.
+    public var hasUsageReport: Bool {
+        usageError != nil || today != nil || avgDailyUSD != nil || forecast != nil
+    }
+
+    /// Only the contract's usage codes are typed; an unknown code stays unshown.
+    public var usageErrorKind: MonitoringQuotaError? {
+        usageError.flatMap(MonitoringQuotaError.init(rawValue:))
+    }
 
     /// What the overview may claim. A successful value is live only while it is the service's
     /// own `stale == false`, both amounts are usable, its success time is within the service's
@@ -470,6 +497,116 @@ public enum MonitoringQuotaError: String, Sendable, Equatable {
     case timeout
     case unavailable
     case invalidResponse = "invalid_response"
+}
+
+/// The account's real spend today (`quota.today`): a successful usage read's own day,
+/// deductions, tokens and requests. Every value is optional and a malformed one is unknown,
+/// never zero; a missing or malformed object reads as nil so older payloads still decode.
+public struct MonitoringQuotaToday: Sendable, Equatable {
+    /// The service's local day, `YYYY-MM-DD`.
+    public var day: String?
+    /// Deducted today since 00:00, USD.
+    public var usedUSD: Double?
+    public var tokens: Double?
+    public var requests: Int?
+    /// Epoch seconds of the successful usage read this value came from.
+    public var updatedAt: Double?
+
+    public init?(_ value: JSONValue?) {
+        guard let value, value.objectFields != nil else { return nil }
+        day = value["day"]?.stringValue
+        usedUSD = value["used_usd"]?.finiteMonitoringNumber
+        tokens = value["tokens"]?.finiteMonitoringNumber
+        requests = value["requests"]?.strictMonitoringInteger
+        updatedAt = value["updated_at"]?.finiteMonitoringNumber.flatMap { $0 > 0 ? $0 : nil }
+    }
+}
+
+/// The pace projection (`quota.forecast`), computed by the service from complete days before
+/// today. Nil values stay unknown; `days_left` is never negative and zero is a real answer.
+public struct MonitoringQuotaForecast: Sendable, Equatable {
+    public var windowDays: Int?
+    public var avgDailyUSD: Double?
+    public var daysLeft: Double?
+    public var projectedEmptyAt: Double?
+
+    public init?(_ value: JSONValue?) {
+        guard let value, value.objectFields != nil else { return nil }
+        windowDays = value["window_days"]?.strictMonitoringInteger
+        avgDailyUSD = value["avg_daily_usd"]?.finiteMonitoringNumber
+        daysLeft = value["days_left"]?.finiteMonitoringNumber.flatMap { $0 >= 0 ? $0 : nil }
+        projectedEmptyAt = value["projected_empty_at"]?.finiteMonitoringNumber.flatMap { $0 > 0 ? $0 : nil }
+    }
+}
+
+/// One day of the balance's path (`quota.trend.points` or `.projection`). A point without a
+/// readable day and balance is dropped, not guessed; `spent_usd` is only on history points.
+public struct MonitoringQuotaTrendPoint: Sendable, Equatable {
+    /// The service's local day, `YYYY-MM-DD`.
+    public var day: String
+    public var balanceUSD: Double
+    public var spentUSD: Double?
+
+    public init?(_ value: JSONValue?) {
+        guard let value, value.objectFields != nil,
+              let day = value["day"]?.stringValue,
+              let balance = value["balance_usd"]?.finiteMonitoringNumber else { return nil }
+        self.day = day
+        balanceUSD = balance
+        spentUSD = value["spent_usd"]?.finiteMonitoringNumber
+    }
+}
+
+/// The balance's recorded path and the service's projection of it (`quota.trend`). Every piece
+/// is optional: an unreadable point is dropped and an unreadable array is empty, so a newer
+/// service can grow the object without failing the snapshot.
+public struct MonitoringQuotaTrend: Sendable, Equatable {
+    public var windowDays: Int?
+    /// The service saw a top-up in the window, so the history line isn't one continuous drawdown.
+    public var topupDetected: Bool
+    public var points: [MonitoringQuotaTrendPoint]
+    public var projection: [MonitoringQuotaTrendPoint]
+    /// `YYYY-MM-DD` the service expects the balance to reach zero.
+    public var depletionDay: String?
+
+    public init?(_ value: JSONValue?) {
+        guard let value, value.objectFields != nil else { return nil }
+        windowDays = value["window_days"]?.strictMonitoringInteger
+        topupDetected = value["topup_detected"]?.boolValue ?? false
+        points = value["points"]?.arrayElements.compactMap(MonitoringQuotaTrendPoint.init) ?? []
+        projection = value["projection"]?.arrayElements.compactMap(MonitoringQuotaTrendPoint.init) ?? []
+        depletionDay = value["depletion_day"]?.stringValue
+    }
+}
+
+/// The trend block as the quota card may draw it: nil when there is no history to draw, so the
+/// card reserves no empty frame. Days are ordered oldest first, and the depletion marker only
+/// exists when a projection gives the line an end to mark.
+public struct MonitoringQuotaTrendSummary: Sendable, Equatable {
+    public var points: [MonitoringQuotaTrendPoint]
+    public var projection: [MonitoringQuotaTrendPoint]
+    public var depletionDay: String?
+    public var topupDetected: Bool
+
+    public init?(_ trend: MonitoringQuotaTrend?) {
+        guard let trend, !trend.points.isEmpty else { return nil }
+        points = trend.points.sorted { $0.day < $1.day }
+        projection = trend.projection.sorted { $0.day < $1.day }
+        depletionDay = trend.depletionDay
+        topupDetected = trend.topupDetected
+    }
+
+    public var hasProjection: Bool { !projection.isEmpty }
+    public var marksDepletion: Bool { depletionDay != nil && hasProjection }
+    public var showsTopupNote: Bool { topupDetected }
+
+    /// The chart's highest balance, history or projection. Zero when every balance is zero.
+    public var peakBalanceUSD: Double {
+        (points + projection).map(\.balanceUSD).max() ?? 0
+    }
+
+    /// Everything the chart draws, in one path: the history, then the projection's end.
+    public var chartPoints: [MonitoringQuotaTrendPoint] { points + projection }
 }
 
 /// One request: in flight, or finished and in the day's list. The baseline's field names are
