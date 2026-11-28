@@ -30,6 +30,9 @@ struct FollowUpBubble: View {
                     .font(Theme.Typography.message)
                     .lineSpacing(Theme.Typography.messageLineSpacing)
                     .foregroundStyle(Theme.primaryText)
+                    #if os(macOS)
+                    .textSelection(.enabled)
+                    #endif
                     .accessibilityLabel(Text(verbatim: "\(caption.spoken): \(message)"))
             }
             .padding(quoted == nil ? EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16) : EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 14))

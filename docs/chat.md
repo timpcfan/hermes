@@ -715,9 +715,8 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   as before. A reply stays a block at a time, selectable a paragraph at a time, while
   it streams, and where it is drawn in the lighter secondary tone, isn't selectable or isn't set
   at the message or compact message size. A drag that starts inside a code block or a table
-  selects in there. A drag to the left on the words still replies (`docs/inbox.md` §4): the text
-  waits until the mouse has moved 16 points, hands a drag heading left to the message's swipe
-  and selects on any other.
+  selects in there. A drag on the words selects, wherever it goes: the Mac never swipes a
+  message to reply (`docs/inbox.md` §4), so a drag is a selection and nothing else.
   VoiceOver reads the reply as one text, moves by its headings, and reaches the code blocks' Copy
   and the tables' cells where they stand.
   On iPhone and iPad a finished reply draws as these blocks, as before, and a long press on its
@@ -737,8 +736,10 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   reply's menu (long press, or …) still has **Select Text**, a sheet with the reply's words to
   select any part of and copy (Copy, or Copy All). The person's bubbles aren't selectable; their
   long press opens the message menu (§4).
-- **The person's own messages** are plain text, as in Hermes Desktop (§2a). A routine's, a
-  webhook's or an automation's delivery is Markdown like a reply.
+- **The person's own messages** are plain text, as in Hermes Desktop (§2a). On the Mac their
+  words select with the pointer: a right click on the words gives the text menu (Copy, Look Up…)
+  and one on the bubble gives the message menu (§4); on iPhone and iPad their long press opens
+  it. A routine's, a webhook's or an automation's delivery is Markdown like a reply.
 
 ## 3a. Files Hermes sends
 
@@ -1026,8 +1027,8 @@ Check with the mock: "video links".
 - **Unread.** A chat with something new opens at the New Messages line, a quarter of the way
   down; reaching the end marks it read on the gateway. Every chat, a Bot's included, shows the
   turn header's live line until the first words; group chats name who's thinking
-  (`botThinkingLine`, §4a). Reply with a quote from the message menu, Reply to Words…, or a swipe
-  left. See `docs/inbox.md` §4. Content
+  (`botThinkingLine`, §4a). Reply with a quote from the message menu, Reply to Words…, or, on
+  iPhone and iPad, a swipe left. See `docs/inbox.md` §4. Content
   scrolls under the toolbar and the composer with a soft scroll edge effect. On the Mac the system's
   edge effect doesn't reach the chat, so the title bar is a bar of its own (`MacTitleBarBacking`):
   the canvas over a blur behind the title, fading out 14 pt below it, so a message scrolled up under

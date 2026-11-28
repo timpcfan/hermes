@@ -103,9 +103,6 @@ nonisolated final class ReplyText: @unchecked Sendable {
     let placed: [ReplyPlainText.Placed]
     /// Characters drawn and never copied: the thin spaces around inline code.
     let hidden: IndexSet
-    /// It holds a code block or a table, which scroll sideways: a sideways drag there is theirs,
-    /// and the reply has no swipe to reply (`AssistantTurnView.scrollsSideways`).
-    let scrollsSideways: Bool
     /// Its heights as a view measured them, shared by every view of it: a chat opened again
     /// doesn't lay its replies out again just to size them (`docs/chat.md` §3 Selection).
     let heights = MeasuredHeights()
@@ -127,7 +124,6 @@ nonisolated final class ReplyText: @unchecked Sendable {
             if value != nil { hidden.insert(integersIn: range.location..<NSMaxRange(range)) }
         }
         self.hidden = hidden
-        scrollsSideways = paragraphs.contains { $0.hosted.map(ReplyPlainText.scrollsSideways) ?? false }
     }
 
     var units: [ReplyPlainText.Unit] { paragraphs.map(\.unit) }
@@ -651,12 +647,6 @@ final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
     private var headings: [Int: ReplyHeadingElement] = [:]
     private var clickMonitor: Any?
     private let menuWatch = SelectionMenuWatch()
-    /// A press that hasn't yet moved far enough to tell a selection from a swipe to reply.
-    private var pendingPress: NSEvent?
-    /// The press that became a swipe to reply, and the message's swipe that follows the rest of it.
-    private var swiping: (press: NSEvent, swipe: ReplySwipe)?
-    /// Where a press that began outside the text was, so its release is passed over too.
-    private var strayPress: NSPoint?
 
     private let contentStorage = NSTextContentStorage()
     private let layout = NSTextLayoutManager()
@@ -915,75 +905,6 @@ final class ReplyNSTextView: NSTextView, ReplyBlockOwner {
     }
 
     // MARK: Selection
-
-    /// How far a press moves before it is a drag: `SwipeToReply`'s, so both decide alike.
-    private static let dragDistance: CGFloat = 16
-
-    /// A drag to the left replies to the message, as it does on the words of any other message
-    /// (`docs/inbox.md` §4), so a plain press waits for its first move before it selects. The
-    /// text's own tracking would keep the drag to itself, so a drag judged to the left goes to the
-    /// message's swipe (`ReplySwipe`), as a drag on its other parts does.
-    override func mouseDown(with event: NSEvent) {
-        // AppKit can hand on a press its gesture recognizers held back after a later one has
-        // reached this view, at the held press's own place; one outside the text isn't on it. The
-        // test is hit testing's own, so a press on the text's last row or column still counts.
-        guard NSMouseInRect(convert(event.locationInWindow, from: nil), bounds, isFlipped) else {
-            strayPress = event.locationInWindow
-            return
-        }
-        strayPress = nil
-        swiping = nil
-        guard event.clickCount == 1, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
-              environment.values.replySwipe != nil, !reply.scrollsSideways else {
-            pendingPress = nil
-            return super.mouseDown(with: event)
-        }
-        pendingPress = event
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        if let swiping {
-            return swiping.swipe.follow(Self.translation(from: swiping.press, to: event).x)
-        }
-        guard let press = pendingPress else { return super.mouseDragged(with: event) }
-        let translation = Self.translation(from: press, to: event)
-        guard hypot(translation.x, translation.y) >= Self.dragDistance else { return }
-        pendingPress = nil
-        if SidewaysSwipe.begins(velocity: .zero, translation: translation, direction: .left),
-           let swipe = environment.values.replySwipe {
-            swiping = (press, swipe)
-            return swipe.follow(translation.x)
-        }
-        select(from: press, then: event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if let stray = strayPress, stray == event.locationInWindow {
-            strayPress = nil
-            return
-        }
-        if let swiping {
-            self.swiping = nil
-            return swiping.swipe.release(Self.translation(from: swiping.press, to: event).x)
-        }
-        guard let press = pendingPress else { return super.mouseUp(with: event) }
-        pendingPress = nil
-        select(from: press, then: event)
-    }
-
-    /// How far the mouse has moved since the press, down positive, as SwiftUI measures a drag.
-    private static func translation(from press: NSEvent, to event: NSEvent) -> CGPoint {
-        CGPoint(
-            x: event.locationInWindow.x - press.locationInWindow.x,
-            y: press.locationInWindow.y - event.locationInWindow.y
-        )
-    }
-
-    /// The text's own tracking from where the press began, given the event that decided it first.
-    private func select(from press: NSEvent, then event: NSEvent) {
-        window?.postEvent(event, atStart: true)
-        super.mouseDown(with: press)
-    }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)

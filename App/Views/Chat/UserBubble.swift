@@ -135,14 +135,18 @@ struct UserBubble: View {
                         }
                     }
                     if hasText {
-                        // Not selectable: the message menu (Copy, Edit and Resend…) owns the
-                        // long press and the right click. Bots and files sit inline as pills
-                        // (`richBubbleRefs`).
+                        // On iPhone and iPad not selectable: the message menu (Copy, Edit and
+                        // Resend…) owns the long press and the right click. On the Mac the words
+                        // of a plain message select with the pointer too (`docs/chat.md` §2); a
+                        // message with pills keeps them, and its menu is a right click away.
                         Group {
                             if parts.references.isEmpty {
                                 Text(parts.body)
                                     .font(Theme.Typography.message)
                                     .lineSpacing(Theme.Typography.messageLineSpacing)
+                                    #if os(macOS)
+                                    .textSelection(.enabled)
+                                    #endif
                             } else {
                                 InlineFlow(parts: parts)
                                     .environment(\.mentionsBlinkOnAppear, isFresh)
