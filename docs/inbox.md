@@ -512,7 +512,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   second or more. While Bots shows, the chats list keeps what it showed before the switch, with
   no search results in it (entering Bots clears the search). Bots mode hides the toolbar's filter
   button instead of taking it out, so a switch doesn't build the toolbar again. iPhone and iPad
-  keep one list for every mode.
+  keep one list for every mode. The lists have no scrollbar: `scrollIndicators(.never)` is set on
+  the list's content too, because on macOS 27 a `List` ignores it when it sits only outside the
+  list.
 - **Mark All as Read** at the end of the Unread list and in the filter menu: every badge clears at
   once, and the gateway hears of them 4 calls at a time. A mark this device set holds over the
   gateway's until its call is back and 10 s more (or the gateway agrees), so a busy Mac's list

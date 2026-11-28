@@ -401,7 +401,21 @@ struct KeptList<Rows: View>: View {
     @State private var scroll = KeptListScroll()
 
     var body: some View {
-        List { rows }
+        List {
+            rows
+                .scrollIndicators(.never)
+        }
+            .scrollIndicators(.never)
+            // macOS 27's List still draws its own indicator over the list's edge whatever
+            // `scrollIndicators` asks; a strip of the sidebar's own glass covers it.
+            .overlay(alignment: .trailing) {
+                Palette.sidebarGlass
+                    // A hair darker, so the strip reads as the sidebar's glass, not a band.
+                    .overlay(Color.black.opacity(0.016))
+                    .frame(width: 12)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .environment(\.keptListScroll, scroll)
             .opacity(isShown ? 1 : 0)
             .allowsHitTesting(isShown)
@@ -425,7 +439,12 @@ final class KeptListScroll {
     }
 
     private func apply() {
-        guard let view, view.isHidden == isShown else { return }
+        guard let view else { return }
+        // The sidebar has no scrollbar: a `List`'s SwiftUI scroll indicators don't stay hidden on
+        // macOS 27, so its `NSScrollView` goes without scrollers as well.
+        view.hasVerticalScroller = false
+        view.hasHorizontalScroller = false
+        guard view.isHidden == isShown else { return }
         view.isHidden = !isShown
     }
 }
