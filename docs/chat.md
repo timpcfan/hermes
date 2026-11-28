@@ -715,9 +715,8 @@ code with syntax colours, a language label and Copy, horizontal rules, and image
   as before. A reply stays a block at a time, selectable a paragraph at a time, while
   it streams, and where it is drawn in the lighter secondary tone, isn't selectable or isn't set
   at the message or compact message size. A drag that starts inside a code block or a table
-  selects in there. A drag to the left on the words still replies (`docs/inbox.md` §4): the text
-  waits until the mouse has moved 16 points, hands a drag heading left to the message's swipe
-  and selects on any other.
+  selects in there. A drag on the words selects, wherever it goes: the Mac never swipes a
+  message to reply (`docs/inbox.md` §4), so a drag is a selection and nothing else.
   VoiceOver reads the reply as one text, moves by its headings, and reaches the code blocks' Copy
   and the tables' cells where they stand.
   On iPhone and iPad a finished reply draws as these blocks, as before, and a long press on its
