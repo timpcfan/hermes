@@ -77,6 +77,7 @@ struct SidebarView: View {
             // Plain rows: the sidebar list style adds its own insets and selection, which the
             // design doesn't use.
             .listStyle(.plain)
+            .scrollIndicators(.never)
             .scrollContentBackground(isCompact ? .automatic : .hidden)
             .environment(\.defaultMinListRowHeight, 10)
             .environment(\.sidebarShowsSelection, !isCompact)
@@ -178,6 +179,7 @@ struct SidebarView: View {
     /// arrives: VoiceOver's place and the scroll position survive (`docs/inbox.md` §6).
     private var lists: some View {
         List { rowContent(roster: botRoster, searching: isSearching) }
+            .scrollIndicators(.never)
             .animation(listMotion, value: botOrder)
             .animation(listMotion, value: chatOrder)
     }

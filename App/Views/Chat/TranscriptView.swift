@@ -358,6 +358,7 @@ struct TranscriptView: View {
                 keepsTop = false
             }
         })
+        .scrollIndicators(.never)
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
