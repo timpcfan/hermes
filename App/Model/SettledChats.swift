@@ -107,21 +107,27 @@ final class SettledChats {
         await load(offset: list.nextOffset, limit: SettledList.morePage, generation: list.generation)
     }
 
-    /// Open and the list moved: as many rows as are shown, again from the top.
+    /// Open and the list moved: as many rows as are shown, again from the top. The rows stay on
+    /// screen while the page is on its way: a reload after each chat-list refresh used to empty
+    /// the region first, so it flashed on every refresh.
     private func reload() async {
         let shown = max(SettledList.firstPage, list.nextOffset)
-        let generation = list.reset()
-        await load(offset: 0, limit: min(100, shown), generation: generation)
+        let generation = list.restart()
+        await load(offset: 0, limit: min(100, shown), generation: generation, replacing: true)
     }
 
-    private func load(offset: Int, limit: Int, generation: Int) async {
+    private func load(offset: Int, limit: Int, generation: Int, replacing: Bool = false) async {
         guard let workspace else { return }
         isLoading = true
         defer { if list.generation == generation { isLoading = false } }
         do {
             let page = try await settledPage(limit: limit, offset: offset, home: workspace.bot.profileName)
             if !isAvailable { isAvailable = true }
-            list.apply(page, offset: offset, limit: limit, generation: generation)
+            if replacing {
+                list.replace(page, limit: limit, generation: generation)
+            } else {
+                list.apply(page, offset: offset, limit: limit, generation: generation)
+            }
             if offset == 0 {
                 noteNewest(page.sessions.first?.lastActive)
                 noteSeen(newestActivity)

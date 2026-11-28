@@ -145,11 +145,11 @@ all three lines without the face taking a column of its own; only a long model n
   word "Working" before the running time on the Mac, an orange mark and Needs you, or a red mark,
   Failed and the reason in red on its own line; an unread chat that finished is a green check and
   Done, a read one how long ago it ended.
-- **Under the pointer, the state gives way to Settle** (`SettleRowButton`, §5): a check and the
-  word in the same top corner, with its own pointer wash, and one click archives the chat. The
-  state comes back when the pointer leaves. The iPhone's list has no pointer and so no such
-  control; a chat whose first message still waits for the gateway has nothing to settle yet and
-  keeps its state.
+- **Under the pointer, the state gives way to the row's action** (`ChatRowHoverAction`,
+  `ChatRowHoverButton`, §5): a glyph and the word in the same top corner, with its own pointer
+  wash, and one click settles the chat in Main or un-settles it in Settled. The state comes back
+  when the pointer leaves. The iPhone's list has no pointer and so no such control; a chat whose
+  first message still waits for the gateway has nothing to settle yet and keeps its state.
 - No last-message preview: the sidebar says which chat and what state, and the conversation itself
   is one click away.
 - The lines (`SidebarRowDivider`): a one-physical-pixel `Theme.rowSeparator` under each row, the
@@ -237,9 +237,10 @@ come back to the top of Main only when they need the person. One List, top to bo
    is absent while nothing runs. It folds with its header ("Working 2 ⌄"), open by default, kept
    on the device (`inbox.workingExpanded`).
 4. **Settled**: chats the person marked finished, which Hermes keeps as `archived`. Folded by
-   default, the header shows how many there are ("Settled 73 ›"); open, ten slim rows, then "Show
-   25 more" at a time. Kept per gateway (`inbox.settledExpanded.<gateway>`). Absent while
-   nothing is settled.
+   default, the header shows how many there are ("Settled 73 ›"); open, the same three-line rows as
+   Main — face, title, source and model — ten first, then "Show 25 more" at a time. Under the
+   pointer a settled row offers Un-settle where its state was. Kept per gateway
+   (`inbox.settledExpanded.<gateway>`). Absent while nothing is settled.
 
 The rules are one function (`InboxSections.region`), in this order: settled (`archived`) wins;
 then waiting on the person goes to Main (never Working); then running goes to Working; then pinned
@@ -268,7 +269,10 @@ while the list holds every profile's chats, from `GET /api/profiles/sessions?arc
 the Profile filter's choice (§9).
 Folded, the app asks for the count alone (`limit=1`, after each list refresh) and keeps no rows;
 open, pages carry a generation, so a refresh and a page on its way can't interleave
-(`SettledList`). Hermes back-fills pinned chats into every page across the archived filter (its
+(`SettledList`). A refresh while the region is open keeps the rows it has until the new first page
+replaces them (`SettledList.restart`/`replace`): the list moves after every chat-list refresh, and
+emptying the region first made it flash. The skeleton rows are only for a first page nothing sits
+behind. Hermes back-fills pinned chats into every page across the archived filter (its
 pinned query doesn't inherit it), in both lists, so the app keeps only rows whose own `archived`
 says which side they're on, and a back-filled pin shows once. Without Bot Mode's backend there is
 no Settled region; Settle still archives, and search finds the chat. A settled chat whose
