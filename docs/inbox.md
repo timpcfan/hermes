@@ -128,7 +128,8 @@ The iPad's type grows with Dynamic Type; the Mac's stays at those sizes. A 240 p
 all three lines without the face taking a column of its own; only a long model name is cut.
 
 - The face (`ChatProfileAvatar`): the profile's Bot photo or drawn face when it has one, otherwise
-  its first letter on the name's stable colour; the unread dot sits on its corner.
+  its first letter on the name's stable colour. No unread dot on its corner: the state at the
+  line's end already says an unread chat is Done, and a second mark repeated it.
 - The profile's name: 13 pt, secondary, one line; beside a long state ("Needs you") it gives up a
   little size rather than its last letters.
 - The title and the pin, one or two lines: a long title wraps and the row grows, while the state
@@ -144,6 +145,11 @@ all three lines without the face taking a column of its own; only a long model n
   word "Working" before the running time on the Mac, an orange mark and Needs you, or a red mark,
   Failed and the reason in red on its own line; an unread chat that finished is a green check and
   Done, a read one how long ago it ended.
+- **Under the pointer, the state gives way to Settle** (`SettleRowButton`, §5): a check and the
+  word in the same top corner, with its own pointer wash, and one click archives the chat. The
+  state comes back when the pointer leaves. The iPhone's list has no pointer and so no such
+  control; a chat whose first message still waits for the gateway has nothing to settle yet and
+  keeps its state.
 - No last-message preview: the sidebar says which chat and what state, and the conversation itself
   is one click away.
 - The lines (`SidebarRowDivider`): a one-physical-pixel `Theme.rowSeparator` under each row, the
@@ -518,6 +524,9 @@ The design also gives ⌥⌘↓ to "next mention"; in group chats the mention pi
   Undo" shows for 5 s; Undo (or Un-settle) brings it back to the top of Main at once and sends its
   call after the settle's, never alongside it. Settling the chat that's open opens the next one in
   Main, else the one above it, else nothing (on iPhone, settled from the list, the list stays).
+  Settle's ways in: the trailing swipe (a full swipe settles) and the menu on every platform, the
+  row's hover button in the sidebar (iPad and the Mac, §2), and Chat ▸ Settle Chat (⇧⌘S) on iPad
+  and the Mac.
   Sending in a settled chat un-settles it first, without holding up the send; activity elsewhere
   doesn't, it lights Settled's dot instead (§2a). A settled chat opened from search, a
   notification or a link stays settled: it shows in Settled while it's open, even folded, and

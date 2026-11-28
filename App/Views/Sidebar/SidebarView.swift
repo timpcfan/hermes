@@ -520,7 +520,7 @@ struct SidebarView: View {
         let key = session.stableID
         let isUnread = workspace.unread.badge(for: key).isUnread || workspace.unread.readMark(for: key) == .markedUnread
         let muted = workspace.unread.isMuted(key)
-        SessionRow(session: session, workspace: workspace)
+        SessionRow(session: session, workspace: workspace, onSettle: { archive(session) })
             .contextMenu { contextMenu(for: session) }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button(isUnread ? "Read" : "Unread", systemImage: isUnread ? "envelope.open" : "envelope.badge") { toggleRead(key, isUnread: isUnread) }
@@ -746,6 +746,7 @@ struct SidebarView: View {
 private struct SessionRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
+    var onSettle: (() -> Void)?
 
     var body: some View {
         let item = SidebarItem.session(session.stableID)
@@ -753,7 +754,7 @@ private struct SessionRow: View {
         SidebarRow(isSelected: isSelected, height: SidebarMetrics.chatRowHeight) {
             workspace.pick(item)
         } label: {
-            SidebarChatRow(session: session, workspace: workspace)
+            SidebarChatRow(session: session, workspace: workspace, onSettle: onSettle)
         }
         #if DEBUG
         .onAppear { LaunchTrace.mark("first chat row on screen (\(workspace.sessions.count) chats)", id: "first chat row") }

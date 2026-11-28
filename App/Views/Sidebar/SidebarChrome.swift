@@ -68,6 +68,9 @@ extension EnvironmentValues {
     /// Whether rows show which one is open. On iPhone the list is its own screen, so a row
     /// stays plain once its chat is pushed and the person comes back.
     @Entry var sidebarShowsSelection = true
+    /// Whether the pointer is over a row (`SidebarRow`): a chat row swaps its state for Settle
+    /// while it reads true (`docs/inbox.md` §2).
+    @Entry var sidebarRowHovered = false
     /// Whether the window is as narrow as an iPhone, so the list is a screen of its own. Read from
     /// the window: inside a split view's sidebar column the size class is always compact, even on
     /// an iPad in landscape.
@@ -96,6 +99,7 @@ struct SidebarRow<Label: View>: View {
         .foregroundStyle(Theme.primaryText)
         .accessibilityAddTraits(isLit ? .isSelected : [])
         .onHover { isHovered = $0 }
+        .environment(\.sidebarRowHovered, isHovered)
         .listRowBackground(
             RoundedRectangle(cornerRadius: SidebarMetrics.rowRadius, style: .continuous)
                 .fill(isLit ? Theme.rowSelected : isHovered ? Theme.rowHover : .clear)
