@@ -410,8 +410,9 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
 ### Reply with a quote
 
 - **Start:** the message menu's Reply (on replies and your messages), Reply to Words… (a sheet
-  where you select the words), or a swipe left on a message. Replies with code blocks or tables
-  scroll sideways themselves, so they take Reply from the menu.
+  where you select the words), or, on iPhone and iPad, a swipe left on a message. The Mac never
+  swipes one: a drag there selects words (below). Replies with code blocks or tables scroll
+  sideways themselves, so they take Reply from the menu.
   - On the Mac, words selected in a finished reply quote in one step (`selectionReplyButton`).
     Reply floats 6 points under the selection's end, kept inside the reply's column, or 6 points
     above its first line when below would reach the composer or the chat's faded edges
@@ -437,11 +438,10 @@ shimmering, one line per Bot, at most two, then "+1 more" (`RoomTranscript.think
     screen's edge stays the system's back swipe. The message follows the finger from where it
     touched down (`SidewaysSwipe.travel`), so it replies when let go 64 points to the left of
     there, and a shorter swipe springs back.
-  - On the Mac a mouse drag to the left does it, and so does a sideways scroll: a trackpad's or a
-    Magic Mouse's swipe, or a mouse that scrolls sideways (`SidewaysScroll`). SwiftUI has no
-    scroll-wheel events, so the message reads them from the window before the chat does. A scroll
-    that starts up or down stays the chat's, and one that starts over something scrolling sideways
-    inside the message (a widget's strip of hours, a wide table) stays that one's.
+  - On the Mac neither a mouse drag nor a sideways scroll quotes a message: a drag selects the
+    words (the selection's Reply then floats beside them), and a sideways scroll scrolls the chat
+    as any other scroll does. Reply comes from the message menu, Reply to Words…, the selection's
+    Reply or Chat → Reply to Selection (⇧⌘R).
 - **Composing:** the reply bar ("Replying to Hermes", the quote, ✕) sits in the composer and the
   passage flashes where it is. Quoting never scrolls the chat to the passage (`QuotedReply.Flash`):
   the chat counts a row as visible only once 40% of it shows, so a tall reply read near its top
@@ -662,9 +662,9 @@ inbox's regions, `--cross-profile` for every profile's chats, §9) and a real He
   actions open all scroll the chat and the list; a swipe left on a reply still replies, and one
   right from the edge goes back to the list on iPhone. The message keeps under the finger from
   touch-down: let go 64 points left of it and it replies, short of that and it springs back.
-- On the Mac, a sideways scroll to the left on a reply (trackpad, Magic Mouse, a mouse that
-  scrolls sideways) quotes it in the composer, and a scroll up or down that starts on a reply
-  scrolls the chat.
+- On the Mac, a sideways scroll on a reply scrolls the chat like any other scroll, and a mouse
+  drag over a reply selects its words: neither quotes it. Reply and Reply to Words… in the
+  message's menu, the Reply beside a selection and ⇧⌘R do.
 - Reply to three messages: the bar says "Replying with 3 quotes"; a fourth Reply shows the limit
   note, and ✕ on one removes only that one. Sent, the bubble shows the quotes in the order picked,
   each jumping back to its own passage. While a turn runs ("approve", "slow"), quote and send
@@ -696,7 +696,7 @@ inbox's regions, `--cross-profile` for every profile's chats, §9) and a real He
   `SidebarCountsTests` (a group chat's count read page by page, the segments' rows),
   `GroupRowSummaryTests` (a group chat's newest message and its time, opened or not),
   `SidewaysSwipeTests` (which drags a row's swipe takes, and `RowSwipe`'s geometry),
-  `SidewaysScrollTests` (which Mac scrolls reply), `InboxSectionsTests` and `InboxReturnsTests`
+  `InboxSectionsTests` and `InboxReturnsTests`
   (regions, their order, returns and their grace), `SettledListTests` (Settled's paging and the
   back-fill filter), `InboxScopeTests` (sources, empty chats, the state filters, the stored
   filter), `ProfileRowsTests` (row keys, colliding ids, tagging, badges, the page and its paging,
