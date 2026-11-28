@@ -95,8 +95,9 @@ struct BackendIntegrationTests {
     }
 
     /// A model picked after another client closed the chat's session runs the very next message:
-    /// `config.set` answers 4001 on the dead runtime, the chat resumes, the model and effort are set
-    /// on the new runtime, and only then does `prompt.submit` go — once, on the new runtime
+    /// `config.set` answers 4001 on the dead runtime, the chat resumes, the pick goes on the new
+    /// runtime carrying the chat's level with it (one set: Hermes applies the level after the swap),
+    /// and only then does `prompt.submit` go — once, on the new runtime
     /// (`docs/sessions-and-models.md` §4).
     @Test func aModelPickOnADeadRuntimeRunsTheVeryNextMessage() async throws {
         let (client, socket) = try await connect()
@@ -141,7 +142,7 @@ struct BackendIntegrationTests {
         let calls = try await client.rest("api/mock/calls", query: [URLQueryItem(name: "stored", value: stored)])
         let rows: [JSONValue] = if case .array(let rows)? = calls["calls"] { rows } else { [] }
         let sets = rows.filter { $0["method"]?.stringValue == "config.set" }
-        #expect(sets.count == 3)
+        #expect(sets.count == 2)
         #expect(sets.first?["session_id"]?.stringValue == deadRuntime)
         #expect(sets.first?["error"]?.truncatedIntValue == 4001)
         #expect(sets.dropFirst().allSatisfy { $0["session_id"]?.stringValue == outcome.runtime })
