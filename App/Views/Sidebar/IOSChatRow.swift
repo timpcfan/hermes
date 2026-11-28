@@ -84,7 +84,7 @@ struct IOSChatRow: View {
     private func subtitleLine(_ row: ChatRowReading) -> some View {
         HStack(spacing: 8) {
             pinGutter
-            ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: false,
+            ChatProfileAvatar(profile: row.profile, workspace: workspace,
                               size: InboxMetrics.rowFaceSize)
             Text(row.profile)
                 .font(.footnote)

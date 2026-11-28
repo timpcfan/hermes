@@ -19,6 +19,12 @@ import SwiftUI
 struct SidebarChatRow: View {
     let session: HermesSession
     let workspace: BotWorkspace
+    /// Settles the chat (this fork's archive), shown at the line's end under the pointer in place
+    /// of its state (`docs/inbox.md` §2). Nil where there's nothing to settle yet — a chat whose
+    /// first message still waits for the gateway.
+    var onSettle: (() -> Void)?
+
+    @Environment(\.sidebarRowHovered) private var rowHovered
 
     var body: some View {
         let row = ChatRowReading(session: session, workspace: workspace)
@@ -30,7 +36,7 @@ struct SidebarChatRow: View {
                         .foregroundStyle(Theme.warning)
                         .accessibilityHidden(true)
                 }
-                ChatProfileAvatar(profile: row.profile, workspace: workspace, isUnread: row.isUnread,
+                ChatProfileAvatar(profile: row.profile, workspace: workspace,
                                   size: SidebarMetrics.chatFaceSize)
                 Text(row.profile)
                     .font(SidebarMetrics.chatDetailFont.weight(.medium))
@@ -41,10 +47,19 @@ struct SidebarChatRow: View {
                     .minimumScaleFactor(0.8)
                     .layoutPriority(1)
                 Spacer(minLength: 6)
-                ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
-                                   font: SidebarMetrics.chatDetailFont.weight(.semibold),
-                                   showsWorkingWord: true)
+                // Under the pointer the state gives way to Settle (`docs/inbox.md` §2): the same
+                // corner, one click to archive the chat.
+                if rowHovered, let onSettle {
+                    SettleRowButton(action: onSettle)
+                        .transition(.opacity)
+                } else {
+                    ChatRowStatusBadge(state: row.state, startedAt: row.startedAt,
+                                       font: SidebarMetrics.chatDetailFont.weight(.semibold),
+                                       showsWorkingWord: true)
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.12), value: rowHovered)
             title(row)
                 .padding(.top, 1)
             HStack(spacing: 4) {
@@ -98,5 +113,32 @@ struct SidebarChatRow: View {
             // While Hermes works the status in the corner is the thing to read.
             .foregroundStyle(row.state == .running ? Theme.secondaryText : Theme.primaryText)
             .lineLimit(2)
+    }
+}
+
+/// The Settle affordance a chat row shows under the pointer, where its state was (`docs/inbox.md`
+/// §2): a check and the word, one click to archive the chat. It reads as quiet as the state it
+/// replaces, and warms to primary ink under its own pointer.
+struct SettleRowButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 12, weight: .regular))
+                Text("Settle")
+                    .font(SidebarMetrics.chatDetailFont)
+            }
+            .foregroundStyle(isHovered ? Theme.primaryText : Theme.secondaryText)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Settle")
+        .accessibilityLabel(Text("Settle"))
     }
 }
