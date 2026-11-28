@@ -358,7 +358,7 @@ struct TranscriptView: View {
                 keepsTop = false
             }
         })
-        .scrollIndicators(.never)
+        .scrollIndicators(.automatic)
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
@@ -2854,7 +2854,12 @@ extension ScrollHoldFinder: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            hold?.view = enclosingScrollView
+            if let scroll = enclosingScrollView {
+                // An overlay scroller floats over the transcript and takes no width, even when
+                // the system asks for legacy scrollers.
+                scroll.scrollerStyle = .overlay
+                hold?.view = scroll
+            }
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
