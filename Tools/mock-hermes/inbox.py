@@ -19,10 +19,11 @@
 
 import re
 import time
+from typing import Any
 from urllib.parse import unquote
 
-B = None  # backend.py globals
-G = None  # server.py module
+B: Any = None  # backend.py globals, installed on start (None-typed at module scope for pyright)
+G: Any = None  # server.py module
 DEMO = {"on": False, "gtd": False, "cross_profile": False, "started": time.time()}
 
 
@@ -224,13 +225,41 @@ def profile_sessions(query, body):
     return 200, {"sessions": page, "total": total, "limit": limit, "offset": offset}
 
 
+def _fence_conflict(fenced, expected_revision, current):
+    """The delete route's fence, read from the URL's query like the web route (`web_routers/sessions.py`).
+
+    Returns a (status, json) refusal, or None when the write may proceed."""
+    if not fenced or expected_revision is None:
+        return None
+    try:
+        expected = int(expected_revision)
+    except ValueError:
+        return 422, {"detail": "expected_revision must be an integer"}
+    if expected != current:
+        return 409, {"detail": "revision_conflict"}
+    return None
+
+
 def delete_session(match, query, body):
-    """`DELETE /api/sessions/{id}?profile=`: the chat in that profile, and only that one."""
+    """`DELETE /api/sessions/{id}?profile=`: the chat in that profile, and only that one.
+
+    Fenced like the sidebar edit, except the fence rides the URL's query (the web route reads it
+    there, not the body); unfenced under `--plain-edits`, like Hermes from 2026-10-16."""
     sid = unquote(match.group(1))
     profile = (query.get("profile", ["default"])[0] or "default")
+    fenced = not B["CONFIG"].get("plain_edits")
+    request_id = (query.get("request_id") or [None])[0]
+    expected_revision = (query.get("expected_revision") or [None])[0]
+    if fenced and request_id is None and expected_revision is None:
+        return 409, {"detail": "client_upgrade_required"}
+    if fenced and (request_id is None or expected_revision is None):
+        return 409, {"detail": "mutation_identity_required"}
     if profile == "default":
         with G.LOCK:
-            if sid in G.SESSIONS:
+            chat = G.SESSIONS.get(sid)
+            if chat is not None:
+                if (refusal := _fence_conflict(fenced, expected_revision, chat.get("_revision", 0))):
+                    return refusal
                 G.SESSIONS.pop(sid)
                 G.DELETED.add(sid)
                 G.MESSAGES.pop(sid, None)
@@ -239,6 +268,8 @@ def delete_session(match, query, body):
     with B["LOCK"]:
         session = B["STORED"].get(sid)
         if session is not None and session["profile"] == profile:
+            if (refusal := _fence_conflict(fenced, expected_revision, session.get("revision", 0))):
+                return refusal
             B["STORED"].pop(sid)
             return 200, {"object": "hermes.session.deleted", "id": sid, "deleted": True}
     return 404, {"detail": "Session not found"}

@@ -237,6 +237,19 @@ public enum HermesError: Error, Sendable, Equatable, LocalizedError {
             } else if let error = envelope["error"] {
                 message = error["message"]?.stringValue
                 code = error["code"]?.stringValue
+            } else if let detail = envelope["detail"] {
+                // FastAPI's error envelope (the web server's routes): a reason token, a sentence,
+                // or a pydantic validation list. The token is the code, the words the message.
+                if let text = detail.stringValue {
+                    message = text
+                    code = text.split(separator: ":").first.map(String.init) ?? (text.contains(" ") ? nil : text)
+                } else if case .array(let problems) = detail, let first = problems.first {
+                    message = first["msg"]?.stringValue
+                    code = first["type"]?.stringValue
+                } else if case .object(let problem) = detail {
+                    message = problem["message"]?.stringValue
+                    code = problem["code"]?.stringValue
+                }
             }
         } else if let text = String(data: body.prefix(300), encoding: .utf8), !text.isEmpty {
             message = text.trimmingCharacters(in: .whitespacesAndNewlines)
