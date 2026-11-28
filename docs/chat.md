@@ -1023,8 +1023,8 @@ Check with the mock: "video links".
 - **Unread.** A chat with something new opens at the New Messages line, a quarter of the way
   down; reaching the end marks it read on the gateway. Every chat, a Bot's included, shows the
   turn header's live line until the first words; group chats name who's thinking
-  (`botThinkingLine`, §4a). Reply with a quote from the message menu, Reply to Words…, or a swipe
-  left. See `docs/inbox.md` §4. Content
+  (`botThinkingLine`, §4a). Reply with a quote from the message menu, Reply to Words…, or, on
+  iPhone and iPad, a swipe left. See `docs/inbox.md` §4. Content
   scrolls under the toolbar and the composer with a soft scroll edge effect. On the Mac the system's
   edge effect doesn't reach the chat, so the title bar is a bar of its own (`MacTitleBarBacking`):
   the canvas over a blur behind the title, fading out 14 pt below it, so a message scrolled up under
