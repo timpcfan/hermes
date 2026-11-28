@@ -209,16 +209,20 @@ final class PillUITextView: UITextView {
     var onLayout: (() -> Void)?
     /// An input method's word was chosen or cancelled (`docs/composer.md` §5).
     var onCompositionEnd: (() -> Void)?
+    /// A word is being composed: the placeholder hides while it sits in the field.
+    var onCompositionChange: (() -> Void)?
     let capsule = UIView()
     let emptyTextLabel = UILabel()
 
     override func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
         super.setMarkedText(markedText, selectedRange: selectedRange)
+        onCompositionChange?()
         if markedTextRange == nil { onCompositionEnd?() }
     }
 
     override func unmarkText() {
         super.unmarkText()
+        onCompositionChange?()
         onCompositionEnd?()
     }
 
@@ -390,6 +394,8 @@ final class PillNSTextView: NSTextView {
     var onLayout: (() -> Void)?
     /// An input method's word was chosen or cancelled (`docs/composer.md` §5).
     var onCompositionEnd: (() -> Void)?
+    /// A word is being composed: the placeholder hides while it sits in the field.
+    var onCompositionChange: (() -> Void)?
     let capsule = NSView()
     let emptyTextLabel = NSTextField(labelWithString: "")
 
@@ -446,11 +452,13 @@ final class PillNSTextView: NSTextView {
     // the input source switched) ends here without one.
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onCompositionChange?()
         if !hasMarkedText() { onCompositionEnd?() }
     }
 
     override func unmarkText() {
         super.unmarkText()
+        onCompositionChange?()
         onCompositionEnd?()
     }
 
@@ -1071,7 +1079,9 @@ struct PillTextView {
                       case .command = attachment.content else { return 0 }
                 return attachment.size.width
             }()
-            let empty = decoded.text.isEmpty
+            // A word being composed is in the field already, though the draft waits for the
+            // chosen word: the placeholder hides either way (`docs/composer.md` §5).
+            let empty = decoded.text.isEmpty && !isComposing
             #if os(iOS)
             label.text = placeholder
             label.isHidden = !empty
@@ -1328,6 +1338,9 @@ extension PillTextView: UIViewRepresentable {
         view.pasteFiles = { [weak coordinator] in await coordinator?.parent.onPasteFiles($0) }
         view.spokenText = { [weak coordinator] in coordinator?.spokenText() ?? "" }
         view.onCompositionEnd = { [weak coordinator] in coordinator?.textChanged(fromUser: true) }
+        // The placeholder follows the field, letters being composed included: no text change
+        // reaches the draft until the word is chosen, so it would sit under them otherwise.
+        view.onCompositionChange = { [weak coordinator] in coordinator?.updatePlaceholder() }
         view.onLayout = { [weak coordinator] in
             coordinator?.updatePlaceholder()
             coordinator?.updateCapsule()
@@ -1461,6 +1474,9 @@ extension PillTextView: NSViewRepresentable {
         textView.spokenText = { [weak coordinator] in coordinator?.spokenText() ?? "" }
         textView.onLayout = { [weak coordinator] in coordinator?.layoutPills() }
         textView.onCompositionEnd = { [weak coordinator] in coordinator?.textChanged(fromUser: true) }
+        // The placeholder follows the field, letters being composed included: no text change
+        // reaches the draft until the word is chosen, so it would sit under them otherwise.
+        textView.onCompositionChange = { [weak coordinator] in coordinator?.updatePlaceholder() }
         textView.onFocusChange = { [weak coordinator] focused in
             guard let coordinator, coordinator.parent.isFocused != focused else { return }
             DispatchQueue.main.async { coordinator.parent.isFocused = focused }

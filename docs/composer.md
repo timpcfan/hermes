@@ -203,10 +203,12 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - **Input methods** (Pinyin, Kana, Korean, the accent popup): the word being composed sits in
   the field as marked text until it's chosen. The composer never writes the draft over it, so a
   reply streaming in or a chat list update leaves the word and the caret where they are. The
-  Mac reports the field changed only when the word is chosen, so the draft catches up then (or
-  when it's cancelled); the iPhone and iPad report each letter. A draft changed from elsewhere
-  while a word is composed (sent, cleared, a reference inserted) goes into the field once the
-  word is chosen or cancelled, unless the field already shows it. `ComposerFieldSync` decides.
+  placeholder follows the field and hides with the first letter composed, so it never sits under
+  the word. The Mac reports the field changed only when the word is chosen, so the draft catches
+  up then (or when it's cancelled); the iPhone and iPad report each letter. A draft changed from
+  elsewhere while a word is composed (sent, cleared, a reference inserted) goes into the field
+  once the word is chosen or cancelled, unless the field already shows it. `ComposerFieldSync`
+  decides.
 
 ## 6. Acceptance checks
 
@@ -219,6 +221,8 @@ its states, audio and system integration, is in [voice.md](voice.md) §4.
 - With Pinyin, while a reply streams: type 你好世界, put the caret after 你好 and compose "dajia".
   The letters stay marked and the caret stays put; choosing 大家 gives 你好大家世界 with the caret
   after 大家, on the Mac, iPhone and iPad (`-HERMES_IME`, [development.md](development.md)).
+- With Pinyin in an empty field, the placeholder ("Ask Hermes anything") hides with the first
+  letter composed and comes back only if the word is cancelled, on all three platforms.
 - A PDF and another file attach from Files and send; Hermes receives both, and a file it refuses
   comes back with the reason in plain words (the mock's "refuseupload" and "toolarge" names).
 - After `POST /api/mock/close-sessions`, a PDF and another file still send; on a mock started with
